@@ -9,19 +9,35 @@ Checks three paths in order:
 The ``get_acting_member_id`` dependency extends service-token auth with an
 optional ``X-Acting-Discord-Id`` header that allows the bot to act on behalf
 of a specific member for ``/me/*`` endpoints.
+
+When ``X-Acting-Discord-Id`` is present, the member lookup follows this order:
+
+1. Snowflake match — ``Member.discord_id == acting_discord_id``.  Hit → done.
+2. Username fallback (requires ``X-Acting-Discord-Username``) — case-insensitive
+   match on ``Member.discord_username``.  Multi-row → 409.  No rows → 404.
+3. Backfill conflict guard — if the matched member has no ``discord_id``,
+   verify no other row already owns ``acting_discord_id``.  Conflict → 404.
+4. Opportunistic backfill — write ``discord_id = acting_discord_id`` and commit
+   so future calls hit path 1 directly.
 """
 
+import logging
 import secrets
 from dataclasses import dataclass
 
 import jwt
 from fastapi import Depends, HTTPException, Request
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import JWT_ALGORITHM, settings
 from app.db.session import get_db
 from app.models.member import Member
+
+logger = logging.getLogger(__name__)
+
+# Reused across every 404 branch so the bot sees a consistent message.
+_NOT_REGISTERED_MSG = "Acting Discord user not found"
 
 
 @dataclass
@@ -48,6 +64,90 @@ class AuthenticatedUser:
     role: str | None = None
     discord_id: str | None = None
     acting_member_id: int | None = None
+
+
+async def _resolve_acting_member(
+    db: AsyncSession,
+    acting_discord_id: str,
+    acting_username: str | None,
+) -> Member:
+    """Resolve the acting member from a Discord snowflake (and optional username).
+
+    Lookup order:
+
+    1. Snowflake match — ``Member.discord_id == acting_discord_id``.
+       Returns immediately on hit.
+    2. Username fallback — case-insensitive match on
+       ``Member.discord_username``.  Skipped when ``acting_username`` is
+       ``None``.
+    3. Multi-row guard — raises 409 when two or more rows share the same
+       lowercased ``discord_username``.
+    4. Backfill conflict guard — if the matched member has
+       ``discord_id IS NULL``, checks that no other row already owns
+       ``acting_discord_id``.  Raises 404 on conflict.
+    5. Opportunistic backfill — writes ``discord_id = acting_discord_id``
+       and commits so future calls hit path 1 directly.
+
+    Args:
+        db: Async SQLAlchemy session.
+        acting_discord_id: Validated numeric Discord snowflake string.
+        acting_username: Value of the ``X-Acting-Discord-Username`` header,
+            or ``None`` when the header was absent.
+
+    Returns:
+        The resolved ``Member`` record.
+
+    Raises:
+        HTTPException: 404 when no member can be matched, or when the
+            backfill conflict guard fires.  409 when two members share the
+            same lowercased ``discord_username``.
+    """
+    # --- Step 1: snowflake lookup -------------------------------------------
+    result = await db.execute(select(Member).where(Member.discord_id == acting_discord_id))
+    member = result.scalar_one_or_none()
+    if member is not None:
+        return member
+
+    # --- Step 2: username fallback ------------------------------------------
+    if not acting_username:
+        raise HTTPException(status_code=404, detail=_NOT_REGISTERED_MSG)
+
+    result = await db.execute(
+        select(Member).where(func.lower(Member.discord_username) == acting_username.lower())
+    )
+    rows = result.scalars().all()
+
+    # --- Step 3: multi-row guard --------------------------------------------
+    if len(rows) > 1:
+        raise HTTPException(
+            status_code=409,
+            detail=("multiple members claim this Discord username;" " admin must resolve"),
+        )
+
+    if not rows:
+        raise HTTPException(status_code=404, detail=_NOT_REGISTERED_MSG)
+
+    matched = rows[0]
+
+    # --- Step 4: backfill conflict guard ------------------------------------
+    if matched.discord_id is None:
+        conflict_result = await db.execute(
+            select(Member.id).where(Member.discord_id == acting_discord_id)
+        )
+        if conflict_result.scalar_one_or_none() is not None:
+            logger.warning(
+                "Backfill conflict: acting_discord_id=%s already owned "
+                "by another member; matched member id=%s left unchanged",
+                acting_discord_id,
+                matched.id,
+            )
+            raise HTTPException(status_code=404, detail=_NOT_REGISTERED_MSG)
+
+        # --- Step 5: opportunistic backfill ---------------------------------
+        matched.discord_id = acting_discord_id
+        await db.commit()
+
+    return matched
 
 
 async def get_current_user(
@@ -91,17 +191,13 @@ async def get_current_user(
                 if not acting_discord_id.isdigit() or len(acting_discord_id) > 20:
                     raise HTTPException(
                         status_code=400,
-                        detail="X-Acting-Discord-Id must be a numeric Discord snowflake",
+                        detail=("X-Acting-Discord-Id must be a numeric" " Discord snowflake"),
                     )
-                result = await db.execute(
-                    select(Member).where(Member.discord_id == acting_discord_id)
+                acting_member = await _resolve_acting_member(
+                    db,
+                    acting_discord_id,
+                    request.headers.get("X-Acting-Discord-Username"),
                 )
-                acting_member = result.scalar_one_or_none()
-                if acting_member is None:
-                    raise HTTPException(
-                        status_code=404,
-                        detail="Acting Discord user not found",
-                    )
                 acting_member_id = acting_member.id
             return AuthenticatedUser(
                 member_id=None,
