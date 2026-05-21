@@ -112,8 +112,16 @@ async def _resolve_acting_member(
     if not acting_username:
         raise HTTPException(status_code=404, detail=_NOT_REGISTERED_MSG)
 
+    if len(acting_username) > 32:
+        raise HTTPException(
+            status_code=400,
+            detail="X-Acting-Discord-Username exceeds maximum length",
+        )
+
     result = await db.execute(
-        select(Member).where(func.lower(Member.discord_username) == acting_username.lower())
+        select(Member)
+        .where(func.lower(Member.discord_username) == acting_username.lower())
+        .limit(2)
     )
     rows = result.scalars().all()
 
@@ -121,7 +129,7 @@ async def _resolve_acting_member(
     if len(rows) > 1:
         raise HTTPException(
             status_code=409,
-            detail=("multiple members claim this Discord username;" " admin must resolve"),
+            detail="multiple members claim this Discord username; admin must resolve",
         )
 
     if not rows:
@@ -144,6 +152,11 @@ async def _resolve_acting_member(
             raise HTTPException(status_code=404, detail=_NOT_REGISTERED_MSG)
 
         # --- Step 5: opportunistic backfill ---------------------------------
+        # The commit here is intentional and independent of outer request
+        # success.  get_db() yields a fresh session per request, so nothing
+        # else is dirty.  Persisting the backfill unconditionally means a
+        # user hitting transient downstream errors will not permanently pay
+        # the slow username-fallback path on every retry.
         matched.discord_id = acting_discord_id
         await db.commit()
 
@@ -191,7 +204,7 @@ async def get_current_user(
                 if not acting_discord_id.isdigit() or len(acting_discord_id) > 20:
                     raise HTTPException(
                         status_code=400,
-                        detail=("X-Acting-Discord-Id must be a numeric" " Discord snowflake"),
+                        detail="X-Acting-Discord-Id must be a numeric Discord snowflake",
                     )
                 acting_member = await _resolve_acting_member(
                     db,

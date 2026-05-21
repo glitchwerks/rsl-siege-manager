@@ -37,15 +37,28 @@ def _make_member(
     id: int = 42,
     name: str = "Alice",
     discord_id: str = MEMBER_DISCORD_ID,
+    discord_username: str | None = None,
     role: MemberRole = MemberRole.advanced,
     is_active: bool = True,
 ) -> SimpleNamespace:
-    """Build a minimal Member-like namespace for mocking."""
+    """Build a minimal Member-like namespace for mocking.
+
+    Args:
+        id: Database primary key.
+        name: Display name.
+        discord_id: Discord snowflake string.
+        discord_username: Discord username, or None when not yet stored.
+        role: Member role enum value.
+        is_active: Whether the member is active.
+
+    Returns:
+        A SimpleNamespace whose attributes mirror the Member ORM model.
+    """
     return SimpleNamespace(
         id=id,
         name=name,
         discord_id=discord_id,
-        discord_username=None,
+        discord_username=discord_username,
         role=role,
         power=None,
         sort_value=None,
@@ -1360,3 +1373,45 @@ async def test_username_fallback_h_multi_row_collision_returns_409(
 
     assert response.status_code == 409
     mock_db.commit.assert_not_called()
+
+
+# (i) X-Acting-Discord-Username too long (>32 chars) → 400
+
+
+@pytest.mark.asyncio
+async def test_username_fallback_i_username_too_long_returns_400(
+    monkeypatch,
+    service_token_headers,
+):
+    """X-Acting-Discord-Username longer than 32 chars → 400 Bad Request.
+
+    Discord caps usernames at 32 characters.  A 33-char value must be
+    rejected before any DB query is attempted.  The snowflake header is
+    present and valid so the only reason for 400 is the length guard.
+    """
+    monkeypatch.setattr("app.config.settings.auth_disabled", False)
+    monkeypatch.setattr("app.config.settings.bot_service_token", SERVICE_TOKEN)
+
+    mock_db = _make_mock_db()
+
+    async def override_get_db():
+        yield mock_db
+
+    app.dependency_overrides[get_db] = override_get_db
+    # 33 characters — one over the 32-char Discord cap.
+    too_long_username = "a" * 33
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.get(
+                "/api/members/me/preferences",
+                headers={
+                    **service_token_headers,
+                    "X-Acting-Discord-Id": MEMBER_DISCORD_ID,
+                    "X-Acting-Discord-Username": too_long_username,
+                },
+            )
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+    assert response.status_code == 400
+    assert "exceeds maximum length" in response.json()["detail"]
