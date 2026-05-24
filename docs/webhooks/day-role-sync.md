@@ -1,6 +1,6 @@
 # Day-Role Sync Webhook Contract
 
-**Version:** 1.0
+**Version:** 1.1
 **Status:** Normative
 **Repo:** `glitchwerks/rsl-siege-manager` (producer)
 **Related:** `glitchwerks/mom-bot#6` (first conforming receiver — see §11)
@@ -30,6 +30,7 @@ The producer sends an HTTP POST request to the configured receiver URL (see §9 
 | `discord_id` | string | Discord snowflake ID of the member whose assignment changed. Receivers MUST treat this as an opaque string; do not cast to integer. |
 | `siege_id` | integer | Primary key of the siege record in the producer database. Provided for correlation and audit; receivers MAY ignore it beyond logging. |
 | `day_number` | integer | The attack-day number being assigned or unassigned. Currently `1` or `2`; the contract allows any positive integer so that future days require no schema change. |
+| `discord_role_id` | string (optional) | Discord snowflake ID (17–20 digit decimal string) of the role that the producer has mapped to this `day_number` in its internal `day_role_map`. Receivers MAY use this value to apply the role assignment directly without maintaining their own mapping table. Receivers MUST tolerate absence of this field and continue to operate correctly when it is not present (v1.0 behavior). |
 | `action` | string (enum) | `"assign"` — the member has been placed on this day. `"unassign"` — the member has been removed from this day. No other values are legal. |
 | `assigned_at` | string | ISO-8601 UTC timestamp representing when the assignment change was recorded. Producers MUST provide millisecond precision at minimum — the form with `.SSS` suffix, e.g. `"2026-05-14T13:52:18.247Z"`. Producers MAY use microsecond precision if higher resolution is needed. Receivers use this as a monotonic ordering token (see §7). |
 | `correlation_id` | string | UUID v4. Scoping and retry semantics are defined in §8. |
@@ -41,13 +42,14 @@ The producer sends an HTTP POST request to the configured receiver URL (see §9 
   "discord_id": "123456789012345678",
   "siege_id": 42,
   "day_number": 1,
+  "discord_role_id": "1234567890123456789",
   "action": "assign",
   "assigned_at": "2026-05-14T13:52:18.247Z",
   "correlation_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
 }
 ```
 
-> `discord_id` `123456789012345678` is illustrative only. Real values are 17–19 digit decimal strings issued by Discord.
+> `discord_id` `123456789012345678` and `discord_role_id` `1234567890123456789` are illustrative only. Real values are 17–20 digit decimal strings issued by Discord. `discord_role_id` is optional; a v1.0-conforming producer omits it.
 
 ---
 
@@ -260,3 +262,10 @@ Receivers SHOULD persist idempotency state (the last processed `(discord_id, ass
 `glitchwerks/mom-bot` is the first conforming receiver of this webhook contract. It exposes an HTTP endpoint that accepts the payload defined in §2, applies the role operations described in §3, and responds with the structured response schema. Implementation details are tracked under the mom-bot epic at [glitchwerks/mom-bot#6](https://github.com/glitchwerks/mom-bot/issues/6).
 
 **Switching receivers on the wire is a producer-side config change only** — `DAY_ROLE_SYNC_URL` and the bearer secret. **The new receiver, however, has its own provisioning work** that the contract does not eliminate: at minimum, the receiver must be a member of the same Discord guild as members it will toggle roles for, must have seeded its own `day_role_map`-equivalent table (or equivalent role→day_number lookup), and must have completed any role-hierarchy preflight applicable to its environment (§10). This contract guarantees wire portability, not operational portability.
+
+---
+
+## 12. Revision History
+
+- **v1.0** — initial spec.
+- **v1.1** — additive: optional `discord_role_id` field in the §2 payload schema (see [#458](https://github.com/glitchwerks/rsl-siege-manager/issues/458) item C; cross-repo rollout coordinated via [glitchwerks/rsl-mom-apps#9](https://github.com/glitchwerks/rsl-mom-apps/issues/9)). Receivers conforming to v1.0 remain conforming under v1.1; the field is optional and its absence is a valid producer state during the transition window.
