@@ -62,6 +62,24 @@ async def lifespan(app: FastAPI):
                 "BOT_SERVICE_TOKEN must be set in non-development environments. "
                 f"Current environment: {settings.environment}"
             )
+    # Warn when DAY_ROLE_SYNC_ENABLED=true but role ID env vars are not fully set.
+    if settings.day_role_sync_enabled:
+        day1 = settings.discord_day_1_role_id
+        day2 = settings.discord_day_2_role_id
+        if day1 is None and day2 is None:
+            logger.warning(
+                "DAY_ROLE_SYNC_ENABLED=true but neither DISCORD_DAY_1_ROLE_ID nor "
+                "DISCORD_DAY_2_ROLE_ID is set — assign payloads will omit "
+                "discord_role_id (v1.0-shape). Set both vars to enable v1.1 payloads."
+            )
+        elif day1 is None or day2 is None:
+            missing = "DISCORD_DAY_1_ROLE_ID" if day1 is None else "DISCORD_DAY_2_ROLE_ID"
+            logger.warning(
+                "DAY_ROLE_SYNC_ENABLED=true but %s is unset — partial role ID "
+                "config is likely a misconfiguration. Assign payloads for the "
+                "unconfigured day will omit discord_role_id.",
+                missing,
+            )
     yield
 
 

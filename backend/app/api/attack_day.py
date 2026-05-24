@@ -20,11 +20,36 @@ from fastapi import APIRouter, BackgroundTasks, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api._role_sync import schedule_role_sync
+from app.config import settings
 from app.db.session import get_db
 from app.schemas.attack_day import AttackDayApplyResult, AttackDayPreviewResult
 from app.services import attack_day as attack_day_service
 
 router = APIRouter(tags=["attack_day"])
+
+
+def _role_id_for_day(day: int | None) -> int | None:
+    """Return the configured Discord role snowflake for the given attack day.
+
+    Resolves ``discord_day_1_role_id`` or ``discord_day_2_role_id`` from
+    settings at request time (not inside the BackgroundTask) so the value
+    is bound before the task is enqueued.  This satisfies the plan design
+    decision D2 and inquisitor CHARGE 4: role-ID lookup must happen in
+    the request handler, not deferred into the background task, to avoid
+    reading a stale or unset settings snapshot inside a worker context.
+
+    Args:
+        day: Attack-day number (``1`` or ``2``) or ``None`` for unassign.
+
+    Returns:
+        The configured Discord role integer for days 1 and 2.
+        ``None`` for any other value (including ``None`` input).
+    """
+    if day == 1:
+        return settings.discord_day_1_role_id
+    if day == 2:
+        return settings.discord_day_2_role_id
+    return None
 
 
 @router.post(
@@ -74,6 +99,12 @@ async def apply_attack_day(
         # timestamp captured at the moment of mutation (contract §7).
         action = "assign" if entry.attack_day is not None else "unassign"
 
+        # Resolve role ID at request time, not inside the BackgroundTask
+        # (plan §1 D2, inquisitor CHARGE 4).  For unassign actions the
+        # role ID is not needed; pass None so the bot retains existing
+        # removal logic.
+        discord_role_id = _role_id_for_day(entry.attack_day) if action == "assign" else None
+
         schedule_role_sync(
             background_tasks,
             discord_id=entry.discord_id,
@@ -82,6 +113,7 @@ async def apply_attack_day(
             action=action,
             assigned_at=entry.assigned_at,
             correlation_id=correlation_id,
+            discord_role_id=discord_role_id,
         )
 
     return result

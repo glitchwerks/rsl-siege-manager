@@ -269,3 +269,13 @@ Receivers SHOULD persist idempotency state (the last processed `(discord_id, ass
 
 - **v1.0** — initial spec.
 - **v1.1** — additive: optional `discord_role_id` field in the §2 payload schema (see [#458](https://github.com/glitchwerks/rsl-siege-manager/issues/458) item C; cross-repo rollout coordinated via [glitchwerks/rsl-mom-apps#9](https://github.com/glitchwerks/rsl-mom-apps/issues/9)). Receivers conforming to v1.0 remain conforming under v1.1; the field is optional and its absence is a valid producer state during the transition window.
+
+---
+
+## Reference Implementations
+
+**Canonical producer:** `glitchwerks/rsl-siege-manager` (this repo) — `backend/app/services/bot_client.py` implements the producer side and is the authoritative reference for how to build a contract-conforming sender.
+
+**Second conforming producer:** `glitchwerks/mom-bot` — implements the same contract as a bundled sidecar. Its implementation is a second conforming producer, not the canonical reference.
+
+See coord issue `glitchwerks/rsl-mom-apps#9` for the v1.1 contract change that introduced `discord_role_id`.

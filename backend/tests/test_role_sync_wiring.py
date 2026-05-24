@@ -571,3 +571,43 @@ async def test_update_siege_member_assigned_at_millisecond_precision(monkeypatch
     assert _MS_PRECISION_RE.match(assigned_at_str), (
         f"assigned_at must match {_MS_PRECISION_RE.pattern!r}, " f"got {assigned_at_str!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# AC19 — discord_role_id kwarg propagates schedule_role_sync → BotClient
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_ac19_discord_role_id_propagates_to_bot_client(monkeypatch):
+    """AC19: discord_role_id kwarg forwarded from schedule_role_sync to BotClient.sync_day_role."""
+    from datetime import UTC, datetime
+    from unittest.mock import AsyncMock, patch
+
+    from fastapi import BackgroundTasks
+
+    from app.api._role_sync import schedule_role_sync
+
+    mock_sync = AsyncMock(return_value=True)
+
+    monkeypatch.setattr("app.api._role_sync.settings.day_role_sync_enabled", True)
+
+    with patch("app.api._role_sync.bot_client.sync_day_role", mock_sync):
+        bt = BackgroundTasks()
+        schedule_role_sync(
+            bt,
+            discord_id="111222333444555666",
+            siege_id=1,
+            day_number=1,
+            action="assign",
+            assigned_at=datetime(2026, 5, 24, 12, 0, 0, tzinfo=UTC),
+            correlation_id="test-corr-id",
+            discord_role_id=12345,
+        )
+        # Execute background tasks synchronously.
+        for task in bt.tasks:
+            await task()
+
+    mock_sync.assert_called_once()
+    _, kwargs = mock_sync.call_args
+    assert kwargs.get("discord_role_id") == 12345

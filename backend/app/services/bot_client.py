@@ -140,6 +140,7 @@ class BotClient:
         action: Literal["assign", "unassign"],
         assigned_at: datetime,
         correlation_id: str,
+        discord_role_id: int | None = None,
     ) -> bool:
         """Fire the outbound day-role-sync webhook for one member assignment.
 
@@ -178,6 +179,11 @@ class BotClient:
             correlation_id: UUID v4 supplied by the caller.  Preserved
                 across the internal retry so downstream operators can
                 correlate both attempts in logs.
+            discord_role_id: Discord role snowflake to assign. Included in
+                the payload only when ``action="assign"`` and non-None
+                (contract v1.1 §2). Omitted on unassign and when ``None``
+                (v1.0-shape payload). Defaults to ``None`` so callers
+                without role ID config produce backward-compatible payloads.
 
         Returns:
             ``True`` if the webhook was delivered successfully (or
@@ -265,6 +271,12 @@ class BotClient:
         # Include day_number only for "assign" actions per issue #323 AC.
         if action == "assign" and day_number is not None:
             payload["day_number"] = day_number
+
+        # Include discord_role_id only for "assign" actions per contract v1.1.
+        # Mirrors day_number gating above. String cast follows Discord snowflake
+        # convention (large int64 values lose precision in some JSON parsers).
+        if action == "assign" and discord_role_id is not None:
+            payload["discord_role_id"] = str(discord_role_id)
 
         # ------------------------------------------------------------------ #
         # HTTP call with single 5xx retry (§5)                               #

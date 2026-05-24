@@ -528,3 +528,101 @@ async def test_sync_day_role_naive_datetime_raises_value_error(monkeypatch):
             assigned_at=naive_dt,
             correlation_id=_CORRELATION_ID,
         )
+
+
+# ---------------------------------------------------------------------------
+# AC16 — discord_role_id present on assign → payload includes "discord_role_id"
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_ac16_discord_role_id_included_on_assign(monkeypatch):
+    """AC16: discord_role_id=999 on assign → payload has "discord_role_id": "999"."""
+    monkeypatch.setattr("app.config.settings.day_role_sync_enabled", True)
+    monkeypatch.setattr("app.config.settings.day_role_sync_url", _SYNC_URL)
+
+    import json
+
+    with respx.mock() as mock_transport:
+        route = mock_transport.post(_SYNC_URL).mock(
+            return_value=httpx.Response(200, json=_APPLIED_BODY)
+        )
+        result = await _make_bot_client().sync_day_role(
+            discord_id=_DISCORD_ID,
+            siege_id=_SIEGE_ID,
+            day_number=_DAY_NUMBER,
+            action="assign",
+            assigned_at=_ASSIGNED_AT,
+            correlation_id=_CORRELATION_ID,
+            discord_role_id=999,
+        )
+
+    assert result is True
+    body = json.loads(route.calls[0].request.content)
+    assert body["discord_role_id"] == "999"
+
+
+# ---------------------------------------------------------------------------
+# AC17 — discord_role_id=None on assign → payload omits "discord_role_id"
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_ac17_discord_role_id_absent_when_none(monkeypatch):
+    """AC17: discord_role_id=None on assign → "discord_role_id" absent from payload."""
+    monkeypatch.setattr("app.config.settings.day_role_sync_enabled", True)
+    monkeypatch.setattr("app.config.settings.day_role_sync_url", _SYNC_URL)
+
+    import json
+
+    with respx.mock() as mock_transport:
+        route = mock_transport.post(_SYNC_URL).mock(
+            return_value=httpx.Response(200, json=_APPLIED_BODY)
+        )
+        result = await _make_bot_client().sync_day_role(
+            discord_id=_DISCORD_ID,
+            siege_id=_SIEGE_ID,
+            day_number=_DAY_NUMBER,
+            action="assign",
+            assigned_at=_ASSIGNED_AT,
+            correlation_id=_CORRELATION_ID,
+            discord_role_id=None,
+        )
+
+    assert result is True
+    body = json.loads(route.calls[0].request.content)
+    assert "discord_role_id" not in body
+
+
+# ---------------------------------------------------------------------------
+# AC18 — discord_role_id on unassign → payload omits "discord_role_id"
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_ac18_discord_role_id_absent_on_unassign(monkeypatch):
+    """AC18: discord_role_id=999 on unassign → "discord_role_id" absent from payload."""
+    monkeypatch.setattr("app.config.settings.day_role_sync_enabled", True)
+    monkeypatch.setattr("app.config.settings.day_role_sync_url", _SYNC_URL)
+
+    import json
+
+    unassign_body = {"status": "applied", "added": [], "removed": ["Day 1"]}
+
+    with respx.mock() as mock_transport:
+        route = mock_transport.post(_SYNC_URL).mock(
+            return_value=httpx.Response(200, json=unassign_body)
+        )
+        result = await _make_bot_client().sync_day_role(
+            discord_id=_DISCORD_ID,
+            siege_id=_SIEGE_ID,
+            day_number=None,
+            action="unassign",
+            assigned_at=_ASSIGNED_AT,
+            correlation_id=_CORRELATION_ID,
+            discord_role_id=999,
+        )
+
+    assert result is True
+    body = json.loads(route.calls[0].request.content)
+    assert "discord_role_id" not in body
