@@ -32,6 +32,13 @@ class Settings(BaseSettings):
     day_role_sync_enabled: bool = False
     day_role_sync_url: str | None = None
 
+    # Discord role IDs for day-role sync (contract v1.1).
+    # When set, assign payloads include "discord_role_id" per the contract.
+    # Default None → v1.0-shape payload (field omitted). Both vars must be set
+    # for full functionality; partial config logs a WARNING at startup (see main.py).
+    discord_day_1_role_id: int | None = None
+    discord_day_2_role_id: int | None = None
+
     # Dev-only auth bypass — startup guard rejects True outside development.
     auth_disabled: bool = False
 
