@@ -377,7 +377,7 @@ class FakeDiscordClient:
         discord_id: str,
         role_id: str,
         action: str,
-    ) -> str:
+    ) -> tuple[str, str]:
         """Simulate toggling a day role for a guild member.
 
         Args:
@@ -390,7 +390,7 @@ class FakeDiscordClient:
             action: ``"assign"`` or ``"unassign"``.
 
         Returns:
-            ``"applied"`` on success.
+            A 2-tuple ``("applied", role_name)`` on success.
 
         Raises:
             discord.NotFound: When ``discord_id != KNOWN_MEMBER_ID``.
@@ -405,7 +405,7 @@ class FakeDiscordClient:
             await member.add_roles(role)
         else:
             await member.remove_roles(role)
-        return "applied"
+        return "applied", role.name
 
     async def get_members(self) -> list[dict]:
         """Return a one-element member list for the known member.

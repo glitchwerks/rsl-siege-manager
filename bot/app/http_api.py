@@ -370,8 +370,7 @@ async def role_sync(
     """
     if body.discord_role_id is None:
         logger.warning(
-            "role-sync skipped — discord_role_id absent "
-            "(discord_id=%s, correlation_id=%s)",
+            "role-sync skipped — discord_role_id absent " "(discord_id=%s, correlation_id=%s)",
             body.discord_id,
             body.correlation_id,
         )
@@ -390,9 +389,7 @@ async def role_sync(
             action=body.action,
         )
     except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
 
     if body.action == "assign":
         added = [role_name]

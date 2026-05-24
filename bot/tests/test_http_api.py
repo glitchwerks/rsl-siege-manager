@@ -618,7 +618,7 @@ _ROLE_SYNC_PAYLOAD = {
 
 @pytest.mark.asyncio
 async def test_role_sync_assign_with_role_id_returns_applied(client):
-    """AC-d1: assign with discord_role_id → 200 {"status": "applied", "added": [...], "removed": []}."""
+    """AC-d1: assign with discord_role_id → 200 applied response."""
     bot = _make_mock_bot()
     bot.apply_day_role = AsyncMock(return_value=("applied", "Day 1"))
     http_api_module._bot = bot
@@ -661,14 +661,12 @@ async def test_role_sync_assign_without_role_id_returns_skipped(client, caplog):
     assert data["status"] == "skipped"
     assert "discord_role_id" in data.get("reason", "")
     bot.apply_day_role.assert_not_awaited()
-    assert any(
-        "discord_role_id" in r.message.lower() for r in caplog.records
-    )
+    assert any("discord_role_id" in r.message.lower() for r in caplog.records)
 
 
 @pytest.mark.asyncio
 async def test_role_sync_unassign_with_role_id_returns_applied(client):
-    """AC-d3: unassign with discord_role_id → 200 {"status": "applied", "added": [], "removed": [...]}."""
+    """AC-d3: unassign with discord_role_id → 200 applied, removed populated."""
     bot = _make_mock_bot()
     bot.apply_day_role = AsyncMock(return_value=("applied", "Day 1"))
     http_api_module._bot = bot
@@ -706,9 +704,7 @@ async def test_role_sync_member_not_found_returns_404(client):
     response = MagicMock()
     response.status = 404
     response.reason = "Not Found"
-    bot.apply_day_role = AsyncMock(
-        side_effect=discord.NotFound(response, "Unknown Member")
-    )
+    bot.apply_day_role = AsyncMock(side_effect=discord.NotFound(response, "Unknown Member"))
     http_api_module._bot = bot
     async with client as c:
         response_http = await c.post(

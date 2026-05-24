@@ -76,7 +76,7 @@ class SiegeBot(discord.Client):
         discord_id: str,
         role_id: str,
         action: Literal["assign", "unassign"],
-    ) -> str:
+    ) -> tuple[str, str]:
         """Toggle a day role for a guild member.
 
         Fetches the member by snowflake ID and applies or removes the
@@ -90,7 +90,10 @@ class SiegeBot(discord.Client):
             action: ``"assign"`` adds the role; ``"unassign"`` removes it.
 
         Returns:
-            ``"applied"`` on success.
+            A 2-tuple ``(status, role_name)`` where ``status`` is always
+            ``"applied"`` and ``role_name`` is the Discord role's display
+            name (used by the HTTP route to populate the ``added`` /
+            ``removed`` fields in the response body).
 
         Raises:
             discord.NotFound: When the member is not in the guild.
@@ -104,11 +107,9 @@ class SiegeBot(discord.Client):
         member = await guild.fetch_member(int(discord_id))
         role = guild.get_role(int(role_id))
         if role is None:
-            raise ValueError(
-                f"Role '{role_id}' not found in guild"
-            )
+            raise ValueError(f"Role '{role_id}' not found in guild")
         if action == "assign":
             await member.add_roles(role)
         else:
             await member.remove_roles(role)
-        return "applied"
+        return "applied", role.name
