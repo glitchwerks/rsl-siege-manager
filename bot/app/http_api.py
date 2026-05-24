@@ -40,6 +40,7 @@ import logging
 import os
 import secrets
 from pathlib import Path
+from typing import Literal
 
 import discord
 from fastapi import Depends, FastAPI, Form, HTTPException, Request, UploadFile, status
@@ -203,13 +204,45 @@ def verify_api_key(
 
 
 class NotifyRequest(BaseModel):
+    """Request body for POST /api/notify."""
+
     username: str
     message: str
 
 
 class PostMessageRequest(BaseModel):
+    """Request body for POST /api/post-message."""
+
     channel_name: str
     message: str
+
+
+class RoleSyncRequest(BaseModel):
+    """Request body for POST /api/role-sync (v1.1 day-role-sync contract).
+
+    All required fields map directly to the payload schema defined in
+    ``docs/webhooks/day-role-sync.md`` §2.  Optional fields are absent in
+    v1.0-conforming producers and MUST be tolerated per the contract.
+
+    Attributes:
+        discord_id: Discord snowflake ID of the member (opaque string).
+        siege_id: Primary key of the siege record; used for correlation.
+        action: ``"assign"`` or ``"unassign"`` — no other values are legal.
+        assigned_at: ISO-8601 UTC timestamp of the assignment change.
+        correlation_id: UUID v4 scoping the fan-out batch (§8).
+        day_number: Attack-day number (optional; absent for unassign-only).
+        discord_role_id: Discord snowflake of the role to toggle (v1.1,
+            optional).  When absent the endpoint returns
+            ``status="skipped"`` per the locked design decision.
+    """
+
+    discord_id: str
+    siege_id: int
+    action: Literal["assign", "unassign"]
+    assigned_at: str
+    correlation_id: str
+    day_number: int | None = None
+    discord_role_id: str | None = None
 
 
 @app.get("/api/version")

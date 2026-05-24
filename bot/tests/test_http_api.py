@@ -7,9 +7,10 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 from httpx import ASGITransport, AsyncClient
+from pydantic import ValidationError
 
 import app.http_api as http_api_module
-from app.http_api import app
+from app.http_api import RoleSyncRequest, app
 
 API_KEY = "test-key"
 AUTH_HEADER = {"Authorization": f"Bearer {API_KEY}"}
@@ -539,3 +540,61 @@ async def test_notify_discord_forbidden_logs_raw_text(client, caplog):
     assert "secret-channel" not in resp.json()["detail"]
     # Raw text MUST appear in the warning log.
     assert any("secret-channel" in r.message for r in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# RoleSyncRequest model
+# ---------------------------------------------------------------------------
+
+
+def test_role_sync_request_full_payload():
+    """RoleSyncRequest parses a complete v1.1 payload with discord_role_id."""
+    req = RoleSyncRequest(
+        discord_id="111000111000111001",
+        siege_id=42,
+        action="assign",
+        assigned_at="2026-05-14T13:52:18.247Z",
+        correlation_id="a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        day_number=1,
+        discord_role_id="999000999000999001",
+    )
+    assert req.discord_id == "111000111000111001"
+    assert req.action == "assign"
+    assert req.discord_role_id == "999000999000999001"
+    assert req.day_number == 1
+
+
+def test_role_sync_request_minimal_payload():
+    """RoleSyncRequest accepts payload without optional discord_role_id/day_number."""
+    req = RoleSyncRequest(
+        discord_id="111000111000111001",
+        siege_id=42,
+        action="unassign",
+        assigned_at="2026-05-14T13:52:18.247Z",
+        correlation_id="a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    )
+    assert req.discord_role_id is None
+    assert req.day_number is None
+
+
+def test_role_sync_request_invalid_action_raises():
+    """RoleSyncRequest rejects action values outside assign/unassign."""
+    with pytest.raises((ValidationError, ValueError)):
+        RoleSyncRequest(
+            discord_id="111000111000111001",
+            siege_id=42,
+            action="delete",
+            assigned_at="2026-05-14T13:52:18.247Z",
+            correlation_id="a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        )
+
+
+def test_role_sync_request_missing_required_field_raises():
+    """RoleSyncRequest raises when discord_id is absent."""
+    with pytest.raises((ValidationError, TypeError)):
+        RoleSyncRequest(
+            siege_id=42,
+            action="assign",
+            assigned_at="2026-05-14T13:52:18.247Z",
+            correlation_id="a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        )
