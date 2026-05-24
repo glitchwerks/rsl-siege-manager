@@ -1,4 +1,7 @@
+"""Discord client for the Siege Assignment System."""
+
 import io
+from typing import Literal
 
 import discord
 
@@ -67,3 +70,45 @@ class SiegeBot(discord.Client):
             }
             for m in guild.members
         ]
+
+    async def apply_day_role(
+        self,
+        discord_id: str,
+        role_id: str,
+        action: Literal["assign", "unassign"],
+    ) -> str:
+        """Toggle a day role for a guild member.
+
+        Fetches the member by snowflake ID and applies or removes the
+        specified role.  Both ``add_roles`` and ``remove_roles`` are
+        idempotent at the Discord API level, so no prior-state check is
+        needed.
+
+        Args:
+            discord_id: Discord snowflake string of the target member.
+            role_id: Discord snowflake string of the role to toggle.
+            action: ``"assign"`` adds the role; ``"unassign"`` removes it.
+
+        Returns:
+            ``"applied"`` on success.
+
+        Raises:
+            discord.NotFound: When the member is not in the guild.
+            discord.Forbidden: When the bot lacks permission to manage
+                the role (e.g. role is above the bot in the hierarchy).
+            discord.HTTPException: On other Discord API errors.
+            ValueError: When ``role_id`` resolves to ``None`` in the
+                guild (role does not exist or was deleted).
+        """
+        guild = self._require_guild()
+        member = await guild.fetch_member(int(discord_id))
+        role = guild.get_role(int(role_id))
+        if role is None:
+            raise ValueError(
+                f"Role '{role_id}' not found in guild"
+            )
+        if action == "assign":
+            await member.add_roles(role)
+        else:
+            await member.remove_roles(role)
+        return "applied"
