@@ -17,6 +17,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api._role_sync import schedule_role_sync
+from app.config import settings
 from app.db.session import get_db
 from app.schemas.siege_member import (
     MemberPreferenceSummary,
@@ -105,6 +106,18 @@ async def update_siege_member(
         else:
             action = "unassign"
 
+        # Resolve role ID at request time, not inside the BackgroundTask
+        # (plan §1 D2, inquisitor CHARGE 4).  For unassign actions the
+        # role ID is not needed; pass None so the bot retains existing
+        # removal logic.
+        discord_role_id = (
+            settings.discord_day_1_role_id
+            if new_day == 1
+            else settings.discord_day_2_role_id
+            if new_day == 2
+            else None
+        )
+
         schedule_role_sync(
             background_tasks,
             discord_id=(
@@ -115,6 +128,7 @@ async def update_siege_member(
             action=action,
             assigned_at=assigned_at,
             correlation_id=correlation_id,
+            discord_role_id=discord_role_id,
         )
 
     return siege_member
