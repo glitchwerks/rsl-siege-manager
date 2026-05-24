@@ -193,34 +193,36 @@ def _make_guild_with_role(role_id: int, role_name: str = "Day 1") -> MagicMock:
 
 @pytest.mark.asyncio
 async def test_apply_day_role_assign_calls_add_roles_and_returns_applied():
-    """apply_day_role assign path calls add_roles and returns 'applied'."""
+    """apply_day_role assign path calls add_roles and returns ('applied', role_name)."""
     guild, member, role = _make_guild_with_role(999001, "Day 1")
     bot = _make_bot(guild=guild)
 
-    result = await bot.apply_day_role(
+    status, role_name = await bot.apply_day_role(
         discord_id="111000111000111001",
         role_id="999001",
         action="assign",
     )
 
-    assert result == "applied"
+    assert status == "applied"
+    assert role_name == "Day 1"
     member.add_roles.assert_awaited_once_with(role)
     member.remove_roles.assert_not_awaited()
 
 
 @pytest.mark.asyncio
 async def test_apply_day_role_unassign_calls_remove_roles_and_returns_applied():
-    """apply_day_role unassign path calls remove_roles and returns 'applied'."""
+    """apply_day_role unassign path calls remove_roles and returns ('applied', role_name)."""
     guild, member, role = _make_guild_with_role(999002, "Day 2")
     bot = _make_bot(guild=guild)
 
-    result = await bot.apply_day_role(
+    status, role_name = await bot.apply_day_role(
         discord_id="111000111000111001",
         role_id="999002",
         action="unassign",
     )
 
-    assert result == "applied"
+    assert status == "applied"
+    assert role_name == "Day 2"
     member.remove_roles.assert_awaited_once_with(role)
     member.add_roles.assert_not_awaited()
 
