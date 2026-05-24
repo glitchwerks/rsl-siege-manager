@@ -59,6 +59,7 @@ def schedule_role_sync(
     action: Literal["assign", "unassign"],
     assigned_at: datetime,
     correlation_id: str,
+    discord_role_id: int | None = None,
 ) -> None:
     """Schedule a fire-and-forget webhook call via FastAPI BackgroundTasks.
 
@@ -84,6 +85,11 @@ def schedule_role_sync(
             the monotonicity invariant is met without module-level state.
         correlation_id: UUID v4 generated once per user action.  Shared
             across all calls in a fan-out batch (contract §8).
+        discord_role_id: Optional Discord role snowflake integer.  When
+            provided, forwarded to ``BotClient.sync_day_role`` so the bot
+            can target a specific role rather than deriving it from the
+            day number.  ``None`` (default) leaves role resolution to the
+            bot.
 
     Returns:
         None.  The call is always fire-and-forget.
@@ -119,4 +125,5 @@ def schedule_role_sync(
         action=action,
         assigned_at=assigned_at,
         correlation_id=correlation_id,
+        discord_role_id=discord_role_id,
     )
