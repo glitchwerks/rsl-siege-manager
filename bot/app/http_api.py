@@ -40,6 +40,7 @@ import logging
 import os
 import secrets
 from pathlib import Path
+from typing import Literal
 
 import discord
 from fastapi import Depends, FastAPI, Form, HTTPException, Request, UploadFile, status
@@ -203,13 +204,45 @@ def verify_api_key(
 
 
 class NotifyRequest(BaseModel):
+    """Request body for POST /api/notify."""
+
     username: str
     message: str
 
 
 class PostMessageRequest(BaseModel):
+    """Request body for POST /api/post-message."""
+
     channel_name: str
     message: str
+
+
+class RoleSyncRequest(BaseModel):
+    """Request body for POST /api/role-sync (v1.1 day-role-sync contract).
+
+    All required fields map directly to the payload schema defined in
+    ``docs/webhooks/day-role-sync.md`` §2.  Optional fields are absent in
+    v1.0-conforming producers and MUST be tolerated per the contract.
+
+    Attributes:
+        discord_id: Discord snowflake ID of the member (opaque string).
+        siege_id: Primary key of the siege record; used for correlation.
+        action: ``"assign"`` or ``"unassign"`` — no other values are legal.
+        assigned_at: ISO-8601 UTC timestamp of the assignment change.
+        correlation_id: UUID v4 scoping the fan-out batch (§8).
+        day_number: Attack-day number (optional; absent for unassign-only).
+        discord_role_id: Discord snowflake of the role to toggle (v1.1,
+            optional).  When absent the endpoint returns
+            ``status="skipped"`` per the locked design decision.
+    """
+
+    discord_id: str
+    siege_id: int
+    action: Literal["assign", "unassign"]
+    assigned_at: str
+    correlation_id: str
+    day_number: int | None = None
+    discord_role_id: str | None = None
 
 
 @app.get("/api/version")
@@ -298,6 +331,78 @@ async def post_image(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
     return {"status": "sent", "url": url}
+
+
+@app.post("/api/role-sync")
+async def role_sync(
+    body: RoleSyncRequest,
+    _: None = Depends(verify_api_key),
+) -> dict:
+    """Receive a day-role-sync event and apply or remove the Discord role.
+
+    Implements the receiver side of the v1.1 day-role-sync contract
+    (``docs/webhooks/day-role-sync.md``).  The endpoint is stateless:
+    it executes the role toggle on every call; idempotency is delegated
+    to Discord's ``add_roles``/``remove_roles`` API which are idempotent
+    at the Discord level.
+
+    When ``discord_role_id`` is absent the endpoint returns a
+    ``status="skipped"`` response with a WARNING log and does NOT call
+    the seam.  This is the producer-side v1.0 → v1.1 transition path.
+    The producer's ``_handle_sync_response`` treats ``skipped`` as success
+    (no retry, no producer-side failure).
+
+    Args:
+        body: Validated ``RoleSyncRequest`` from the request body.
+        _: Bearer-token dependency; raises 401 on failure.
+
+    Returns:
+        JSON body conforming to §3 of the contract:
+        ``{"status", "added", "removed"}`` always present;
+        ``"reason"`` present when status is not ``"applied"``.
+
+    Raises:
+        HTTPException: 503 if the bot is not connected.
+        HTTPException: 404 if the member or role is not found (ValueError).
+        discord.NotFound: Propagated to the global 404 handler.
+        discord.Forbidden: Propagated to the global 403 handler.
+        discord.HTTPException: Propagated to the global 502/503 handlers.
+    """
+    if body.discord_role_id is None:
+        logger.warning(
+            "role-sync skipped — discord_role_id absent " "(discord_id=%s, correlation_id=%s)",
+            body.discord_id,
+            body.correlation_id,
+        )
+        return {
+            "status": "skipped",
+            "added": [],
+            "removed": [],
+            "reason": "discord_role_id absent — no local map fallback",
+        }
+
+    bot = _get_bot()
+    try:
+        applied_status, role_name = await bot.apply_day_role(
+            discord_id=body.discord_id,
+            role_id=body.discord_role_id,
+            action=body.action,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+
+    if body.action == "assign":
+        added = [role_name]
+        removed: list[str] = []
+    else:
+        added = []
+        removed = [role_name]
+
+    return {
+        "status": applied_status,
+        "added": added,
+        "removed": removed,
+    }
 
 
 @app.get("/api/members")

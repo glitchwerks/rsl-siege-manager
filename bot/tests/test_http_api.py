@@ -7,9 +7,10 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 from httpx import ASGITransport, AsyncClient
+from pydantic import ValidationError
 
 import app.http_api as http_api_module
-from app.http_api import app
+from app.http_api import RoleSyncRequest, app
 
 API_KEY = "test-key"
 AUTH_HEADER = {"Authorization": f"Bearer {API_KEY}"}
@@ -33,6 +34,7 @@ def _make_mock_bot(ready: bool = True) -> MagicMock:
     bot.post_message = AsyncMock()
     bot.post_image = AsyncMock()
     bot.get_members = AsyncMock(return_value=[])
+    bot.apply_day_role = AsyncMock(return_value=("applied", "Day 1"))
     return bot
 
 
@@ -539,3 +541,210 @@ async def test_notify_discord_forbidden_logs_raw_text(client, caplog):
     assert "secret-channel" not in resp.json()["detail"]
     # Raw text MUST appear in the warning log.
     assert any("secret-channel" in r.message for r in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# RoleSyncRequest model
+# ---------------------------------------------------------------------------
+
+
+def test_role_sync_request_full_payload():
+    """RoleSyncRequest parses a complete v1.1 payload with discord_role_id."""
+    req = RoleSyncRequest(
+        discord_id="111000111000111001",
+        siege_id=42,
+        action="assign",
+        assigned_at="2026-05-14T13:52:18.247Z",
+        correlation_id="a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        day_number=1,
+        discord_role_id="999000999000999001",
+    )
+    assert req.discord_id == "111000111000111001"
+    assert req.action == "assign"
+    assert req.discord_role_id == "999000999000999001"
+    assert req.day_number == 1
+
+
+def test_role_sync_request_minimal_payload():
+    """RoleSyncRequest accepts payload without optional discord_role_id/day_number."""
+    req = RoleSyncRequest(
+        discord_id="111000111000111001",
+        siege_id=42,
+        action="unassign",
+        assigned_at="2026-05-14T13:52:18.247Z",
+        correlation_id="a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    )
+    assert req.discord_role_id is None
+    assert req.day_number is None
+
+
+def test_role_sync_request_invalid_action_raises():
+    """RoleSyncRequest rejects action values outside assign/unassign."""
+    with pytest.raises((ValidationError, ValueError)):
+        RoleSyncRequest(
+            discord_id="111000111000111001",
+            siege_id=42,
+            action="delete",
+            assigned_at="2026-05-14T13:52:18.247Z",
+            correlation_id="a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        )
+
+
+def test_role_sync_request_missing_required_field_raises():
+    """RoleSyncRequest raises when discord_id is absent."""
+    with pytest.raises((ValidationError, TypeError)):
+        RoleSyncRequest(
+            siege_id=42,
+            action="assign",
+            assigned_at="2026-05-14T13:52:18.247Z",
+            correlation_id="a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        )
+
+
+# ---------------------------------------------------------------------------
+# POST /api/role-sync
+# ---------------------------------------------------------------------------
+
+_ROLE_SYNC_PAYLOAD = {
+    "discord_id": "111000111000111001",
+    "siege_id": 42,
+    "action": "assign",
+    "assigned_at": "2026-05-14T13:52:18.247Z",
+    "correlation_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "day_number": 1,
+    "discord_role_id": "888000888000888001",
+}
+
+
+@pytest.mark.asyncio
+async def test_role_sync_assign_with_role_id_returns_applied(client):
+    """AC-d1: assign with discord_role_id → 200 applied response."""
+    bot = _make_mock_bot()
+    bot.apply_day_role = AsyncMock(return_value=("applied", "Day 1"))
+    http_api_module._bot = bot
+    async with client as c:
+        response = await c.post(
+            "/api/role-sync",
+            json=_ROLE_SYNC_PAYLOAD,
+            headers=AUTH_HEADER,
+        )
+    http_api_module._bot = None
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "applied"
+    assert data["added"] == ["Day 1"]
+    assert data["removed"] == []
+    bot.apply_day_role.assert_awaited_once_with(
+        discord_id="111000111000111001",
+        role_id="888000888000888001",
+        action="assign",
+    )
+
+
+@pytest.mark.asyncio
+async def test_role_sync_assign_without_role_id_returns_skipped(client, caplog):
+    """AC-d2: assign with discord_role_id absent → 200 skipped + WARNING log."""
+    bot = _make_mock_bot()
+    http_api_module._bot = bot
+    payload = {k: v for k, v in _ROLE_SYNC_PAYLOAD.items() if k != "discord_role_id"}
+
+    caplog.set_level(logging.WARNING, logger="app.http_api")
+    async with client as c:
+        response = await c.post(
+            "/api/role-sync",
+            json=payload,
+            headers=AUTH_HEADER,
+        )
+    http_api_module._bot = None
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "skipped"
+    assert "discord_role_id" in data.get("reason", "")
+    bot.apply_day_role.assert_not_awaited()
+    assert any("discord_role_id" in r.message.lower() for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_role_sync_unassign_with_role_id_returns_applied(client):
+    """AC-d3: unassign with discord_role_id → 200 applied, removed populated."""
+    bot = _make_mock_bot()
+    bot.apply_day_role = AsyncMock(return_value=("applied", "Day 1"))
+    http_api_module._bot = bot
+    payload = {**_ROLE_SYNC_PAYLOAD, "action": "unassign"}
+    async with client as c:
+        response = await c.post(
+            "/api/role-sync",
+            json=payload,
+            headers=AUTH_HEADER,
+        )
+    http_api_module._bot = None
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "applied"
+    assert data["added"] == []
+    assert data["removed"] == ["Day 1"]
+
+
+@pytest.mark.asyncio
+async def test_role_sync_missing_auth_returns_401(client):
+    """AC-d4: missing/wrong Bearer token → 401."""
+    async with client as c:
+        response = await c.post(
+            "/api/role-sync",
+            json=_ROLE_SYNC_PAYLOAD,
+            headers={"Authorization": "Bearer wrong-key"},
+        )
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_role_sync_member_not_found_returns_404(client):
+    """AC-d5: member not in guild → 404."""
+    bot = _make_mock_bot()
+    response = MagicMock()
+    response.status = 404
+    response.reason = "Not Found"
+    bot.apply_day_role = AsyncMock(side_effect=discord.NotFound(response, "Unknown Member"))
+    http_api_module._bot = bot
+    async with client as c:
+        response_http = await c.post(
+            "/api/role-sync",
+            json=_ROLE_SYNC_PAYLOAD,
+            headers=AUTH_HEADER,
+        )
+    http_api_module._bot = None
+    assert response_http.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_role_sync_role_not_found_returns_404(client):
+    """AC-d6: role_id not in guild → 404."""
+    bot = _make_mock_bot()
+    bot.apply_day_role = AsyncMock(
+        side_effect=ValueError("Role '888000888000888001' not found in guild")
+    )
+    http_api_module._bot = bot
+    async with client as c:
+        response = await c.post(
+            "/api/role-sync",
+            json=_ROLE_SYNC_PAYLOAD,
+            headers=AUTH_HEADER,
+        )
+    http_api_module._bot = None
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_role_sync_malformed_payload_returns_422(client):
+    """AC-d7: missing required field discord_id → 422 (FastAPI validation)."""
+    bot = _make_mock_bot()
+    http_api_module._bot = bot
+    payload = {k: v for k, v in _ROLE_SYNC_PAYLOAD.items() if k != "discord_id"}
+    async with client as c:
+        response = await c.post(
+            "/api/role-sync",
+            json=payload,
+            headers=AUTH_HEADER,
+        )
+    http_api_module._bot = None
+    assert response.status_code == 422

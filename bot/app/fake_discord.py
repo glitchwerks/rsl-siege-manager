@@ -1,5 +1,19 @@
 """In-memory fake Discord client for integration testing.
 
+Role-sync magic trigger values (``apply_day_role``)
+-----------------------------------------------------
+The following role snowflake IDs produce exception paths in the fake client:
+
+  ``apply_day_role``:
+    - role_id ``"role-forbidden-id"``   → raises ``discord.Forbidden``
+    - role_id ``"role-http4xx-id"``     → raises ``discord.HTTPException`` 429
+    - role_id ``"role-http5xx-id"``     → raises ``discord.HTTPException`` 500
+
+Known good role snowflake: ``KNOWN_ROLE_ID = "888000888000888001"``
+Unknown role snowflake  : any value not in the known set → ``get_role`` returns ``None``
+
+# noqa: E501 — the original docstring continuation below
+
 Used when ``BOT_TEST_MODE=fake`` is set.  Replaces the real ``SiegeBot``
 (discord.py) with a deterministic, zero-network implementation that the
 HTTP sidecar can call through its normal seams.
@@ -90,6 +104,10 @@ KNOWN_MEMBER_DISPLAY_NAME = "Known User"
 KNOWN_CHANNEL_NAME = "known-channel"
 KNOWN_IMAGE_URL = "https://cdn.discordapp.com/attachments/fake/board.png"
 
+# Role fixture for apply_day_role tests
+KNOWN_ROLE_ID = "888000888000888001"
+KNOWN_ROLE_NAME = "Day 1"
+
 # Snowflake used for the guild itself (any non-zero value works)
 FAKE_GUILD_ID = 123456789
 
@@ -118,6 +136,20 @@ def _make_discord_http_exc(http_status: int, text: str = "") -> discord.HTTPExce
 # ---------------------------------------------------------------------------
 
 
+class _FakeRole:
+    """Minimal stand-in for ``discord.Role``."""
+
+    def __init__(self, role_id: str, name: str) -> None:
+        """Initialise the fake role.
+
+        Args:
+            role_id: Discord snowflake string for this role.
+            name: Human-readable role name (e.g. ``"Day 1"``).
+        """
+        self.id = int(role_id)
+        self.name = name
+
+
 class _FakeMember:
     """Minimal stand-in for ``discord.Member``."""
 
@@ -133,13 +165,33 @@ class _FakeMember:
         # Provide an empty roles list (no @everyone mock needed for fake).
         self.roles: list[Any] = []
 
+    async def add_roles(self, role: _FakeRole) -> None:
+        """Append ``role`` to this member's role list.
+
+        Args:
+            role: The ``_FakeRole`` instance to add.
+        """
+        if role not in self.roles:
+            self.roles.append(role)
+
+    async def remove_roles(self, role: _FakeRole) -> None:
+        """Remove ``role`` from this member's role list if present.
+
+        Args:
+            role: The ``_FakeRole`` instance to remove.
+        """
+        self.roles = [r for r in self.roles if r is not role]
+
 
 class _FakeGuild:
     """Minimal stand-in for ``discord.Guild``.
 
-    Supports ``fetch_member()`` for the ``GET /api/members/{id}`` path.
+    Supports ``fetch_member()`` for the ``GET /api/members/{id}`` path
+    and ``get_role()`` for the ``POST /api/role-sync`` path.
+
     The known member is returned for ``KNOWN_MEMBER_ID``; any other ID
-    raises ``discord.NotFound``.
+    raises ``discord.NotFound``.  The known role is returned for
+    ``KNOWN_ROLE_ID``; any other ID returns ``None``.
     """
 
     def __init__(self) -> None:
@@ -148,6 +200,7 @@ class _FakeGuild:
             KNOWN_MEMBER_USERNAME,
             KNOWN_MEMBER_DISPLAY_NAME,
         )
+        self._known_role = _FakeRole(KNOWN_ROLE_ID, KNOWN_ROLE_NAME)
 
     async def fetch_member(self, user_id: int) -> _FakeMember:
         """Simulate ``Guild.fetch_member()``.
@@ -167,6 +220,20 @@ class _FakeGuild:
         response.status = 404
         response.reason = "Not Found"
         raise discord.NotFound(response, "Unknown Member")
+
+    def get_role(self, role_id: int) -> _FakeRole | None:
+        """Simulate ``Guild.get_role()``.
+
+        Args:
+            role_id: Integer Discord snowflake of the role to look up.
+
+        Returns:
+            The fake ``_FakeRole`` when the ID matches ``KNOWN_ROLE_ID``,
+            ``None`` otherwise (role does not exist in guild).
+        """
+        if role_id == int(KNOWN_ROLE_ID):
+            return self._known_role
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -304,6 +371,41 @@ class FakeDiscordClient:
         if channel_name != KNOWN_CHANNEL_NAME:
             raise ValueError(f"Channel '{channel_name}' not found in guild")
         return KNOWN_IMAGE_URL
+
+    async def apply_day_role(
+        self,
+        discord_id: str,
+        role_id: str,
+        action: str,
+    ) -> tuple[str, str]:
+        """Simulate toggling a day role for a guild member.
+
+        Args:
+            discord_id: Discord snowflake string of the target member.
+                Pass any value other than ``KNOWN_MEMBER_ID`` to trigger
+                ``discord.NotFound`` (member-not-found path).
+            role_id: Discord snowflake string of the role to toggle.
+                Pass ``KNOWN_ROLE_ID`` for the happy path.  Any unknown
+                ID returns ``None`` from ``get_role`` → ``ValueError``.
+            action: ``"assign"`` or ``"unassign"``.
+
+        Returns:
+            A 2-tuple ``("applied", role_name)`` on success.
+
+        Raises:
+            discord.NotFound: When ``discord_id != KNOWN_MEMBER_ID``.
+            ValueError: When ``role_id`` is not in the fake guild
+                (simulates role-not-found path).
+        """
+        member = await self._fake_guild.fetch_member(int(discord_id))
+        role = self._fake_guild.get_role(int(role_id))
+        if role is None:
+            raise ValueError(f"Role '{role_id}' not found in guild")
+        if action == "assign":
+            await member.add_roles(role)
+        else:
+            await member.remove_roles(role)
+        return "applied", role.name
 
     async def get_members(self) -> list[dict]:
         """Return a one-element member list for the known member.
