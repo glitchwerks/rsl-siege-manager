@@ -276,6 +276,6 @@ Receivers SHOULD persist idempotency state (the last processed `(discord_id, ass
 
 **Canonical producer:** `glitchwerks/rsl-siege-manager` (this repo) — `backend/app/services/bot_client.py` implements the producer side and is the authoritative reference for how to build a contract-conforming sender.
 
-**Second conforming producer:** `glitchwerks/mom-bot` — implements the same contract as a bundled sidecar. Its implementation is a second conforming producer, not the canonical reference.
+**Canonical bundled-bot receiver:** `glitchwerks/rsl-siege-manager` (this repo) — `bot/app/http_api.py` (`POST /api/role-sync`) and `bot/app/discord_client.py` (`apply_day_role`) implement the receiver side as a bundled sidecar, now the canonical reference for contract-conforming receivers. Implemented in #458 item D.
 
 See coord issue `glitchwerks/rsl-mom-apps#9` for the v1.1 contract change that introduced `discord_role_id`.
