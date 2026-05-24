@@ -24,6 +24,26 @@ See `docs/superpowers/plans/discord-auth-plan.md` for the canonical auth spec.
 
 Project state lives on GitHub — current release in [Releases](https://github.com/glitchwerks/rsl-siege-manager/releases), active workstreams in [Milestones](https://github.com/glitchwerks/rsl-siege-manager/milestones), open work in [Issues](https://github.com/glitchwerks/rsl-siege-manager/issues), recent changes in `CHANGELOG.md`. Do not maintain a local status doc.
 
+## Producer/Receiver Symmetry
+
+Every outbound webhook or RPC the siege-web `backend/` emits **must** have a conforming receiver implementation in the bundled bot at `bot/`. The bundled bot is the **reference sidecar** — a public consumer should be able to stand up siege-web plus the bundled bot and have a fully working pair with no third-party code.
+
+Scope:
+
+- **In scope (the rule applies):** southbound producer surfaces — anything `backend/` calls outward where a third-party service could be the receiver (e.g. `BotClient.sync_day_role`, future webhooks/RPCs of the same shape).
+- **Out of scope:** northbound calls from `backend/` into the bundled-bot sidecar's existing HTTP API (`/api/*` on port 8001) — that surface is the sidecar's own contract, not a southbound producer wire. Inbound webhooks _from_ the sidecar are also out of scope.
+
+**Corollary — contract ownership.** Whichever side emits the wire owns the canonical spec. For southbound producer wires that means siege-web owns the spec, and the spec lives under `docs/webhooks/` in this repo (e.g. `docs/webhooks/day-role-sync.md`). Third-party receiver authors consume the spec directly from this public repo; the private coord repo `glitchwerks/rsl-mom-apps` is not in their read path and must not be referenced as the canonical home.
+
+When adding a new southbound producer surface:
+
+1. Add or update the canonical spec under `docs/webhooks/<name>.md` with a semver header.
+2. Implement the producer in `backend/` behind a kill-switch env var defaulting to `false`.
+3. Implement the conforming receiver in `bot/` before flipping the kill switch.
+4. Bump the spec's minor version for additive changes, major for breaking; coordinate cross-repo rollouts via `glitchwerks/rsl-mom-apps`.
+
+See umbrella issue [#458](https://github.com/glitchwerks/rsl-siege-manager/issues/458) for the day-role-sync rollout that established this rule.
+
 ## Common Commands
 
 ### Full stack (local)
