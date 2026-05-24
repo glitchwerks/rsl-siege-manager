@@ -538,7 +538,6 @@ _MS_PRECISION_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$")
 
 @pytest.mark.asyncio
 async def test_update_siege_member_assigned_at_millisecond_precision(monkeypatch, http_client):
-
     """AC8: assigned_at serialized as ISO-8601 UTC with exactly millisecond precision.
 
     The required form is ``YYYY-MM-DDTHH:MM:SS.sssZ`` (contract §2).

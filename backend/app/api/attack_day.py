@@ -103,9 +103,7 @@ async def apply_attack_day(
         # (plan §1 D2, inquisitor CHARGE 4).  For unassign actions the
         # role ID is not needed; pass None so the bot retains existing
         # removal logic.
-        discord_role_id = (
-            _role_id_for_day(entry.attack_day) if action == "assign" else None
-        )
+        discord_role_id = _role_id_for_day(entry.attack_day) if action == "assign" else None
 
         schedule_role_sync(
             background_tasks,

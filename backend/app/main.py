@@ -73,9 +73,7 @@ async def lifespan(app: FastAPI):
                 "discord_role_id (v1.0-shape). Set both vars to enable v1.1 payloads."
             )
         elif day1 is None or day2 is None:
-            missing = (
-                "DISCORD_DAY_1_ROLE_ID" if day1 is None else "DISCORD_DAY_2_ROLE_ID"
-            )
+            missing = "DISCORD_DAY_1_ROLE_ID" if day1 is None else "DISCORD_DAY_2_ROLE_ID"
             logger.warning(
                 "DAY_ROLE_SYNC_ENABLED=true but %s is unset — partial role ID "
                 "config is likely a misconfiguration. Assign payloads for the "

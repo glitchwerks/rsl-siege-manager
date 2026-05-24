@@ -113,9 +113,7 @@ async def update_siege_member(
         discord_role_id = (
             settings.discord_day_1_role_id
             if new_day == 1
-            else settings.discord_day_2_role_id
-            if new_day == 2
-            else None
+            else settings.discord_day_2_role_id if new_day == 2 else None
         )
 
         schedule_role_sync(
