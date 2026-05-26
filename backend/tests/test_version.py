@@ -57,13 +57,16 @@ def test_read_backend_version_with_build_info(monkeypatch):
 
     import app.api.version as mod
 
+    # Read the canonical VERSION file dynamically so this test doesn't break on every release bump.
+    expected_semver = mod._VERSION_FILE.read_text().strip()
+
     result = mod._read_backend_version()
-    # e.g. "1.0.1+42.abc1234"
+    # e.g. "<semver>+42.abc1234"
     assert "+" in result
     parts = result.split("+")
     assert len(parts) == 2
     semver_part, build_part = parts
-    assert semver_part == "1.0.1"
+    assert semver_part == expected_semver
     assert build_part == "42.abc1234"  # GIT_SHA truncated to 7 chars
 
 
