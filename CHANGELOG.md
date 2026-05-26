@@ -7,10 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-05-26
+
+Day-role-sync producer (mom-bot integration) + sidecar bot support + member preferences API. See `RELEASING.md` for the release process this entry follows.
+
 ### Added
 
+- **Day-role-sync producer** — siege-web now POSTs a `role_sync` webhook to a configured receiver (e.g. `mom-bot`) whenever a member's day-role assignment changes. Producer ships dark behind `DAY_ROLE_SYNC_ENABLED` (default `false`); enable by setting both `DAY_ROLE_SYNC_ENABLED=true` and `DAY_ROLE_SYNC_URL=<receiver-endpoint>`. Implemented via `BotClient.sync_day_role()` invoked from mutation seams through FastAPI `BackgroundTasks`. Contract bumped `v1.0 → v1.1` adding optional `discord_role_id`. Canonical contract lives in `glitchwerks/rsl-mom-apps`. (#401, #409, #410, #411, #459, #460, #461, #462)
+- **Member preferences API** — `GET` / `PUT` `/me/preferences` with an `X-Acting-Discord-Id` header for actor identification on proxied calls. Closes #322. (#438)
+- **Post-condition category taxonomy API** — Role / Affinity / Faction / League / Rarity / Effect / Other taxonomy is now first-class on the API. Closes #442. (#446)
+- **Auto-consult telemetry** — auto-consult flow now emits structured graph + telemetry events. (#441)
 - **External sidecar support** — operators running an alternate Discord bot (e.g. `mom-bot`) can now exclude the bundled bot at the infrastructure layer. Bicep: `useExternalSidecar bool = false` param in `infra/modules/container-apps.bicep`; when `true`, the bundled bot Container App is not provisioned and `DISCORD_BOT_API_URL` is sourced from the new `externalBotApiUrl` param instead. The `infra-deploy.yml` workflow accepts `useExternalSidecar` as a `workflow_dispatch` boolean input. Local dev: use `docker-compose -f docker-compose.yml -f docker-compose.sidecar-external.yml up` to start postgres + backend + frontend without the bot; the default `docker-compose up` continues to bring up the full stack including the bundled bot. The Discord singleton-token constraint (only one bot process per token) is enforced at the infrastructure layer, not just documentation. See `bot/INTERFACE.md` for the sidecar HTTP contract. (#426, closes #347)
-
 - **Sidecar integration test suite** (`backend/tests/integration/sidecar/`) — 45
   tests covering all seven bot HTTP endpoints over a live TCP socket. The bot runs
   in a new fake mode (`BOT_TEST_MODE=fake`) via an in-memory `FakeDiscordClient`
@@ -21,6 +28,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   modes across three distinct endpoints. A dedicated `Sidecar Integration Tests` CI
   job surfaces as an independent status check on every PR. This suite is the
   normative source of truth for `bot/INTERFACE.md` (Step 3 of #347). (#424)
+- **`bot/INTERFACE.md`** — full HTTP contract spec for the bot service with a quick-start checklist. (#420, #433, #445)
+
+### Changed
+
+- **`_serialize_post.active_conditions`** now includes `condition_type` on every active condition. Downstream consumers of the posts API will see the additional key. Bundled with the post-condition taxonomy work. (#451)
+- **Acting-member auth match** now uses `discord_username` with opportunistic snowflake backfill — corrects the auth match path when only the username is available; backfills the snowflake to short-circuit subsequent matches. (#453)
 
 ### Fixed
 
@@ -30,6 +43,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `discord.HTTPException` (4xx) → 502, `discord.HTTPException` (5xx) /
   `asyncio.TimeoutError` → 503.  Previously these surfaced as unhandled 500s.
   (#419)
+- **Bot HTTP exception-handler payloads tightened** — error response shapes are now compact and consistent. (#431)
+- **Flaky XFF production-warning tests removed** in favor of throttle-state assertions. Closes #387. (#389, #414)
+
+### Infrastructure
+
+- **`useExternalSidecar` Bicep param + compose override** — opt-in path for deployments where the bot sidecar runs as a separate container, behind a Bicep flag with a composite-action validator. Closes #426, #434, #435 (Step 4 of #347). (#427, #436, #437)
+- **`BOT_SERVICE_TOKEN` split onto its own KV secret** (`bot-service-token`) — separation from other shared secrets for tighter rotation. (#447)
+- **Bot HTTP seam cleanup** — Step 1 of the sidecar-bot-support plan (#347), normalizing the bot's HTTP seam inconsistencies. (#415)
+- **`bootstrap-reimport.ps1` moved into `scripts/`** — repo-hygiene move. (#391)
+
+### Documentation
+
+- **Day-role-sync spec** canonical home moved to `glitchwerks/rsl-mom-apps` (`contracts/sidecar-api.yaml` + `docs/`); the in-repo copy was first redirected (#457) then restored as a symmetric producer/receiver reference (#459). Producer-side env-var documentation (`DAY_ROLE_SYNC_ENABLED`, `DAY_ROLE_SYNC_URL`) landed in #410.
+- **Stale `siege-rg-{env}` references** purged in favor of the current `siege-web-{env}` resource-group naming. Closes #448. (#449)
+- **Sidecar-bot-support plan** ported into the repo (refs #347). (#412)
+- **Demo-mode plan** added after a 3-pass inquisitor sweep. (#392)
+- **`useExternalSidecar` README + bicepparam example**, plus a safe-nav inline comment in the affected template. Closes #434. (#436)
+
+### Release-metadata note
+
+This entry was added in a follow-up PR after the `v1.3.0` tag and GitHub Release were initially cut — the tagging step preceded the CHANGELOG/VERSION updates, which violates the discipline now codified in `RELEASING.md`. The tag was re-cut at the metadata-fix HEAD; the original tag pointed at the same code less the changelog/version surfaces. Future releases follow the `RELEASING.md` pre-tag checklist.
 
 ## [1.2.0] - 2026-05-11
 
