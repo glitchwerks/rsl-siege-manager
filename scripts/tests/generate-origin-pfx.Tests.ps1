@@ -64,59 +64,52 @@ BeforeAll {
     }
 
     $script:TestPassword = New-TestSecureString -PlainText 'TestP@ssw0rd!'
-}
 
-AfterAll {
-    if (Test-Path -LiteralPath $script:TmpDir) {
-        Remove-Item -LiteralPath $script:TmpDir -Recurse -Force
-    }
-}
+    # ── Helper: create a fake openssl.cmd in a temp bin directory ─────────────
+    # Defined inside BeforeAll so that the function is available in the Pester
+    # run-phase scope. File-level function definitions execute during the
+    # discovery phase and are not visible inside BeforeAll/AfterAll/It blocks
+    # in Pester v5.
 
-# ── Helper: create a fake openssl.cmd in a temp bin directory ─────────────────
+    function New-FakeOpensslDir {
+        <#
+        .SYNOPSIS
+            Creates a temporary bin directory containing a fake openssl.cmd and
+            returns the directory path.
 
-function New-FakeOpensslDir {
-    <#
-    .SYNOPSIS
-        Creates a temporary bin directory containing a fake openssl.cmd and
-        returns the directory path.
+        .PARAMETER ExitCode
+            Exit code the stub should emit. Default 0 (success).
 
-    .PARAMETER ExitCode
-        Exit code the stub should emit. Default 0 (success).
+        .PARAMETER WriteOutputFile
+            When set, the stub parses the -out argument and writes a minimal
+            binary blob to that path, simulating a real PFX output file.
 
-    .PARAMETER WriteOutput
-        Literal path to write as the -out argument value. When non-empty the
-        stub inspects its argument list for "-out <path>" and writes a minimal
-        binary blob to that path, simulating a real PFX output file.
+        .PARAMETER IncludeLegacyProvider
+            When set, the stub includes "legacy" in the `list -providers` output
+            so the script detects legacy provider availability.
+        #>
+        [CmdletBinding()]
+        [OutputType([string])]
+        param(
+            [int]$ExitCode = 0,
+            [switch]$WriteOutputFile,
+            [switch]$IncludeLegacyProvider
+        )
 
-    .PARAMETER ProviderLine
-        Optional extra line to include in the `list -providers` output so the
-        script can detect legacy provider availability.
-    #>
-    [CmdletBinding()]
-    [OutputType([string])]
-    param(
-        [int]$ExitCode = 0,
-        [switch]$WriteOutputFile,
-        [switch]$IncludeLegacyProvider
-    )
+        $binDir = Join-Path -Path $script:TmpDir -ChildPath "bin-$([System.Guid]::NewGuid().ToString('N').Substring(0,8))"
+        $null = New-Item -Path $binDir -ItemType Directory -Force
 
-    $binDir = Join-Path -Path $script:TmpDir -ChildPath "bin-$([System.Guid]::NewGuid().ToString('N').Substring(0,8))"
-    $null = New-Item -Path $binDir -ItemType Directory -Force
+        # Use double-quoted strings so `n is interpreted as a newline character.
+        $providerOutput = if ($IncludeLegacyProvider) {
+            "Providers loaded by the default configuration:`n  legacy"
+        } else {
+            "Providers loaded by the default configuration:`n  default"
+        }
 
-    # Compose the stub body.
-    # Use double-quoted strings so `n is interpreted as a newline character.
-    # Single-quoted strings in PowerShell are literal -- backtick escapes are
-    # not processed, so 'foo`nbar' outputs the literal characters "foo`nbar".
-    $providerOutput = if ($IncludeLegacyProvider) {
-        "Providers loaded by the default configuration:`n  legacy"
-    } else {
-        "Providers loaded by the default configuration:`n  default"
-    }
-
-    # The stub handles two modes:
-    #   list -providers  -> emit provider info, exit 0
-    #   pkcs12 ...       -> optionally create -out file, then exit $ExitCode
-    $stubContent = @"
+        # The stub handles two modes:
+        #   list -providers  -> emit provider info, exit 0
+        #   pkcs12 ...       -> optionally create -out file, then exit $ExitCode
+        $stubContent = @"
 @echo off
 if "%1"=="list" (
     echo $providerOutput
@@ -124,9 +117,9 @@ if "%1"=="list" (
 )
 "@
 
-    if ($WriteOutputFile) {
-        # Parse the -out argument from the command line and write a tiny blob.
-        $stubContent += @'
+        if ($WriteOutputFile) {
+            # Parse the -out argument from the command line and write a tiny blob.
+            $stubContent += @'
 
 for %%A in (%*) do (
     if defined _next_is_out (
@@ -136,26 +129,33 @@ for %%A in (%*) do (
     if "%%A"=="-out" set _next_is_out=1
 )
 '@
+        }
+
+        $stubContent += "`nexit /b $ExitCode`n"
+
+        $cmdPath = Join-Path -Path $binDir -ChildPath 'openssl.cmd'
+        Set-Content -LiteralPath $cmdPath -Value $stubContent -Encoding ASCII
+
+        return $binDir
     }
 
-    $stubContent += "`nexit /b $ExitCode`n"
+    function Add-DirToPathFront {
+        [CmdletBinding()]
+        param([string]$Dir)
+        $env:PATH = "$Dir;$env:PATH"
+    }
 
-    $cmdPath = Join-Path -Path $binDir -ChildPath 'openssl.cmd'
-    Set-Content -LiteralPath $cmdPath -Value $stubContent -Encoding ASCII
-
-    return $binDir
+    function Remove-DirFromPathFront {
+        [CmdletBinding()]
+        param([string]$Dir)
+        $env:PATH = ($env:PATH -replace [regex]::Escape("$Dir;"), '')
+    }
 }
 
-function Add-DirToPathFront {
-    [CmdletBinding()]
-    param([string]$Dir)
-    $env:PATH = "$Dir;$env:PATH"
-}
-
-function Remove-DirFromPathFront {
-    [CmdletBinding()]
-    param([string]$Dir)
-    $env:PATH = ($env:PATH -replace [regex]::Escape("$Dir;"), '')
+AfterAll {
+    if (Test-Path -LiteralPath $script:TmpDir) {
+        Remove-Item -LiteralPath $script:TmpDir -Recurse -Force
+    }
 }
 
 # ── 1. Parameter Validation ───────────────────────────────────────────────────
@@ -266,6 +266,17 @@ Describe 'openssl Discovery' {
 
     Context 'openssl absent from PATH and not at Git-for-Windows fallback locations' {
 
+        # -Skip: is evaluated during Pester's discovery phase, so the condition
+        # must also be evaluated at discovery time via BeforeDiscovery. The
+        # windows-latest GHA runner ships Git for Windows at the first path, so
+        # this test is skipped on CI where the fallback openssl is present.
+        BeforeDiscovery {
+            $gitOpensslExists = (
+                (Test-Path -LiteralPath 'C:\Program Files\Git\usr\bin\openssl.exe' -PathType Leaf) -or
+                (Test-Path -LiteralPath 'C:\Program Files (x86)\Git\usr\bin\openssl.exe' -PathType Leaf)
+            )
+        }
+
         BeforeAll {
             # Save PATH and remove any real openssl so Get-Command returns nothing.
             $script:OriginalPath = $env:PATH
@@ -274,23 +285,13 @@ Describe 'openssl Discovery' {
             $emptyBinDir = Join-Path -Path $script:TmpDir -ChildPath 'empty-bin'
             $null = New-Item -Path $emptyBinDir -ItemType Directory -Force
             $env:PATH = $emptyBinDir
-
-            # Determine whether the script's hardcoded Git-for-Windows fallback
-            # paths exist on this machine. If either exists, the test cannot run
-            # because the script will find openssl via the fallback even with PATH
-            # zeroed out. The windows-latest GHA runner ships Git for Windows at
-            # the first path, so this flag will be true on CI.
-            $script:GitOpensslExists = (
-                (Test-Path -LiteralPath 'C:\Program Files\Git\usr\bin\openssl.exe' -PathType Leaf) -or
-                (Test-Path -LiteralPath 'C:\Program Files (x86)\Git\usr\bin\openssl.exe' -PathType Leaf)
-            )
         }
 
         AfterAll {
             $env:PATH = $script:OriginalPath
         }
 
-        It 'throws with openssl install instructions when openssl is not found' -Skip:$script:GitOpensslExists {
+        It 'throws with openssl install instructions when openssl is not found' -Skip:$gitOpensslExists {
             $params = @{
                 CertPath = $script:CertFile
                 KeyPath  = $script:KeyFile
