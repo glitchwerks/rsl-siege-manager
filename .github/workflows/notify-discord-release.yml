@@ -1,0 +1,158 @@
+# notify-discord-release.yml
+#
+# Posts a Discord embed to the release-announcement channel whenever a GitHub
+# Release is published on this repo.
+#
+# ── Required secret ──────────────────────────────────────────────────────────
+#
+#   DISCORD_RELEASE_WEBHOOK_URL
+#     The full Discord webhook URL for the target channel.
+#     Add it under: GitHub → Settings → Secrets and variables → Actions →
+#     Repository secrets.
+#     To create a webhook: Discord server → Channel settings →
+#     Integrations → Webhooks → New Webhook → Copy Webhook URL.
+#
+# ── What triggers a post ─────────────────────────────────────────────────────
+#
+#   Only fires on the initial publication of a release (created_at ==
+#   published_at per coord §R7).  Body-edit re-publications are skipped with
+#   an annotation so the log is clear but no false post is sent.
+#
+# ── Embed colour ─────────────────────────────────────────────────────────────
+#
+#   0xC0392B — a muted crimson/siege-red, distinct from Discord blurple
+#   (0x5865F2) used by mom-bot.  Users scrolling the Discord channel can
+#   immediately identify siege-web announcements vs mom-bot announcements at
+#   a glance by the colour stripe on the left of the embed.
+#
+# ── No third-party Actions ───────────────────────────────────────────────────
+#
+#   The POST is made with plain curl + jq.  Both are pre-installed on
+#   ubuntu-latest.  No action pinning needed for runner built-ins.
+#
+# ── Highlights extraction ────────────────────────────────────────────────────
+#
+#   scripts/extract_highlights.py reads the release body from stdin and prints
+#   the Highlights section (or a fallback) to stdout.  Unit tests live at
+#   scripts/tests/test_extract_highlights.py and run in the CI
+#   `validation-script-tests` job on every PR.
+
+name: Notify Discord — Release Published
+
+on:
+  release:
+    types: [published]
+
+# No GitHub API writes — read-only is sufficient.
+permissions:
+  contents: read
+
+jobs:
+  notify:
+    name: Post Discord Release Embed
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── Idempotency guard (coord §R7) ─────────────────────────────────────
+      # A re-publication (body edit) sets published_at > created_at.
+      # Skip those runs so we never double-post.
+      - name: Skip re-publications
+        if: github.event.release.created_at != github.event.release.published_at
+        run: |
+          echo "::notice::Skipping Discord notification — this is a re-publication (body edit), not the initial publish. created_at=${{ github.event.release.created_at }} published_at=${{ github.event.release.published_at }}"
+          exit 0
+
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      # ── Build the embed description ───────────────────────────────────────
+      # extract_highlights.py reads the release body from stdin, returns the
+      # ## Highlights section (emoji optional), applies the 1500-char soft cap,
+      # and falls back to "<name> published. View notes: <url>" if missing.
+      - name: Extract Highlights description
+        id: highlights
+        env:
+          RELEASE_BODY: ${{ github.event.release.body }}
+          RELEASE_TAG:  ${{ github.event.release.tag_name }}
+          RELEASE_NAME: ${{ github.event.release.name }}
+          RELEASE_URL:  ${{ github.event.release.html_url }}
+        run: |
+          description=$(printf '%s' "$RELEASE_BODY" | python3 scripts/extract_highlights.py \
+            --tag  "$RELEASE_TAG" \
+            --name "$RELEASE_NAME" \
+            --url  "$RELEASE_URL")
+
+          # Write to GITHUB_OUTPUT using a heredoc so multi-line values are
+          # handled safely by the Actions runner (EOF delimiter is unique).
+          {
+            echo "description<<__HIGHLIGHTS_EOF__"
+            printf '%s' "$description"
+            echo ""
+            echo "__HIGHLIGHTS_EOF__"
+          } >> "$GITHUB_OUTPUT"
+
+      # ── POST to Discord ───────────────────────────────────────────────────
+      - name: Post embed to Discord
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_RELEASE_WEBHOOK_URL }}
+          RELEASE_TAG:         ${{ github.event.release.tag_name }}
+          RELEASE_URL:         ${{ github.event.release.html_url }}
+          RELEASE_PRERELEASE:  ${{ github.event.release.prerelease }}
+          RELEASE_AUTHOR:      ${{ github.event.release.author.login }}
+          RELEASE_PUBLISHED:   ${{ github.event.release.published_at }}
+          DESCRIPTION:         ${{ steps.highlights.outputs.description }}
+        run: |
+          # ── Title (coord §R3, §R8) ──────────────────────────────────────
+          # Prefix [pre-release] when prerelease == true.
+          if [ "$RELEASE_PRERELEASE" = "true" ]; then
+            title="[pre-release] siege-web ${RELEASE_TAG}"
+          else
+            title="siege-web ${RELEASE_TAG}"
+          fi
+
+          # ── Footer (coord §R3) ──────────────────────────────────────────
+          # Omit footer entirely if author is absent (defensive).
+          if [ -n "$RELEASE_AUTHOR" ]; then
+            footer_json=$(jq -n --arg text "Published by ${RELEASE_AUTHOR}" \
+              '{"text": $text}')
+          else
+            footer_json="null"
+          fi
+
+          # ── Embed colour ────────────────────────────────────────────────
+          # 0xC0392B = 12597547 decimal — siege/crimson red, distinct from
+          # mom-bot's Discord blurple (0x5865F2 = 5793522).
+          COLOR=12597547
+
+          # ── Build payload ───────────────────────────────────────────────
+          payload=$(jq -n \
+            --arg title       "$title" \
+            --arg url         "$RELEASE_URL" \
+            --arg description "$DESCRIPTION" \
+            --argjson color   "$COLOR" \
+            --argjson footer  "$footer_json" \
+            --arg timestamp   "$RELEASE_PUBLISHED" \
+            '{
+              "embeds": [{
+                "title":       $title,
+                "url":         $url,
+                "description": $description,
+                "color":       $color,
+                "footer":      (if $footer == null then empty else $footer end),
+                "timestamp":   $timestamp
+              }]
+            }')
+
+          # ── Send ─────────────────────────────────────────────────────────
+          http_status=$(curl -s -o /tmp/discord_response.txt -w "%{http_code}" \
+            -X POST \
+            -H "Content-Type: application/json" \
+            -d "$payload" \
+            "$DISCORD_WEBHOOK_URL")
+
+          echo "Discord responded with HTTP ${http_status}"
+          if [ "$http_status" -lt 200 ] || [ "$http_status" -ge 300 ]; then
+            echo "Discord webhook error response:"
+            cat /tmp/discord_response.txt
+            exit 1
+          fi
