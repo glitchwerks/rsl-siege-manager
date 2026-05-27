@@ -126,6 +126,70 @@ After `deploy.yml` finishes (3 jobs: Deploy API / Deploy Bot / Deploy Frontend, 
 - The frontend changelog dropdown shows the new entry as latest (bell icon may need a hard refresh to invalidate the cached bundle)
 - The Container App revision UI for all three apps in `siege-web-prod` shows the new image SHA tag and `Healthy / Running / 100% traffic`
 
+### 8. Check Discord
+
+Publishing the GitHub Release (the `gh release create` command in step 6) fires
+the `notify-discord-release.yml` workflow automatically. Within a minute of
+publication a crimson-red embed should appear in the release-announcement channel.
+
+The embed title is `siege-web v<X.Y.Z>` (prefixed `[pre-release]` for
+pre-releases). Its description is pulled from the `## 📣 Highlights` section of
+the release notes (see [Discord embed content](#discord-embed-content) below).
+
+If the embed does not appear, check the Actions tab for the
+`Notify Discord — Release Published` workflow run.
+
+## Discord embed content
+
+### `## Highlights` convention
+
+The Discord notification pulls its description from a `## Highlights` section in
+the GitHub Release body. This section should contain 1–3 sentences or 3–5 bullets
+describing the **user-visible impact** of the release — what changed, what's new,
+what was fixed. Markdown bullet lists render in Discord.
+
+```markdown
+## 📣 Highlights   ← emoji is optional; plain ## Highlights also works
+
+- New siege-planner calendar view for officers
+- Auto-consult telemetry now captured for performance tuning
+- Login auth match corrected for username-only lookups
+```
+
+`v1.2.0` used `## Highlights` (no emoji); both forms are accepted.
+
+If no `## Highlights` section is present the workflow posts a minimal fallback
+(`v<X.Y.Z> published. View notes: <url>`) — **it never silently drops the post**,
+but the fallback is not very informative. Adding the section is strongly preferred.
+
+### Required repo secret
+
+The workflow reads `DISCORD_RELEASE_WEBHOOK_URL` from repository secrets.
+**Without this secret the workflow will fail** (no post is sent).
+
+To add the secret:
+
+1. In Discord: open the target server → channel settings → **Integrations** →
+   **Webhooks** → **New Webhook** → configure and copy the URL.
+2. In GitHub: **Settings** → **Secrets and variables** → **Actions** →
+   **Repository secrets** → **New repository secret** →
+   name `DISCORD_RELEASE_WEBHOOK_URL`, paste the URL.
+
+### GitHub Releases are still cut manually
+
+Auto-creation of GitHub Releases from tag pushes is **out of scope** for this
+workflow. The `notify-discord-release.yml` workflow reacts to a Release being
+published; it does not create one. Releases continue to be cut with:
+
+```powershell
+gh release create v<X.Y.Z> `
+  --title "v<X.Y.Z> - <headline>" `
+  --notes-file .tmp/release-notes-v<X.Y.Z>.md
+```
+
+A future automation for auto-creating Releases from tag pushes can be tracked
+as a separate issue.
+
 ## What auto-deploy does (and does not) do
 
 `deploy.yml` triggers on `push` to a tag matching `v*`. It:
