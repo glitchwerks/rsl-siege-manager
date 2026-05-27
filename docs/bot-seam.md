@@ -7,7 +7,7 @@ to a one-line link here; see each file's "See also" pointer for the change.
 Related docs:
 
 - **Endpoint contract (request/response shapes, conformance table):** [`bot/INTERFACE.md`](../bot/INTERFACE.md)
-- **Southbound webhook spec (day-role sync):** [`docs/webhooks/day-role-sync.md`](webhooks/day-role-sync.md)
+- **Southbound webhook spec (day-role sync):** [`docs/webhooks/day-role-sync.md`](./webhooks/day-role-sync.md)
 - **Producer/Receiver Symmetry rule:** `CLAUDE.md § Producer/Receiver Symmetry`
 - **Umbrella issue (seam hardening):** [#347](https://github.com/glitchwerks/rsl-siege-manager/issues/347)
 
@@ -36,8 +36,9 @@ browser / Discord
                                          Discord API
 ```
 
-The three deployment shapes differ only in where the bot sidecar process runs and how
-`DISCORD_BOT_API_URL` is set. The HTTP contract is identical in all three shapes.
+The two deployment topologies (bundled vs external sidecar) can be used in two
+environments (local Docker Compose vs Azure), yielding four configurations documented
+in Section 4 below. The HTTP contract is identical across all four configurations.
 
 ---
 
@@ -104,7 +105,7 @@ missing or empty — startup will fail with:
 RuntimeError: BOT_SERVICE_TOKEN must be set in non-development environments
 ```
 
-Source: `wiki/Self-Host-on-Any-VPS.md:154-170`.
+Source: `wiki/Self-Host-on-Any-VPS.md § Backend service token`.
 
 ### 3.3 Rotation rules
 
@@ -261,7 +262,7 @@ For the full rule, corollary, and procedure for adding new southbound surfaces, 
 
 ---
 
-## Design rationale (from plan `2026-05-10-bot-seam-hardening.md`)
+## Design rationale (extracted from #347 implementation plan)
 
 The following decisions were extracted from the now-deleted plan file before deletion.
 The plan was written to address seam-hardening work tracked in issue
