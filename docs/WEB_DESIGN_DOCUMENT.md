@@ -106,8 +106,8 @@ The Web API requires the following environment configuration:
 | Setting | Description |
 |---|---|
 | `DATABASE_URL` | Connection string for the SQL database |
-| `DISCORD_BOT_API_URL` | Base URL of the Discord Bot HTTP API |
-| `DISCORD_BOT_API_KEY` | Shared API key for authenticating with the Discord Bot |
+| `DISCORD_BOT_API_URL` | Base URL of the Discord Bot HTTP API — see [bot-seam.md § URL resolution](bot-seam.md#2-url-resolution) |
+| `DISCORD_BOT_API_KEY` | Shared API key for authenticating with the Discord Bot — see [bot-seam.md § Auth](bot-seam.md#3-auth) |
 | `DISCORD_GUILD_ID` | The Discord guild ID to use for all Discord operations |
 
 ### 2.3 Communication Patterns

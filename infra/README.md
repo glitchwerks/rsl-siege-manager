@@ -229,23 +229,12 @@ Secrets and their consumers:
 
 ## The bot API key pair
 
-`discord-bot-api-key` and `bot-api-key` are not issued by Discord or Azure —
-you generate them yourself. They are a shared secret that secures HTTP
-communication between the backend and the bot sidecar.
+`discord-bot-api-key` and `bot-api-key` secure HTTP communication between the backend
+and the bot sidecar. Both parameters must always carry the same value — if they diverge,
+backend requests to the bot are rejected with 401.
 
-**Why two parameter names for the same value?**
-
-- `discordBotApiKey` → stored as `discord-bot-api-key` in Key Vault → injected into the **backend** as `DISCORD_BOT_API_KEY`
-- `botApiKey` → stored as `bot-api-key` in Key Vault → injected into the **bot** as `BOT_API_KEY`
-
-Both parameters must always carry the same value. If they diverge, backend
-requests to the bot will be rejected with 401.
-
-**Generating a key (PowerShell):**
-
-```powershell
-[Convert]::ToBase64String((1..32 | ForEach-Object { Get-Random -Maximum 256 }))
-```
+For the full explanation (why two names, how to generate, rotation procedure), see
+[`docs/bot-seam.md § Auth`](../docs/bot-seam.md#3-auth).
 
 ## View container logs
 

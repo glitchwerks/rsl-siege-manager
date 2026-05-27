@@ -147,6 +147,7 @@ The in-app changelog dropdown reads from `CHANGELOG.md` at the repo root. Parsin
 ## Deployment Modes
 
 Siege Manager supports two deployment topologies: **bundled bot** (default) and **external sidecar**.
+For the full seam reference — URL resolution, auth key pair, Key Vault secrets, and ingress posture — see [`docs/bot-seam.md`](docs/bot-seam.md).
 
 ### Singleton-token constraint
 
