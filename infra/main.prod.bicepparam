@@ -155,6 +155,12 @@ param alertEmail = 'cmb_dev@outlook.com'
 param useExternalSidecar = false
 // param externalBotApiUrl = 'https://your-sidecar.example.com'  // uncomment + set when useExternalSidecar = true
 
+// ── Day-role sync ─────────────────────────────────────────────────────────────
+// Prod day-role IDs deferred until prod rollout of day-role-sync. See siege-web#463.
+// Set these to the production Discord role snowflake IDs and re-deploy infra when ready.
+param discordDay1RoleId = ''
+param discordDay2RoleId = ''
+
 // ── ACR image retention ───────────────────────────────────────────────────────
 // Prod currently has ~155 manifests (51/52/52 across api/bot/frontend).
 // Release tags (v*) are preserved forever. SHA/commit tags beyond the last 10

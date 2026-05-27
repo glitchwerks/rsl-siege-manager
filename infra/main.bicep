@@ -144,6 +144,12 @@ param externalBotApiUrl string = ''
 @description('Custom hostname to bind to the frontend (e.g. rslsiege.com). Leave empty to skip custom domain binding.')
 param customDomainHostname string = ''
 
+@description('Discord role snowflake ID for Day 1 attackers (used by day-role-sync contract v1.1). Leave empty to omit DISCORD_DAY_1_ROLE_ID env var.')
+param discordDay1RoleId string = ''
+
+@description('Discord role snowflake ID for Day 2 attackers (used by day-role-sync contract v1.1). Leave empty to omit DISCORD_DAY_2_ROLE_ID env var.')
+param discordDay2RoleId string = ''
+
 // ── Cloudflare Origin Certificate ────────────────────────────────────────────
 //
 // Two-phase deployment process:
@@ -348,6 +354,8 @@ module containerApps 'modules/container-apps.bicep' = {
     kvCertSecretUrl: kvCertSecretUrl
     useExternalSidecar: useExternalSidecar
     externalBotApiUrl: externalBotApiUrl
+    discordDay1RoleId: discordDay1RoleId
+    discordDay2RoleId: discordDay2RoleId
   }
 }
 
