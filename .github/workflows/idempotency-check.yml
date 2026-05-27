@@ -94,6 +94,7 @@ jobs:
             --parameters discordRedirectUri="https://placeholder.example.com/api/auth/callback" \
             --parameters imageTag="${{ env.IMAGE_TAG }}" \
             --result-format FullResourcePayloads \
+            --only-show-errors \
             --output json \
             > /tmp/what-if.json
 
