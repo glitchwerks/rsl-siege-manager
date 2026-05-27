@@ -55,21 +55,37 @@ jobs:
     steps:
       # ── Idempotency guard (coord §R7) ─────────────────────────────────────
       # A re-publication (body edit) sets published_at > created_at.
-      # Skip those runs so we never double-post.
+      # Log a notice and let the job succeed without posting.
+      # All downstream steps are gated on the inverse condition so they
+      # only execute on the initial publication.
       - name: Skip re-publications
         if: github.event.release.created_at != github.event.release.published_at
         run: |
           echo "::notice::Skipping Discord notification — this is a re-publication (body edit), not the initial publish. created_at=${{ github.event.release.created_at }} published_at=${{ github.event.release.published_at }}"
-          exit 0
 
       - name: Checkout code
-        uses: actions/checkout@v6
+        if: github.event.release.created_at == github.event.release.published_at
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+
+      # ── Validate secrets ──────────────────────────────────────────────────
+      # Fail fast if the webhook URL is not configured, rather than
+      # reaching the POST step and getting an empty-URL curl error.
+      - name: Validate webhook secret
+        if: github.event.release.created_at == github.event.release.published_at
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_RELEASE_WEBHOOK_URL }}
+        run: |
+          if [ -z "$DISCORD_WEBHOOK_URL" ]; then
+            echo "::error::DISCORD_RELEASE_WEBHOOK_URL secret is not configured"
+            exit 1
+          fi
 
       # ── Build the embed description ───────────────────────────────────────
       # extract_highlights.py reads the release body from stdin, returns the
       # ## Highlights section (emoji optional), applies the 1500-char soft cap,
       # and falls back to "<name> published. View notes: <url>" if missing.
       - name: Extract Highlights description
+        if: github.event.release.created_at == github.event.release.published_at
         id: highlights
         env:
           RELEASE_BODY: ${{ github.event.release.body }}
@@ -93,6 +109,7 @@ jobs:
 
       # ── POST to Discord ───────────────────────────────────────────────────
       - name: Post embed to Discord
+        if: github.event.release.created_at == github.event.release.published_at
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_RELEASE_WEBHOOK_URL }}
           RELEASE_TAG:         ${{ github.event.release.tag_name }}

@@ -72,7 +72,7 @@ def apply_length_cap(text: str, url: str) -> str:
 
     Returns:
         The original text (unchanged) if ``len(text) <= 1500``, otherwise the
-        text truncated to 1497 chars + ``…`` followed by a newline and the URL.
+        text truncated to 1499 chars + ``…`` followed by a newline and the URL.
     """
     if len(text) <= _SOFT_CAP:
         return text

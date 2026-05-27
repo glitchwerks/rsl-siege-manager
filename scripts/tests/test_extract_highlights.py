@@ -8,7 +8,7 @@ Fixture cases exercised:
   1. Highlights present with plain heading (## Highlights)
   2. Highlights present with emoji heading (## 📣 Highlights)
   3. Highlights section is multi-paragraph
-  4. Body oversized — truncated to 1497 chars + ellipsis + URL line
+  4. Body oversized — truncated to 1499 chars + ellipsis + URL line
   5. Body exactly at the 1500-char boundary — NOT truncated
   6. No Highlights section — fallback with release name + URL
   7. No Highlights section, no release name — fallback uses tag
@@ -177,9 +177,13 @@ class TestHighlightsPresent:
 
 class TestLengthCap:
     def test_oversized_is_truncated(self):
+        # Expected: 1499 body chars + "…" (1 char) + "\n" (1 char)
+        # + "View full release notes: " (25 chars) + URL.
+        # Total = 1499 + 1 + 1 + 25 + len(RELEASE_URL) = 1526 + len(RELEASE_URL).
+        expected_len = 1499 + 1 + 1 + len("View full release notes: ") + len(RELEASE_URL)
         result = run_script(OVERSIZED_BODY)
         assert result.returncode == 0
-        assert len(result.stdout.rstrip("\n")) <= 1500 + len(f"\nView full release notes: {RELEASE_URL}") + 50
+        assert len(result.stdout) == expected_len
 
     def test_oversized_ends_with_ellipsis(self):
         result = run_script(OVERSIZED_BODY)
