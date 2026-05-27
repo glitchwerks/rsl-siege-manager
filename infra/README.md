@@ -4,6 +4,37 @@ Azure Bicep templates for the Siege Assignment System.
 
 > For a complete end-to-end deployment walkthrough (prerequisites, resource-group setup, secret population, GitHub Actions wiring, DNS, and smoke test), see the [Self-Host on Azure wiki page](https://github.com/glitchwerks/rsl-siege-manager/wiki/Self-Host-on-Azure).
 
+## Idempotency guardrail
+
+Bicep templates are designed to be fully idempotent — deploying the same
+template twice against the same resource group should produce zero changes
+on the second run.
+
+The **Infra Idempotency Check** workflow (`.github/workflows/idempotency-check.yml`)
+automates this assertion. It runs `az deployment group what-if` against the live
+dev resource group and fails if any resource would be modified (i.e. if any
+change has a type other than `NoChange` or `Ignore`).
+
+**When to run it:**
+
+- After every `Infra Deploy` to dev, to confirm the just-applied template is
+  still idempotent.
+- Before merging an infra PR that touches resource declarations.
+
+**How to trigger:** GitHub → Actions → "Infra Idempotency Check" → Run workflow.
+
+**Intentional regression test:** temporarily add `utcNow()` to a resource name
+in `main.bicep`, run the workflow — it should fail. Revert and re-run — pass.
+This proves the guardrail catches non-deterministic property regressions.
+
+**Common causes of a failing idempotency check:**
+
+- A non-deterministic function (`utcNow()`, `newGuid()`) in a resource name
+  or tag value
+- A computed value that evaluates differently between ARM evaluation cycles
+- A parameter was changed in the `.bicepparam` file but not yet applied to
+  the live RG (expected — re-deploy first, then re-run the check)
+
 ## Resources provisioned
 
 | Resource | Module |
