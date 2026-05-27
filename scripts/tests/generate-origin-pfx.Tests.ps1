@@ -52,7 +52,7 @@ BeforeAll {
     Set-Content -LiteralPath $script:KeyFile  -Value '-----BEGIN PRIVATE KEY-----'  -Encoding ASCII
 
     # Helper: build a SecureString from a plain-text string for test use only.
-    function script:New-TestSecureString {
+    function New-TestSecureString {
         [CmdletBinding()]
         param([string]$PlainText)
         $ss = New-Object System.Security.SecureString
@@ -63,7 +63,7 @@ BeforeAll {
         $ss
     }
 
-    $script:TestPassword = script:New-TestSecureString -PlainText 'TestP@ssw0rd!'
+    $script:TestPassword = New-TestSecureString -PlainText 'TestP@ssw0rd!'
 }
 
 AfterAll {
@@ -74,7 +74,7 @@ AfterAll {
 
 # ── Helper: create a fake openssl.cmd in a temp bin directory ─────────────────
 
-function script:New-FakeOpensslDir {
+function New-FakeOpensslDir {
     <#
     .SYNOPSIS
         Creates a temporary bin directory containing a fake openssl.cmd and
@@ -146,13 +146,13 @@ for %%A in (%*) do (
     return $binDir
 }
 
-function script:Add-DirToPathFront {
+function Add-DirToPathFront {
     [CmdletBinding()]
     param([string]$Dir)
     $env:PATH = "$Dir;$env:PATH"
 }
 
-function script:Remove-DirFromPathFront {
+function Remove-DirFromPathFront {
     [CmdletBinding()]
     param([string]$Dir)
     $env:PATH = ($env:PATH -replace [regex]::Escape("$Dir;"), '')
@@ -200,12 +200,12 @@ Describe 'Parameter Validation' {
 
         BeforeAll {
             # A valid openssl on PATH so the script does not fail on that check.
-            $script:ParamValBinDir = script:New-FakeOpensslDir -WriteOutputFile
-            script:Add-DirToPathFront -Dir $script:ParamValBinDir
+            $script:ParamValBinDir = New-FakeOpensslDir -WriteOutputFile
+            Add-DirToPathFront -Dir $script:ParamValBinDir
         }
 
         AfterAll {
-            script:Remove-DirFromPathFront -Dir $script:ParamValBinDir
+            Remove-DirFromPathFront -Dir $script:ParamValBinDir
         }
 
         It 'fails when CertPath points to a non-existent file' {
@@ -232,12 +232,12 @@ Describe 'Parameter Validation' {
     Context 'OutPath in a non-existent directory' {
 
         BeforeAll {
-            $script:OutDirBinDir = script:New-FakeOpensslDir -WriteOutputFile
-            script:Add-DirToPathFront -Dir $script:OutDirBinDir
+            $script:OutDirBinDir = New-FakeOpensslDir -WriteOutputFile
+            Add-DirToPathFront -Dir $script:OutDirBinDir
         }
 
         AfterAll {
-            script:Remove-DirFromPathFront -Dir $script:OutDirBinDir
+            Remove-DirFromPathFront -Dir $script:OutDirBinDir
         }
 
         It 'fails when OutPath directory does not exist' {
@@ -275,19 +275,22 @@ Describe 'openssl Discovery' {
             $null = New-Item -Path $emptyBinDir -ItemType Directory -Force
             $env:PATH = $emptyBinDir
 
-            # Ensure the two hardcoded Git-for-Windows candidate paths do not
-            # exist in this test environment (they likely already don't on a
-            # GitHub Actions windows-latest runner, but be explicit).
-            # We cannot delete system files, so we rely on the paths not existing
-            # on the CI runner. This context is therefore most meaningful on a
-            # runner without Git for Windows installed at the default location.
+            # Determine whether the script's hardcoded Git-for-Windows fallback
+            # paths exist on this machine. If either exists, the test cannot run
+            # because the script will find openssl via the fallback even with PATH
+            # zeroed out. The windows-latest GHA runner ships Git for Windows at
+            # the first path, so this flag will be true on CI.
+            $script:GitOpensslExists = (
+                (Test-Path -LiteralPath 'C:\Program Files\Git\usr\bin\openssl.exe' -PathType Leaf) -or
+                (Test-Path -LiteralPath 'C:\Program Files (x86)\Git\usr\bin\openssl.exe' -PathType Leaf)
+            )
         }
 
         AfterAll {
             $env:PATH = $script:OriginalPath
         }
 
-        It 'throws with openssl install instructions when openssl is not found' {
+        It 'throws with openssl install instructions when openssl is not found' -Skip:$script:GitOpensslExists {
             $params = @{
                 CertPath = $script:CertFile
                 KeyPath  = $script:KeyFile
@@ -301,12 +304,12 @@ Describe 'openssl Discovery' {
     Context 'openssl present but exits non-zero on pkcs12' {
 
         BeforeAll {
-            $script:BadOpensslDir = script:New-FakeOpensslDir -ExitCode 1
-            script:Add-DirToPathFront -Dir $script:BadOpensslDir
+            $script:BadOpensslDir = New-FakeOpensslDir -ExitCode 1
+            Add-DirToPathFront -Dir $script:BadOpensslDir
         }
 
         AfterAll {
-            script:Remove-DirFromPathFront -Dir $script:BadOpensslDir
+            Remove-DirFromPathFront -Dir $script:BadOpensslDir
         }
 
         It 'throws with openssl failure detail when openssl exits non-zero' {
@@ -327,12 +330,12 @@ Describe 'openssl Discovery' {
 Describe 'Happy Path' {
 
     BeforeAll {
-        $script:HappyBinDir = script:New-FakeOpensslDir -WriteOutputFile
-        script:Add-DirToPathFront -Dir $script:HappyBinDir
+        $script:HappyBinDir = New-FakeOpensslDir -WriteOutputFile
+        Add-DirToPathFront -Dir $script:HappyBinDir
     }
 
     AfterAll {
-        script:Remove-DirFromPathFront -Dir $script:HappyBinDir
+        Remove-DirFromPathFront -Dir $script:HappyBinDir
     }
 
     It 'produces a non-empty PFX file at OutPath' {
@@ -403,8 +406,8 @@ Describe 'Happy Path' {
     Context 'Legacy provider detection' {
 
         It 'succeeds when legacy provider is reported by openssl list -providers' {
-            $legacyBinDir = script:New-FakeOpensslDir -WriteOutputFile -IncludeLegacyProvider
-            script:Add-DirToPathFront -Dir $legacyBinDir
+            $legacyBinDir = New-FakeOpensslDir -WriteOutputFile -IncludeLegacyProvider
+            Add-DirToPathFront -Dir $legacyBinDir
             try {
                 $outPath = Join-Path -Path $script:TmpDir -ChildPath 'legacy.pfx'
                 $params = @{
@@ -416,7 +419,7 @@ Describe 'Happy Path' {
                 { & $script:ScriptPath @params } | Should -Not -Throw
                 Test-Path -LiteralPath $outPath -PathType Leaf | Should -BeTrue
             } finally {
-                script:Remove-DirFromPathFront -Dir $legacyBinDir
+                Remove-DirFromPathFront -Dir $legacyBinDir
             }
         }
     }
@@ -427,16 +430,16 @@ Describe 'Happy Path' {
 Describe 'Password Handling' {
 
     BeforeAll {
-        $script:PwdBinDir = script:New-FakeOpensslDir -WriteOutputFile
-        script:Add-DirToPathFront -Dir $script:PwdBinDir
+        $script:PwdBinDir = New-FakeOpensslDir -WriteOutputFile
+        Add-DirToPathFront -Dir $script:PwdBinDir
     }
 
     AfterAll {
-        script:Remove-DirFromPathFront -Dir $script:PwdBinDir
+        Remove-DirFromPathFront -Dir $script:PwdBinDir
     }
 
     It 'accepts a SecureString password without throwing' {
-        $securePass = script:New-TestSecureString -PlainText 'S3cur3P@ss!'
+        $securePass = New-TestSecureString -PlainText 'S3cur3P@ss!'
         $outPath = Join-Path -Path $script:TmpDir -ChildPath 'pwd-secure.pfx'
         $params = @{
             CertPath = $script:CertFile
@@ -463,7 +466,7 @@ Describe 'Password Handling' {
         # stream (pipeline output is the result object, not a string containing
         # the password).
         $outPath = Join-Path -Path $script:TmpDir -ChildPath 'pwd-leak.pfx'
-        $securePass = script:New-TestSecureString -PlainText 'DoNotLeak99!'
+        $securePass = New-TestSecureString -PlainText 'DoNotLeak99!'
         $params = @{
             CertPath = $script:CertFile
             KeyPath  = $script:KeyFile
