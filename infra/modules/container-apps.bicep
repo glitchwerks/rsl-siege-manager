@@ -99,6 +99,12 @@ param useExternalSidecar bool = false
 @description('URL of the alternate sidecar HTTP API. Required when useExternalSidecar is true (e.g. https://my-bot.example.com). Ignored when useExternalSidecar is false.')
 param externalBotApiUrl string = ''
 
+@description('Discord role snowflake ID for Day 1 attackers (day-role-sync contract v1.1). When non-empty, injects DISCORD_DAY_1_ROLE_ID into the backend container. Leave empty to omit the env var (required for prod until day-role-sync rollout).')
+param discordDay1RoleId string = ''
+
+@description('Discord role snowflake ID for Day 2 attackers (day-role-sync contract v1.1). When non-empty, injects DISCORD_DAY_2_ROLE_ID into the backend container. Leave empty to omit the env var.')
+param discordDay2RoleId string = ''
+
 var apiAppName = '${appPrefix}-api-${environment}'
 var frontendAppName = '${appPrefix}-frontend-${environment}'
 var botAppName = '${appPrefix}-bot-${environment}'
@@ -230,6 +236,17 @@ resource apiApp 'Microsoft.App/containerApps@2025-07-01' = {
             empty(appInsightsConnectionString) ? [] : [
               { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsightsConnectionString }
               { name: 'OTEL_SERVICE_NAME', value: 'siege-api' }
+            ],
+            // Day-role sync contract v1.1: inject role snowflake IDs only when
+            // non-empty. Omitting the env var entirely (rather than setting it to
+            // "") is required because pydantic-settings parses these as int | None
+            // and an empty string would fail validation. Prod leaves both empty
+            // until the day-role-sync feature is rolled out (see issue #463).
+            empty(discordDay1RoleId) ? [] : [
+              { name: 'DISCORD_DAY_1_ROLE_ID', value: discordDay1RoleId }
+            ],
+            empty(discordDay2RoleId) ? [] : [
+              { name: 'DISCORD_DAY_2_ROLE_ID', value: discordDay2RoleId }
             ]
           )
           probes: [

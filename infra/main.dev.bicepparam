@@ -127,6 +127,13 @@ param alertEmail = 'cmb_dev@outlook.com'
 param useExternalSidecar = false
 // param externalBotApiUrl = 'https://your-sidecar.example.com'  // uncomment + set when useExternalSidecar = true
 
+// ── Day-role sync ─────────────────────────────────────────────────────────────
+// Snowflake IDs for the Day 1 and Day 2 attacker Discord roles.
+// These are injected as DISCORD_DAY_1_ROLE_ID / DISCORD_DAY_2_ROLE_ID into
+// the backend container (day-role-sync contract v1.1). See issue #463.
+param discordDay1RoleId = '1385267221206405171'
+param discordDay2RoleId = '1385267473099653170'
+
 // ── ACR image retention ───────────────────────────────────────────────────────
 // Dev currently has ~364 manifests (127/126/111 across api/bot/frontend).
 // Release tags (v*) are preserved forever. SHA/commit tags beyond the last 10
