@@ -1,0 +1,103 @@
+name: Infra Idempotency Check
+
+# ── Purpose ─────────────────────────────────────────────────────────────────────
+#
+# Proves that re-deploying the current Bicep templates against the live dev
+# resource group produces zero changes (i.e. the templates are truly idempotent).
+#
+# Strategy: run `az deployment group what-if` (JSON output) against the dev RG
+# and assert that every change entry has changeType == NoChange or Ignore.
+# A non-empty actionable change set fails the job loudly.
+#
+# This is manual-dispatch only — it requires the dev RG to be in a post-deploy
+# steady state. Running it on a fresh RG (before first deploy) will report many
+# "Create" changes that are expected, not regressions.
+#
+# Trigger pattern: run this after any Infra Deploy to dev to confirm idempotency
+# is preserved. Also useful before merging infra PRs that touch resource
+# declarations (run after approving, before squash-merge).
+#
+# Intentional regression test (from issue #233 AC):
+#   Temporarily add `utcNow()` to a resource name in main.bicep, run this
+#   workflow — it should fail. Revert and re-run — it should pass again.
+#
+# ────────────────────────────────────────────────────────────────────────────────
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: infra-idempotency-check
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+
+  # ── Idempotency What-if ──────────────────────────────────────────────────────
+  #
+  # Runs `az deployment group what-if` against the live dev RG with the same
+  # parameter set used by the normal Infra Deploy workflow, then pipes the JSON
+  # output into scripts/assert-idempotent.sh which fails if any resource would
+  # be modified.
+  #
+  # Placeholder secrets are used for sensitive params (same values as infra-ci).
+  # The what-if call validates param shapes but does not apply them to any secret
+  # store, so placeholder values are safe here.
+
+  idempotency-what-if-dev:
+    name: Idempotency Check (dev)
+    runs-on: ubuntu-latest
+    environment: dev
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Log in to Azure
+        uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43 # v3
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Get current image tag (dev)
+        run: |
+          # Preserve the currently-running image tag so what-if evaluates
+          # against the same image the RG already has — preventing a spurious
+          # "Modify" diff caused by imageTag defaulting to 'latest'.
+          IMAGE_TAG=$(az containerapp show \
+            --name siege-web-api-dev \
+            --resource-group ${{ vars.DEV_RESOURCE_GROUP }} \
+            --query "properties.template.containers[0].image" \
+            --output tsv 2>/dev/null | awk -F: '{print $NF}') || IMAGE_TAG="latest"
+          if [ -z "$IMAGE_TAG" ]; then
+            echo "⚠️  Could not determine current image tag, defaulting to 'latest'"
+            IMAGE_TAG="latest"
+          fi
+          echo "Using image tag: ${IMAGE_TAG}"
+          echo "IMAGE_TAG=${IMAGE_TAG}" >> $GITHUB_ENV
+
+      - name: Run what-if (dev) — save JSON
+        run: |
+          az deployment group what-if \
+            --resource-group ${{ vars.DEV_RESOURCE_GROUP }} \
+            --template-file infra/main.bicep \
+            --parameters infra/main.dev.bicepparam \
+            --parameters postgresAdminPassword="ci-placeholder-value" \
+            --parameters discordToken="ci-placeholder-value" \
+            --parameters discordBotApiKey="ci-placeholder-value" \
+            --parameters botApiKey="ci-placeholder-value" \
+            --parameters discordGuildId="000000000000000000" \
+            --parameters sessionSecret="ci-placeholder-value" \
+            --parameters discordClientId="ci-placeholder-value" \
+            --parameters discordClientSecret="ci-placeholder-value" \
+            --parameters discordRedirectUri="https://placeholder.example.com/api/auth/callback" \
+            --parameters imageTag="${{ env.IMAGE_TAG }}" \
+            --result-format FullResourcePayloads \
+            --output json \
+            > /tmp/what-if.json
+
+      - name: Assert idempotency
+        run: |
+          chmod +x scripts/assert-idempotent.sh
+          scripts/assert-idempotent.sh /tmp/what-if.json
