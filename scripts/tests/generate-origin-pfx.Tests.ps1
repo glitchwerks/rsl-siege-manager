@@ -104,10 +104,13 @@ function script:New-FakeOpensslDir {
     $null = New-Item -Path $binDir -ItemType Directory -Force
 
     # Compose the stub body.
+    # Use double-quoted strings so `n is interpreted as a newline character.
+    # Single-quoted strings in PowerShell are literal -- backtick escapes are
+    # not processed, so 'foo`nbar' outputs the literal characters "foo`nbar".
     $providerOutput = if ($IncludeLegacyProvider) {
-        'Providers loaded by the default configuration:`n  legacy'
+        "Providers loaded by the default configuration:`n  legacy"
     } else {
-        'Providers loaded by the default configuration:`n  default'
+        "Providers loaded by the default configuration:`n  default"
     }
 
     # The stub handles two modes:
@@ -394,8 +397,9 @@ Describe 'Happy Path' {
             $null = & $script:ScriptPath @params
             $firstModified = (Get-Item -LiteralPath $outPath).LastWriteTime
 
-            # Guarantee a measurable time gap.
-            Start-Sleep -Milliseconds 1100
+            # Guarantee a measurable time gap. Windows NTFS has 100ns resolution
+            # so 100ms is more than sufficient to produce a different LastWriteTime.
+            Start-Sleep -Milliseconds 100
 
             # Second run with -Force should overwrite without error.
             { & $script:ScriptPath @params } | Should -Not -Throw
