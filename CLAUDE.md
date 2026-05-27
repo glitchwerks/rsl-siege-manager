@@ -21,6 +21,7 @@ Data flow:
 - Backend generates images via Playwright (headless HTML/CSS → PNG); bot receives the PNG and posts it
 
 See `docs/superpowers/plans/discord-auth-plan.md` for the canonical auth spec.
+See `docs/bot-seam.md` for the backend↔bot HTTP seam reference (URL resolution, auth, deployment shapes, ingress posture, Key Vault secrets).
 
 Project state lives on GitHub — current release in [Releases](https://github.com/glitchwerks/rsl-siege-manager/releases), active workstreams in [Milestones](https://github.com/glitchwerks/rsl-siege-manager/milestones), open work in [Issues](https://github.com/glitchwerks/rsl-siege-manager/issues), recent changes in `CHANGELOG.md`. Do not maintain a local status doc.
 

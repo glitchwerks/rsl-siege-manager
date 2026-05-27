@@ -4,9 +4,9 @@ This document is the human-readable contract between `backend/` and the Discord 
 sidecar (`bot/`). It is specific enough that an alternative sidecar implementation
 (e.g. mom-bot, or an integration-test stub) can be built against it without reading
 the bundled bot's source. Motivated by umbrella issue
-[#347](https://github.com/glitchwerks/rsl-siege-manager/issues/347); sequencing and
-broader context live in
-`docs/superpowers/plans/2026-05-10-bot-seam-hardening.md`.
+[#347](https://github.com/glitchwerks/rsl-siege-manager/issues/347); deployment
+shapes, URL resolution, auth, ingress posture, and Key Vault secrets are in
+[`docs/bot-seam.md`](../docs/bot-seam.md).
 
 > **Authority.** This document is human-readable documentation. The normative source
 > of truth is the integration test suite at
@@ -889,7 +889,7 @@ unknown. All six response keys are always present regardless of this value.
 
 ## Cross-references
 
-- **Plan:** `docs/superpowers/plans/2026-05-10-bot-seam-hardening.md`
+- **Seam overview (URL resolution, auth, deployment shapes, ingress, KV secrets):** [`docs/bot-seam.md`](../docs/bot-seam.md)
 - **Umbrella issue:** [#347](https://github.com/glitchwerks/rsl-siege-manager/issues/347)
 - **Step 1 cleanup PR:** [#415](https://github.com/glitchwerks/rsl-siege-manager/pull/415)
   — moved `/version` → `/api/version`, moved `channel_name` to multipart form body,
