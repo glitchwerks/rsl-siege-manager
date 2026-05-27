@@ -31,6 +31,7 @@ jobs:
   pester-tests:
     name: PowerShell Script Tests
     runs-on: windows-latest
+    timeout-minutes: 10
 
     steps:
       - name: Checkout code

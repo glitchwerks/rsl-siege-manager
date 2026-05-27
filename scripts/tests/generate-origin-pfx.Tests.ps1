@@ -164,43 +164,35 @@ Describe 'Parameter Validation' {
 
     Context 'Missing mandatory parameters' {
 
+        # These tests invoke the script in a non-interactive child shell so that
+        # a missing [Parameter(Mandatory)] value produces a non-zero exit code
+        # immediately instead of blocking on stdin for a prompt (which hangs CI).
+
         It 'fails when CertPath is omitted' {
             $outPath = Join-Path -Path $script:TmpDir -ChildPath 'out1.pfx'
-            $params = @{
-                KeyPath  = $script:KeyFile
-                OutPath  = $outPath
-                Password = $script:TestPassword
-            }
-            { & $script:ScriptPath @params } | Should -Throw
+            $cmd = "& '$script:ScriptPath' -KeyPath '$script:KeyFile' -OutPath '$outPath' -Password (ConvertTo-SecureString 'x' -AsPlainText -Force)"
+            $null = pwsh -NoProfile -NonInteractive -Command $cmd 2>&1
+            $LASTEXITCODE | Should -Not -Be 0
         }
 
         It 'fails when KeyPath is omitted' {
             $outPath = Join-Path -Path $script:TmpDir -ChildPath 'out2.pfx'
-            $params = @{
-                CertPath = $script:CertFile
-                OutPath  = $outPath
-                Password = $script:TestPassword
-            }
-            { & $script:ScriptPath @params } | Should -Throw
+            $cmd = "& '$script:ScriptPath' -CertPath '$script:CertFile' -OutPath '$outPath' -Password (ConvertTo-SecureString 'x' -AsPlainText -Force)"
+            $null = pwsh -NoProfile -NonInteractive -Command $cmd 2>&1
+            $LASTEXITCODE | Should -Not -Be 0
         }
 
         It 'fails when OutPath is omitted' {
-            $params = @{
-                CertPath = $script:CertFile
-                KeyPath  = $script:KeyFile
-                Password = $script:TestPassword
-            }
-            { & $script:ScriptPath @params } | Should -Throw
+            $cmd = "& '$script:ScriptPath' -CertPath '$script:CertFile' -KeyPath '$script:KeyFile' -Password (ConvertTo-SecureString 'x' -AsPlainText -Force)"
+            $null = pwsh -NoProfile -NonInteractive -Command $cmd 2>&1
+            $LASTEXITCODE | Should -Not -Be 0
         }
 
         It 'fails when Password is omitted' {
             $outPath = Join-Path -Path $script:TmpDir -ChildPath 'out3.pfx'
-            $params = @{
-                CertPath = $script:CertFile
-                KeyPath  = $script:KeyFile
-                OutPath  = $outPath
-            }
-            { & $script:ScriptPath @params } | Should -Throw
+            $cmd = "& '$script:ScriptPath' -CertPath '$script:CertFile' -KeyPath '$script:KeyFile' -OutPath '$outPath'"
+            $null = pwsh -NoProfile -NonInteractive -Command $cmd 2>&1
+            $LASTEXITCODE | Should -Not -Be 0
         }
     }
 
