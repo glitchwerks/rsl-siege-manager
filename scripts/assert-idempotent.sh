@@ -25,7 +25,7 @@ set -euo pipefail
 WHAT_IF_JSON="${1:-}"
 
 if [[ -n "$WHAT_IF_JSON" ]]; then
-  INPUT="$WHAT_IF_JSON"
+  INPUT="$(cat "$WHAT_IF_JSON")"
 else
   INPUT="$(cat)"
 fi
