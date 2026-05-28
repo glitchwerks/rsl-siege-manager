@@ -95,10 +95,14 @@ jobs:
             --parameters imageTag="${{ env.IMAGE_TAG }}" \
             --result-format FullResourcePayloads \
             --only-show-errors \
+            --no-pretty-print \
             --output json \
             > /tmp/what-if.json
 
       - name: Assert idempotency
         run: |
+          echo "── first 3 lines of /tmp/what-if.json ──"
+          head -3 /tmp/what-if.json
+          echo "────────────────────────────────────────"
           chmod +x scripts/assert-idempotent.sh
           scripts/assert-idempotent.sh /tmp/what-if.json
