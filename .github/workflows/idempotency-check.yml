@@ -41,10 +41,6 @@ jobs:
   # parameter set used by the normal Infra Deploy workflow, then pipes the JSON
   # output into scripts/assert-idempotent.sh which fails if any resource would
   # be modified.
-  #
-  # Placeholder secrets are used for sensitive params (same values as infra-ci).
-  # The what-if call validates param shapes but does not apply them to any secret
-  # store, so placeholder values are safe here.
 
   idempotency-what-if-dev:
     name: Idempotency Check (dev)
@@ -67,7 +63,7 @@ jobs:
           # "Modify" diff caused by imageTag defaulting to 'latest'.
           IMAGE_TAG=$(az containerapp show \
             --name siege-web-api-dev \
-            --resource-group ${{ vars.DEV_RESOURCE_GROUP }} \
+            --resource-group ${{ vars.RESOURCE_GROUP }} \
             --query "properties.template.containers[0].image" \
             --output tsv 2>/dev/null | awk -F: '{print $NF}') || IMAGE_TAG="latest"
           if [ -z "$IMAGE_TAG" ]; then
@@ -80,19 +76,20 @@ jobs:
       - name: Run what-if (dev) — save JSON
         run: |
           az deployment group what-if \
-            --resource-group ${{ vars.DEV_RESOURCE_GROUP }} \
+            --resource-group ${{ vars.RESOURCE_GROUP }} \
             --template-file infra/main.bicep \
             --parameters infra/main.dev.bicepparam \
-            --parameters postgresAdminPassword="ci-placeholder-value" \
-            --parameters discordToken="ci-placeholder-value" \
-            --parameters discordBotApiKey="ci-placeholder-value" \
-            --parameters botApiKey="ci-placeholder-value" \
-            --parameters discordGuildId="000000000000000000" \
-            --parameters sessionSecret="ci-placeholder-value" \
-            --parameters discordClientId="ci-placeholder-value" \
-            --parameters discordClientSecret="ci-placeholder-value" \
-            --parameters discordRedirectUri="https://placeholder.example.com/api/auth/callback" \
+            --parameters postgresAdminPassword="${{ secrets.POSTGRES_ADMIN_PASSWORD }}" \
+            --parameters discordToken="${{ secrets.DISCORD_TOKEN }}" \
+            --parameters discordBotApiKey="${{ secrets.BOT_API_KEY }}" \
+            --parameters botApiKey="${{ secrets.BOT_API_KEY }}" \
+            --parameters discordGuildId="${{ vars.DISCORD_GUILD_ID }}" \
+            --parameters sessionSecret="${{ secrets.SESSION_SECRET }}" \
+            --parameters discordClientId="${{ secrets.DISCORD_CLIENT_ID }}" \
+            --parameters discordClientSecret="${{ secrets.DISCORD_CLIENT_SECRET }}" \
+            --parameters discordRedirectUri="${{ vars.DISCORD_REDIRECT_URI }}" \
             --parameters imageTag="${{ env.IMAGE_TAG }}" \
+            --parameters useExternalSidecar=false \
             --result-format FullResourcePayloads \
             --only-show-errors \
             --no-pretty-print \
