@@ -1,12 +1,17 @@
+from __future__ import annotations
+
 from datetime import UTC, datetime
 
 from fastapi import HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.models.building import Building
+from app.models.building_group import BuildingGroup
 from app.models.enums import SiegeStatus
 from app.models.member import Member
+from app.models.position import Position
 from app.models.siege import Siege
 from app.models.siege_member import SiegeMember
 from app.schemas.siege_member import MemberPreferenceSummary, SiegeMemberUpdate
@@ -120,6 +125,97 @@ async def add_siege_member(session: AsyncSession, siege_id: int, member_id: int)
         .options(selectinload(SiegeMember.member))
     )
     return result.scalar_one()
+
+
+async def remove_siege_member(
+    session: AsyncSession,
+    siege_id: int,
+    member_id: int,
+) -> tuple[str | None, int | None, datetime | None]:
+    """Remove a member from a single planning siege.
+
+    Unassigns all of that member's positions within THIS siege, then deletes
+    their ``SiegeMember`` roster row.  Only permitted while the siege is in
+    ``planning`` status — mirrors the guard used by ``add_siege_member``.
+
+    Captures ``discord_id`` and ``attack_day`` **before** deleting the row
+    so the caller (DELETE route) can emit a day-role-sync unassign webhook
+    when the member had an attack day assigned.  Sources ``assigned_at``
+    from PostgreSQL ``clock_timestamp()`` when ``attack_day`` is not ``None``
+    (contract §7 monotonic clock requirement), matching the approach used by
+    ``update_siege_member``.
+
+    Args:
+        session: Async SQLAlchemy session.
+        siege_id: Primary key of the siege to remove the member from.
+        member_id: Primary key of the member to remove.
+
+    Returns:
+        A ``(discord_id, prior_attack_day, assigned_at)`` tuple.
+        ``discord_id`` is the member's Discord snowflake string or ``None``.
+        ``prior_attack_day`` is the attack-day value before deletion, or
+        ``None`` if the member had no day assigned.
+        ``assigned_at`` is a UTC-aware ``clock_timestamp()`` value when
+        ``prior_attack_day`` was not ``None``, else ``None``.
+
+    Raises:
+        HTTPException 400: Siege is not in planning status.
+        HTTPException 404: No SiegeMember row found for (siege_id, member_id).
+    """
+    siege = await get_siege(session, siege_id)
+    if siege.status != SiegeStatus.planning:
+        raise HTTPException(
+            status_code=400,
+            detail="Members can only be removed during the planning phase",
+        )
+
+    result = await session.execute(
+        select(SiegeMember)
+        .where(
+            SiegeMember.siege_id == siege_id,
+            SiegeMember.member_id == member_id,
+        )
+        .options(selectinload(SiegeMember.member))
+    )
+    siege_member = result.scalar_one_or_none()
+    if siege_member is None:
+        raise HTTPException(status_code=404, detail="Member is not in this siege")
+
+    # Capture day-role-sync data BEFORE deletion so the route can emit an
+    # unassign webhook for members who had an attack day (P2a).
+    prior_attack_day: int | None = siege_member.attack_day
+    discord_id: str | None = (
+        siege_member.member.discord_id if siege_member.member is not None else None
+    )
+    assigned_at: datetime | None = None
+    if prior_attack_day is not None:
+        raw_ts: datetime = (await session.execute(select(func.clock_timestamp()))).scalar_one()
+        assigned_at = raw_ts.astimezone(UTC)
+
+    # Clear this member's position assignments within this siege only.
+    # Join path: Position → BuildingGroup → Building (siege_id filter here).
+    # Also clear matched_condition_id — it is only meaningful when a member
+    # is assigned; leaving it stale after removal mirrors the behaviour of
+    # update_position (board.py:160) and bulk_update_positions (board.py:229).
+    await session.execute(
+        update(Position)
+        .where(
+            Position.member_id == member_id,
+            Position.building_group_id.in_(
+                select(BuildingGroup.id).where(
+                    BuildingGroup.building_id.in_(
+                        select(Building.id).where(Building.siege_id == siege_id)
+                    )
+                )
+            ),
+        )
+        .values(member_id=None, matched_condition_id=None)
+    )
+
+    await session.delete(siege_member)
+    await session.commit()
+
+    return discord_id, prior_attack_day, assigned_at
 
 
 async def update_siege_member(

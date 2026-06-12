@@ -72,6 +72,44 @@ async def add_siege_member(
     return await siege_members_service.add_siege_member(db, siege_id, data.member_id)
 
 
+@router.delete("/sieges/{siege_id}/members/{member_id}", status_code=204)
+async def remove_siege_member(
+    siege_id: int,
+    member_id: int,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
+    """Remove a member from the siege roster (planning phase only).
+
+    Clears all of that member's position assignments within this siege, then
+    deletes their SiegeMember roster row.  Returns 204 No Content on success.
+    Rejects with 400 if the siege is not in planning status.
+
+    When the removed member had an ``attack_day`` set and a linked
+    ``discord_id``, schedules a fire-and-forget day-role-sync unassign
+    webhook (same contract as the PUT unassign path) so the Discord receiver
+    can remove the stale day role.  Respects the ``DAY_ROLE_SYNC_ENABLED``
+    feature gate and the ``discord_id=None`` skip via ``schedule_role_sync``.
+    """
+    discord_id, prior_attack_day, assigned_at = await siege_members_service.remove_siege_member(
+        db, siege_id, member_id
+    )
+
+    # Emit unassign webhook when the removed member had an attack day set.
+    # schedule_role_sync handles the feature-gate and discord_id=None guards.
+    if prior_attack_day is not None:
+        correlation_id = str(uuid.uuid4())
+        schedule_role_sync(
+            background_tasks,
+            discord_id=discord_id,
+            siege_id=siege_id,
+            day_number=None,
+            action="unassign",
+            assigned_at=assigned_at,
+            correlation_id=correlation_id,
+        )
+
+
 @router.put("/sieges/{siege_id}/members/{member_id}", response_model=SiegeMemberResponse)
 async def update_siege_member(
     siege_id: int,
