@@ -19,7 +19,10 @@ from app.models.position import Position
 from app.models.siege import Siege
 from app.models.siege_member import SiegeMember
 from app.services.members import deactivate_member
-from app.services.siege_members import list_siege_members
+from app.services.siege_members import (
+    get_siege_member_preferences,
+    list_siege_members,
+)
 
 # ---------------------------------------------------------------------------
 # Engine / session fixtures
@@ -270,3 +273,124 @@ async def test_list_siege_members_excludes_inactive_members(session):
     assert (
         inactive.id not in ids
     ), "Inactive member must be excluded by list_siege_members (defense-in-depth)"
+
+
+# ---------------------------------------------------------------------------
+# Multi-planning-siege bulk deletion (review item 4)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_deactivate_removes_siege_member_from_all_planning_sieges(session):
+    """Deactivating a member must remove their SiegeMember rows from ALL
+    planning sieges simultaneously (exercises the bulk .in_() delete).
+    """
+    member = Member(name="Grace", role=MemberRole.advanced, is_active=True)
+    session.add(member)
+    await session.flush()
+
+    siege_a = await _make_siege(session, SiegeStatus.planning)
+    siege_b = await _make_siege(session, SiegeStatus.planning)
+    siege_c = await _make_siege(session, SiegeStatus.planning)
+
+    for siege in (siege_a, siege_b, siege_c):
+        session.add(SiegeMember(siege_id=siege.id, member_id=member.id))
+    await session.commit()
+
+    # Pre-condition: member appears in all three planning rosters
+    for siege in (siege_a, siege_b, siege_c):
+        roster = await list_siege_members(session, siege.id)
+        assert member.id in [
+            sm.member_id for sm in roster
+        ], f"Precondition: member must be in planning siege {siege.id}"
+
+    # Deactivate
+    await deactivate_member(session, member.id)
+
+    # Assert: member no longer appears in any of the three rosters
+    for siege in (siege_a, siege_b, siege_c):
+        roster = await list_siege_members(session, siege.id)
+        assert member.id not in [sm.member_id for sm in roster], (
+            f"Deactivated member must not appear in planning siege {siege.id} "
+            "(bulk .in_() delete must cover all planning sieges)"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Active/complete history preservation visible via list_siege_members
+# (review item 5 — locks the scoping decision for Fix 2)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_list_siege_members_shows_deactivated_member_in_active_siege(session):
+    """A member deactivated while a siege is *active* must still appear in
+    that siege's roster via list_siege_members.
+
+    This guards against the over-broad read filter introduced by Fix 2
+    (which must only apply to planning sieges, not active/complete ones).
+    """
+    member = Member(name="Henry", role=MemberRole.advanced, is_active=True)
+    session.add(member)
+    await session.flush()
+
+    siege = await _make_siege(session, SiegeStatus.active)
+    session.add(SiegeMember(siege_id=siege.id, member_id=member.id))
+    await session.commit()
+
+    # Deactivate the member (SiegeMember row is preserved per Fix 1)
+    await deactivate_member(session, member.id)
+
+    # list_siege_members must still return the row for an active siege
+    roster = await list_siege_members(session, siege.id)
+    assert member.id in [sm.member_id for sm in roster], (
+        "list_siege_members must include deactivated members in active siege "
+        "rosters (history preservation)"
+    )
+
+
+@pytest.mark.asyncio
+async def test_list_siege_members_shows_deactivated_member_in_complete_siege(session):
+    """A member deactivated after a siege is *complete* must still appear in
+    that siege's roster via list_siege_members (history preservation).
+    """
+    member = Member(name="Iris", role=MemberRole.advanced, is_active=True)
+    session.add(member)
+    await session.flush()
+
+    siege = await _make_siege(session, SiegeStatus.complete)
+    session.add(SiegeMember(siege_id=siege.id, member_id=member.id))
+    await session.commit()
+
+    await deactivate_member(session, member.id)
+
+    roster = await list_siege_members(session, siege.id)
+    assert member.id in [sm.member_id for sm in roster], (
+        "list_siege_members must include deactivated members in complete siege "
+        "rosters (history preservation)"
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_siege_member_preferences_shows_deactivated_in_active_siege(
+    session,
+):
+    """get_siege_member_preferences must also include deactivated members for
+    active/complete sieges (same planning-scoped filter as list_siege_members).
+    """
+    member = Member(name="Jack", role=MemberRole.advanced, is_active=True)
+    session.add(member)
+    await session.flush()
+
+    siege = await _make_siege(session, SiegeStatus.active)
+    session.add(SiegeMember(siege_id=siege.id, member_id=member.id))
+    await session.commit()
+
+    await deactivate_member(session, member.id)
+
+    prefs = await get_siege_member_preferences(session, siege.id)
+    member_ids = [p.member_id for p in prefs]
+    assert member.id in member_ids, (
+        "get_siege_member_preferences must include deactivated members in "
+        "active siege rosters (planning-scoped filter, review item 3)"
+    )

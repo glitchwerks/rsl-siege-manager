@@ -89,14 +89,14 @@ async def deactivate_member(session: AsyncSession, member_id: int) -> Member:
         .join(Building, BuildingGroup.building_id == Building.id)
         .join(Siege, Building.siege_id == Siege.id)
         .where(Position.member_id == member_id)
-        .where(Siege.status == "planning")
+        .where(Siege.status == SiegeStatus.planning)
     )
     result = await session.execute(stmt)
     positions = result.scalars().all()
     for position in positions:
         position.member_id = None
 
-    # Remove the member from all planning siege rosters.  Active and complete
+    # Remove the member from all planning siege rosters. Active and complete
     # sieges are left untouched so historical records are preserved.
     await session.execute(
         delete(SiegeMember)
