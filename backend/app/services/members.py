@@ -96,6 +96,16 @@ async def deactivate_member(session: AsyncSession, member_id: int) -> Member:
     for position in positions:
         position.member_id = None
 
+    # Remove the member from all planning siege rosters.  Active and complete
+    # sieges are left untouched so historical records are preserved.
+    await session.execute(
+        delete(SiegeMember)
+        .where(SiegeMember.member_id == member_id)
+        .where(
+            SiegeMember.siege_id.in_(select(Siege.id).where(Siege.status == SiegeStatus.planning))
+        )
+    )
+
     await session.commit()
     await session.refresh(member)
     return member

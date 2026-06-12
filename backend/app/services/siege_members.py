@@ -33,9 +33,24 @@ async def get_siege_member_preferences(
 
 
 async def list_siege_members(session: AsyncSession, siege_id: int) -> list[SiegeMember]:
+    """Return all active SiegeMember rows for *siege_id*.
+
+    Members whose ``is_active`` flag is ``False`` are excluded as a
+    defense-in-depth guard against stale roster rows (issue #485).
+
+    Args:
+        session: Async SQLAlchemy session.
+        siege_id: Primary key of the siege to query.
+
+    Returns:
+        List of ``SiegeMember`` instances with ``member`` eagerly loaded,
+        filtered to active members only.
+    """
     result = await session.execute(
         select(SiegeMember)
+        .join(Member, SiegeMember.member_id == Member.id)
         .where(SiegeMember.siege_id == siege_id)
+        .where(Member.is_active.is_(True))
         .options(selectinload(SiegeMember.member))
     )
     return list(result.scalars().all())
