@@ -748,3 +748,134 @@ async def test_role_sync_malformed_payload_returns_422(client):
         )
     http_api_module._bot = None
     assert response.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# Request context (endpoint + method) enrichment in exception handler logs
+# (#432)
+#
+# Each test triggers one of the four global Discord exception handlers and
+# asserts that the WARNING log record now contains both the HTTP method and
+# the endpoint path alongside the existing Discord fields.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_forbidden_handler_logs_request_method_and_path(client, caplog):
+    """_handle_discord_forbidden logs request method and path (closes #432).
+
+    The WARNING record must contain the HTTP method (POST) and the endpoint
+    path (/api/notify) in addition to the existing Discord status/text
+    fields.  Raw exc.text must appear in logs but never in the response body.
+    """
+    bot = _make_mock_bot()
+    response = MagicMock()
+    response.status = 403
+    response.reason = "Forbidden"
+    bot.send_dm.side_effect = discord.Forbidden(response, "Missing Permissions")
+    http_api_module._bot = bot
+
+    caplog.set_level(logging.WARNING, logger="app.http_api")
+    async with client as c:
+        resp = await c.post(
+            "/api/notify",
+            json={"username": "alice", "message": "hi"},
+            headers=AUTH_HEADER,
+        )
+
+    http_api_module._bot = None
+    assert resp.status_code == 403
+    # Response body must NOT contain raw Discord detail.
+    assert "Missing Permissions" not in resp.text
+    # Log record must include both method and path.
+    warning_messages = [r.message for r in caplog.records if r.levelno == logging.WARNING]
+    assert any(
+        "POST" in msg and "/api/notify" in msg for msg in warning_messages
+    ), f"Expected method+path in log, got: {warning_messages}"
+
+
+@pytest.mark.asyncio
+async def test_not_found_handler_logs_request_method_and_path(client, caplog):
+    """_handle_discord_not_found logs request method and path (closes #432).
+
+    The WARNING record must contain the HTTP method (POST) and the endpoint
+    path (/api/post-message) alongside the existing Discord status/text.
+    """
+    bot = _make_mock_bot()
+    response = MagicMock()
+    response.status = 404
+    response.reason = "Not Found"
+    bot.post_message.side_effect = discord.NotFound(response, "Unknown Channel")
+    http_api_module._bot = bot
+
+    caplog.set_level(logging.WARNING, logger="app.http_api")
+    async with client as c:
+        resp = await c.post(
+            "/api/post-message",
+            json={"channel_name": "no-such-channel", "message": "hi"},
+            headers=AUTH_HEADER,
+        )
+
+    http_api_module._bot = None
+    assert resp.status_code == 404
+    assert "Unknown Channel" not in resp.text
+    warning_messages = [r.message for r in caplog.records if r.levelno == logging.WARNING]
+    assert any(
+        "POST" in msg and "/api/post-message" in msg for msg in warning_messages
+    ), f"Expected method+path in log, got: {warning_messages}"
+
+
+@pytest.mark.asyncio
+async def test_http_exception_handler_logs_request_method_and_path(client, caplog):
+    """_handle_discord_http_exception logs request method and path (closes #432).
+
+    Triggers the generic HTTPException handler (status 429, not Forbidden/
+    NotFound) and asserts the WARNING log contains method and path.
+    """
+    bot = _make_mock_bot()
+    bot.post_image.side_effect = _discord_http_exc(429, "You are being rate limited")
+    http_api_module._bot = bot
+
+    caplog.set_level(logging.WARNING, logger="app.http_api")
+    async with client as c:
+        resp = await c.post(
+            "/api/post-image",
+            data={"channel_name": "siege-images"},
+            files={"file": ("board.png", b"fake-png", "image/png")},
+            headers=AUTH_HEADER,
+        )
+
+    http_api_module._bot = None
+    assert resp.status_code == 502
+    assert "rate limited" not in resp.text
+    warning_messages = [r.message for r in caplog.records if r.levelno == logging.WARNING]
+    assert any(
+        "POST" in msg and "/api/post-image" in msg for msg in warning_messages
+    ), f"Expected method+path in log, got: {warning_messages}"
+
+
+@pytest.mark.asyncio
+async def test_timeout_handler_logs_request_method_and_path(client, caplog):
+    """_handle_timeout logs request method and path (closes #432).
+
+    Triggers the asyncio.TimeoutError handler via post_message and asserts
+    the WARNING log contains the HTTP method and endpoint path.
+    """
+    bot = _make_mock_bot()
+    bot.post_message.side_effect = asyncio.TimeoutError()  # noqa: UP041
+    http_api_module._bot = bot
+
+    caplog.set_level(logging.WARNING, logger="app.http_api")
+    async with client as c:
+        resp = await c.post(
+            "/api/post-message",
+            json={"channel_name": "general", "message": "hi"},
+            headers=AUTH_HEADER,
+        )
+
+    http_api_module._bot = None
+    assert resp.status_code == 503
+    warning_messages = [r.message for r in caplog.records if r.levelno == logging.WARNING]
+    assert any(
+        "POST" in msg and "/api/post-message" in msg for msg in warning_messages
+    ), f"Expected method+path in log, got: {warning_messages}"

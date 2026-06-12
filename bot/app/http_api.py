@@ -66,7 +66,7 @@ app = FastAPI(title="Siege Bot HTTP API", version="0.1.0")
 
 
 @app.exception_handler(discord.Forbidden)
-async def _handle_discord_forbidden(_request: Request, exc: discord.Forbidden) -> JSONResponse:
+async def _handle_discord_forbidden(request: Request, exc: discord.Forbidden) -> JSONResponse:
     """Translate discord.Forbidden to HTTP 403.
 
     Raised when the bot lacks channel permissions or a user's DMs are
@@ -74,13 +74,20 @@ async def _handle_discord_forbidden(_request: Request, exc: discord.Forbidden) -
     the response body per the module's error envelope policy.
 
     Args:
-        _request: The incoming FastAPI request (intentionally unused).
+        request: The incoming FastAPI request; method and path are
+            included in the WARNING log for operator diagnostics.
         exc: The discord.Forbidden exception instance.
 
     Returns:
         JSONResponse with status 403 and a generic detail message.
     """
-    logger.warning("Discord Forbidden: status=%s text=%r", exc.status, exc.text)
+    logger.warning(
+        "Discord Forbidden on %s %s: status=%s text=%r",
+        request.method,
+        request.url.path,
+        exc.status,
+        exc.text,
+    )
     return JSONResponse(
         status_code=status.HTTP_403_FORBIDDEN,
         content={"detail": "Discord permission denied"},
@@ -88,7 +95,7 @@ async def _handle_discord_forbidden(_request: Request, exc: discord.Forbidden) -
 
 
 @app.exception_handler(discord.NotFound)
-async def _handle_discord_not_found(_request: Request, exc: discord.NotFound) -> JSONResponse:
+async def _handle_discord_not_found(request: Request, exc: discord.NotFound) -> JSONResponse:
     """Translate discord.NotFound to HTTP 404.
 
     Raised when the target channel, message, or user does not exist.
@@ -97,13 +104,20 @@ async def _handle_discord_not_found(_request: Request, exc: discord.NotFound) ->
     response body per the module's error envelope policy.
 
     Args:
-        _request: The incoming FastAPI request (intentionally unused).
+        request: The incoming FastAPI request; method and path are
+            included in the WARNING log for operator diagnostics.
         exc: The discord.NotFound exception instance.
 
     Returns:
         JSONResponse with status 404 and a generic detail message.
     """
-    logger.warning("Discord NotFound: status=%s text=%r", exc.status, exc.text)
+    logger.warning(
+        "Discord NotFound on %s %s: status=%s text=%r",
+        request.method,
+        request.url.path,
+        exc.status,
+        exc.text,
+    )
     return JSONResponse(
         status_code=status.HTTP_404_NOT_FOUND,
         content={"detail": "Discord resource not found"},
@@ -112,7 +126,7 @@ async def _handle_discord_not_found(_request: Request, exc: discord.NotFound) ->
 
 @app.exception_handler(discord.HTTPException)
 async def _handle_discord_http_exception(
-    _request: Request, exc: discord.HTTPException
+    request: Request, exc: discord.HTTPException
 ) -> JSONResponse:
     """Translate discord.HTTPException to 502 or 503.
 
@@ -128,14 +142,17 @@ async def _handle_discord_http_exception(
     excluded from response bodies per the module's error envelope policy.
 
     Args:
-        _request: The incoming FastAPI request (intentionally unused).
+        request: The incoming FastAPI request; method and path are
+            included in the WARNING log for operator diagnostics.
         exc: The discord.HTTPException instance.
 
     Returns:
         JSONResponse with status 502 or 503 and a generic detail message.
     """
     logger.warning(
-        "Discord HTTPException: status=%s text=%r",
+        "Discord HTTPException on %s %s: status=%s text=%r",
+        request.method,
+        request.url.path,
         exc.status,
         exc.text,
     )
@@ -151,7 +168,7 @@ async def _handle_discord_http_exception(
 
 
 @app.exception_handler(asyncio.TimeoutError)
-async def _handle_timeout(_request: Request, exc: asyncio.TimeoutError) -> JSONResponse:
+async def _handle_timeout(request: Request, exc: asyncio.TimeoutError) -> JSONResponse:
     """Translate asyncio.TimeoutError to HTTP 503.
 
     Raised when a Discord API call exceeds its configured timeout.
@@ -159,13 +176,14 @@ async def _handle_timeout(_request: Request, exc: asyncio.TimeoutError) -> JSONR
     for consistency with the module's error envelope policy.
 
     Args:
-        _request: The incoming FastAPI request (intentionally unused).
+        request: The incoming FastAPI request; method and path are
+            included in the WARNING log for operator diagnostics.
         exc: The asyncio.TimeoutError instance.
 
     Returns:
         JSONResponse with status 503 and a generic detail message.
     """
-    logger.warning("Discord timeout: %r", exc)
+    logger.warning("Discord timeout on %s %s: %r", request.method, request.url.path, exc)
     return JSONResponse(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
         content={"detail": "Discord temporarily unavailable"},
