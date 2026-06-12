@@ -10,6 +10,7 @@ class SiegeMemberResponse(BaseModel):
     member_name: str = ""
     member_role: str = ""
     member_power_level: str | None = None
+    member_is_active: bool = True
     attack_day: int | None
     has_reserve_set: bool | None
     attack_day_override: bool
@@ -21,6 +22,7 @@ class SiegeMemberResponse(BaseModel):
             data.member_name = data.member.name
             data.member_role = data.member.role
             data.member_power_level = data.member.power_level
+            data.member_is_active = data.member.is_active
         return data
 
 
