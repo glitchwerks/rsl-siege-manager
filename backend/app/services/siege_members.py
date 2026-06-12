@@ -7,6 +7,7 @@ from sqlalchemy.orm import selectinload
 
 from app.models.enums import SiegeStatus
 from app.models.member import Member
+from app.models.siege import Siege
 from app.models.siege_member import SiegeMember
 from app.schemas.siege_member import MemberPreferenceSummary, SiegeMemberUpdate
 from app.services.sieges import get_siege
@@ -15,9 +16,27 @@ from app.services.sieges import get_siege
 async def get_siege_member_preferences(
     session: AsyncSession, siege_id: int
 ) -> list[MemberPreferenceSummary]:
+    """Return member preference summaries for all roster members of *siege_id*.
+
+    Applies the same planning-scoped active-member filter as
+    ``list_siege_members``: inactive members are excluded only when the siege
+    is in ``planning`` status. For ``active`` and ``complete`` sieges all
+    roster rows are returned, preserving the historical record (see Fix 1 in
+    ``deactivate_member`` which removes rows only from planning sieges).
+
+    Args:
+        session: Async SQLAlchemy session.
+        siege_id: Primary key of the siege to query.
+
+    Returns:
+        List of ``MemberPreferenceSummary`` instances ordered by member ID.
+    """
     result = await session.execute(
         select(SiegeMember)
+        .join(Siege, SiegeMember.siege_id == Siege.id)
+        .join(Member, SiegeMember.member_id == Member.id)
         .where(SiegeMember.siege_id == siege_id)
+        .where((Siege.status != SiegeStatus.planning) | (Member.is_active.is_(True)))
         .options(selectinload(SiegeMember.member).selectinload(Member.post_preferences))
         .order_by(SiegeMember.member_id)
     )
@@ -33,9 +52,33 @@ async def get_siege_member_preferences(
 
 
 async def list_siege_members(session: AsyncSession, siege_id: int) -> list[SiegeMember]:
+    """Return SiegeMember rows for *siege_id*, respecting history preservation.
+
+    Both fixes for issue #485 work together here:
+
+    - **Fix 1** (``deactivate_member``): removes ``SiegeMember`` rows from
+      planning sieges on deactivation, so stale rows never accumulate there.
+    - **Fix 2** (this function): defense-in-depth read filter that excludes
+      inactive members, but *only* for ``planning`` sieges. For ``active`` and
+      ``complete`` sieges every roster row is returned so that historical
+      records of who participated remain intact even if those members are
+      later deactivated.
+
+    Args:
+        session: Async SQLAlchemy session.
+        siege_id: Primary key of the siege to query.
+
+    Returns:
+        List of ``SiegeMember`` instances with ``member`` eagerly loaded.
+        For planning sieges, inactive members are excluded. For active and
+        complete sieges, all roster rows are included.
+    """
     result = await session.execute(
         select(SiegeMember)
+        .join(Siege, SiegeMember.siege_id == Siege.id)
+        .join(Member, SiegeMember.member_id == Member.id)
         .where(SiegeMember.siege_id == siege_id)
+        .where((Siege.status != SiegeStatus.planning) | (Member.is_active.is_(True)))
         .options(selectinload(SiegeMember.member))
     )
     return list(result.scalars().all())
