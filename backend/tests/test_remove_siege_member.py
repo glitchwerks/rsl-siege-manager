@@ -8,6 +8,7 @@ Covers:
 - 404 when the SiegeMember row doesn't exist (member not in siege).
 - 400 when the siege is not in planning status (active or complete).
 - Isolation: OTHER sieges' rosters/positions for the same member are untouched.
+- P2b: matched_condition_id cleared alongside member_id when unassigning.
 """
 
 import pytest
@@ -21,6 +22,7 @@ from app.models.building_group import BuildingGroup
 from app.models.enums import BuildingType, MemberRole, SiegeStatus
 from app.models.member import Member
 from app.models.position import Position
+from app.models.post_condition import PostCondition
 from app.models.siege import Siege
 from app.models.siege_member import SiegeMember
 from app.services.siege_members import remove_siege_member
@@ -282,3 +284,59 @@ async def test_remove_siege_member_does_not_affect_other_sieges(session):
     assert (
         pos_b.member_id == member.id
     ), "Position in OTHER siege must not be cleared (#486 single-siege scope)"
+
+
+# ---------------------------------------------------------------------------
+# P2b — matched_condition_id must be cleared alongside member_id
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_remove_siege_member_clears_matched_condition_id(session):
+    """P2b: remove_siege_member must clear matched_condition_id as well as
+    member_id on the member's positions within the siege.
+
+    When a position has both member_id and matched_condition_id set, removing
+    the member must null both fields — leaving matched_condition_id stale
+    would break validation logic that relies on it only being set when a
+    member is assigned.
+    """
+    member = Member(name="Grace", role=MemberRole.advanced, is_active=True)
+    session.add(member)
+    await session.flush()
+
+    siege = await _make_siege(session, SiegeStatus.planning)
+    session.add(SiegeMember(siege_id=siege.id, member_id=member.id))
+    await session.flush()
+
+    # Assign the member to the position and set a matched_condition_id.
+    pos = await _assign_member_to_position(session, siege, member)
+
+    # We need a real PostCondition row for the FK; seed a minimal one.
+    condition = PostCondition(
+        description="Test condition — P2b",
+        stronghold_level=1,
+        condition_type="role",
+    )
+    session.add(condition)
+    await session.flush()
+
+    pos.matched_condition_id = condition.id
+    await session.commit()
+
+    # Precondition: both fields are set.
+    await session.refresh(pos)
+    assert pos.member_id == member.id, "Precondition: member_id must be set"
+    assert (
+        pos.matched_condition_id == condition.id
+    ), "Precondition: matched_condition_id must be set"
+
+    # Act
+    await remove_siege_member(session, siege.id, member.id)
+
+    # Assert: both fields cleared.
+    await session.refresh(pos)
+    assert pos.member_id is None, "member_id must be cleared when member removed from siege"
+    assert (
+        pos.matched_condition_id is None
+    ), "matched_condition_id must also be cleared when member removed (P2b)"

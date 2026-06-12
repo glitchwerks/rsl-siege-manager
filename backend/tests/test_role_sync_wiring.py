@@ -611,3 +611,148 @@ async def test_ac19_discord_role_id_propagates_to_bot_client(monkeypatch):
     mock_sync.assert_called_once()
     _, kwargs = mock_sync.call_args
     assert kwargs.get("discord_role_id") == 12345
+
+
+# ---------------------------------------------------------------------------
+# P2a — DELETE /sieges/{id}/members/{id} emits unassign webhook when
+#        the removed member had attack_day set AND a discord_id.
+# ---------------------------------------------------------------------------
+
+_UNASSIGN_APPLIED_BODY_REMOVE = {"status": "applied", "added": [], "removed": ["Day 2"]}
+
+
+@pytest.mark.asyncio
+async def test_remove_siege_member_with_attack_day_emits_unassign_webhook(monkeypatch, http_client):
+    """P2a: DELETE route emits action='unassign' when removed member had
+    attack_day set and a discord_id.
+
+    The emitted payload must have action='unassign', day_number absent
+    (same contract as PUT unassign path), and the member's discord_id.
+    """
+    _enable_sync(monkeypatch)
+
+    _assigned_at = datetime(2026, 5, 14, 12, 0, 0, 123456, tzinfo=UTC)
+
+    # Service returns: (discord_id, prior_attack_day, assigned_at)
+    # prior_attack_day=2 triggers webhook emission.
+    _remove_result = (_DISCORD_ID_A, 2, _assigned_at)
+
+    with (
+        patch(
+            "app.api.siege_members.siege_members_service.remove_siege_member",
+            new_callable=AsyncMock,
+        ) as mock_remove,
+        respx.mock() as transport,
+    ):
+        route = transport.post(_SYNC_URL).mock(
+            return_value=httpx.Response(200, json=_UNASSIGN_APPLIED_BODY_REMOVE)
+        )
+        mock_remove.return_value = _remove_result
+
+        async with http_client as c:
+            response = await c.delete(
+                f"/api/sieges/{_SIEGE_ID}/members/{_MEMBER_ID}",
+            )
+
+    assert response.status_code == 204
+    assert route.call_count == 1, "Expected exactly one unassign webhook call"
+
+    body = json.loads(route.calls[0].request.content)
+    assert body["action"] == "unassign"
+    assert body["discord_id"] == _DISCORD_ID_A
+    assert body["siege_id"] == _SIEGE_ID
+    assert "day_number" not in body or body.get("day_number") is None
+    assert body["correlation_id"], "correlation_id must be non-empty"
+
+
+@pytest.mark.asyncio
+async def test_remove_siege_member_without_attack_day_emits_no_webhook(monkeypatch, http_client):
+    """P2a negative: DELETE route must NOT emit a webhook when the removed
+    member had no attack_day set (prior_attack_day=None).
+    """
+    _enable_sync(monkeypatch)
+
+    # Service returns prior_attack_day=None — member had no day assigned.
+    _remove_result = (_DISCORD_ID_A, None, None)
+
+    with (
+        patch(
+            "app.api.siege_members.siege_members_service.remove_siege_member",
+            new_callable=AsyncMock,
+        ) as mock_remove,
+        respx.mock(assert_all_called=False) as transport,
+    ):
+        mock_remove.return_value = _remove_result
+
+        async with http_client as c:
+            response = await c.delete(
+                f"/api/sieges/{_SIEGE_ID}/members/{_MEMBER_ID}",
+            )
+
+    assert response.status_code == 204
+    assert (
+        transport.calls.call_count == 0
+    ), "No webhook expected when removed member had no attack_day"
+
+
+@pytest.mark.asyncio
+async def test_remove_siege_member_no_discord_id_emits_no_webhook(monkeypatch, http_client):
+    """P2a negative: DELETE route must NOT emit a webhook when the removed
+    member has no discord_id, even if attack_day was set.
+
+    The schedule_role_sync gate handles the discord_id=None skip — this
+    test verifies the route still returns 204 cleanly with zero HTTP calls.
+    """
+    _enable_sync(monkeypatch)
+
+    _assigned_at = datetime(2026, 5, 14, 12, 0, 0, 0, tzinfo=UTC)
+    # discord_id=None, but attack_day was set — gate must suppress the call.
+    _remove_result = (None, 1, _assigned_at)
+
+    with (
+        patch(
+            "app.api.siege_members.siege_members_service.remove_siege_member",
+            new_callable=AsyncMock,
+        ) as mock_remove,
+        respx.mock(assert_all_called=False) as transport,
+    ):
+        mock_remove.return_value = _remove_result
+
+        async with http_client as c:
+            response = await c.delete(
+                f"/api/sieges/{_SIEGE_ID}/members/{_MEMBER_ID}",
+            )
+
+    assert response.status_code == 204
+    assert (
+        transport.calls.call_count == 0
+    ), "No webhook expected when discord_id is None (gate must suppress)"
+
+
+@pytest.mark.asyncio
+async def test_remove_siege_member_feature_gate_off_emits_no_webhook(monkeypatch, http_client):
+    """P2a negative: DAY_ROLE_SYNC_ENABLED=false suppresses the webhook on
+    DELETE even when both discord_id and attack_day are set.
+    """
+    monkeypatch.setattr("app.config.settings.day_role_sync_enabled", False)
+    monkeypatch.setattr("app.config.settings.day_role_sync_url", _SYNC_URL)
+
+    _assigned_at = datetime(2026, 5, 14, 12, 0, 0, 0, tzinfo=UTC)
+    _remove_result = (_DISCORD_ID_A, 1, _assigned_at)
+
+    with (
+        patch(
+            "app.api.siege_members.siege_members_service.remove_siege_member",
+            new_callable=AsyncMock,
+        ) as mock_remove,
+        respx.mock(assert_all_called=False) as transport,
+    ):
+        mock_remove.return_value = _remove_result
+
+        async with http_client as c:
+            response = await c.delete(
+                f"/api/sieges/{_SIEGE_ID}/members/{_MEMBER_ID}",
+            )
+
+    assert response.status_code == 204
+    assert transport.calls.call_count == 0, "Feature gate off must suppress DELETE unassign webhook"
