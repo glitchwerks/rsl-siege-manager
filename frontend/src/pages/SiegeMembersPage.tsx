@@ -6,6 +6,7 @@ import {
   getSiegeMembers,
   addSiegeMember,
   updateSiegeMember,
+  removeSiegeMember,
   previewAttackDay,
   applyAttackDay,
 } from "../api/sieges";
@@ -36,7 +37,7 @@ import {
   DialogFooter,
   DialogDescription,
 } from "../components/ui/dialog";
-import { ArrowLeft, Lock, UserPlus, Loader2, UserX } from "lucide-react";
+import { ArrowLeft, Lock, UserPlus, Loader2, UserX, Trash2 } from "lucide-react";
 
 function AttackDaySelect({
   value,
@@ -66,10 +67,14 @@ function SiegeMemberRow({
   member,
   siegeId,
   isLocked,
+  isPlanning,
+  onRemove,
 }: {
   member: SiegeMember;
   siegeId: number;
   isLocked?: boolean;
+  isPlanning?: boolean;
+  onRemove?: (member: SiegeMember) => void;
 }) {
   const queryClient = useQueryClient();
 
@@ -144,6 +149,19 @@ function SiegeMemberRow({
           }
         />
       </TableCell>
+      <TableCell>
+        {isPlanning && onRemove && (
+          <Button
+            size="sm"
+            variant="ghost"
+            aria-label={`Remove ${member.member_name} from siege`}
+            className="h-7 w-7 p-0 text-slate-400 hover:text-red-600"
+            onClick={() => onRemove(member)}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
+        )}
+      </TableCell>
     </TableRow>
   );
 }
@@ -158,6 +176,7 @@ export default function SiegeMembersPage() {
   const [selectedMemberId, setSelectedMemberId] = useState<string>("");
   const [addError, setAddError] = useState<string | null>(null);
   const [reserveAssigning, setReserveAssigning] = useState(false);
+  const [removeTarget, setRemoveTarget] = useState<SiegeMember | null>(null);
 
   const { data: siege } = useQuery({
     queryKey: ["siege", siegeId],
@@ -216,6 +235,15 @@ export default function SiegeMembersPage() {
       queryClient.invalidateQueries({ queryKey: ["siegeMembers", siegeId] });
       setPreviewOpen(false);
       setPreview(null);
+    },
+  });
+
+  const removeMutation = useMutation({
+    mutationFn: (memberId: number) => removeSiegeMember(siegeId, memberId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["siegeMembers", siegeId] });
+      queryClient.invalidateQueries({ queryKey: ["board", siegeId] });
+      setRemoveTarget(null);
     },
   });
 
@@ -328,6 +356,7 @@ export default function SiegeMembersPage() {
                 <TableHead>Attack Day</TableHead>
                 <TableHead>Override (Pinned)</TableHead>
                 <TableHead>Reserve Set</TableHead>
+                <TableHead />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -350,6 +379,8 @@ export default function SiegeMembersPage() {
                     member={m}
                     siegeId={siegeId}
                     isLocked={siege?.status === "complete"}
+                    isPlanning={isPlanning}
+                    onRemove={setRemoveTarget}
                   />
                 ))}
             </TableBody>
@@ -473,6 +504,45 @@ export default function SiegeMembersPage() {
               disabled={applyMutation.isPending}
             >
               {applyMutation.isPending ? "Applying..." : "Apply"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Remove Member Confirmation Dialog */}
+      <Dialog
+        open={removeTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setRemoveTarget(null);
+        }}
+      >
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Remove member from siege?</DialogTitle>
+            <DialogDescription>
+              {removeTarget?.member_name} will be removed from this siege. Any
+              positions they are assigned to will be unassigned, and their
+              attack-day and reserve state will be cleared.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setRemoveTarget(null)}
+              disabled={removeMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (removeTarget) {
+                  removeMutation.mutate(removeTarget.member_id);
+                }
+              }}
+              disabled={removeMutation.isPending}
+            >
+              {removeMutation.isPending ? "Removing..." : "Remove"}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -72,6 +72,21 @@ async def add_siege_member(
     return await siege_members_service.add_siege_member(db, siege_id, data.member_id)
 
 
+@router.delete("/sieges/{siege_id}/members/{member_id}", status_code=204)
+async def remove_siege_member(
+    siege_id: int,
+    member_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """Remove a member from the siege roster (planning phase only).
+
+    Clears all of that member's position assignments within this siege, then
+    deletes their SiegeMember roster row.  Returns 204 No Content on success.
+    Rejects with 400 if the siege is not in planning status.
+    """
+    await siege_members_service.remove_siege_member(db, siege_id, member_id)
+
+
 @router.put("/sieges/{siege_id}/members/{member_id}", response_model=SiegeMemberResponse)
 async def update_siege_member(
     siege_id: int,

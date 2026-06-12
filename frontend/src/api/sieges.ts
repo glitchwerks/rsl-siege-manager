@@ -162,6 +162,13 @@ export async function updateSiegeMember(
   return res.data;
 }
 
+export async function removeSiegeMember(
+  siegeId: number,
+  memberId: number
+): Promise<void> {
+  await apiClient.delete(`/api/sieges/${siegeId}/members/${memberId}`);
+}
+
 export async function previewAutofill(
   siegeId: number
 ): Promise<AutofillPreviewResult> {
