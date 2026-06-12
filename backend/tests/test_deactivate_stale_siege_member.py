@@ -18,7 +18,8 @@ from app.models.member import Member
 from app.models.position import Position
 from app.models.siege import Siege
 from app.models.siege_member import SiegeMember
-from app.services.members import deactivate_member
+from app.schemas.member import MemberUpdate
+from app.services.members import deactivate_member, update_member
 from app.services.siege_members import (
     get_siege_member_preferences,
     list_siege_members,
@@ -393,4 +394,93 @@ async def test_get_siege_member_preferences_shows_deactivated_in_active_siege(
     assert member.id in member_ids, (
         "get_siege_member_preferences must include deactivated members in "
         "active siege rosters (planning-scoped filter, review item 3)"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Regression: deactivating via update_member (the PUT/UI path) must also
+# run the planning-siege cleanup — issue #485 gap.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_update_member_deactivate_removes_from_planning_siege_roster(
+    session,
+):
+    """Deactivating a member via update_member (PUT path, used by the UI)
+    must delete their SiegeMember row from every planning siege.
+
+    This is the primary regression for the #485 gap: the original fix only
+    wired cleanup into deactivate_member (DELETE path), leaving update_member
+    (PUT/UI path) without cleanup. We check the raw SiegeMember row to prove
+    the row is deleted, not just filtered by list_siege_members' defense-in-
+    depth inactive-member filter.
+    """
+    from sqlalchemy import select
+
+    member = Member(name="Kate", role=MemberRole.advanced, is_active=True)
+    session.add(member)
+    await session.flush()
+
+    siege = await _make_siege(session, SiegeStatus.planning)
+    session.add(SiegeMember(siege_id=siege.id, member_id=member.id))
+    await session.commit()
+
+    # Pre-condition: raw SiegeMember row exists
+    result_before = await session.execute(
+        select(SiegeMember).where(
+            SiegeMember.siege_id == siege.id,
+            SiegeMember.member_id == member.id,
+        )
+    )
+    assert (
+        result_before.scalar_one_or_none() is not None
+    ), "Precondition: SiegeMember row must exist before update"
+
+    # Act: deactivate via update_member — this is the path the UI calls
+    await update_member(session, member.id, MemberUpdate(is_active=False))
+
+    # Assert (a): raw SiegeMember row is deleted from the planning siege
+    result_after = await session.execute(
+        select(SiegeMember).where(
+            SiegeMember.siege_id == siege.id,
+            SiegeMember.member_id == member.id,
+        )
+    )
+    assert result_after.scalar_one_or_none() is None, (
+        "Deactivating via update_member must delete SiegeMember row from "
+        "planning siege (issue #485 gap — PUT path must run cleanup)"
+    )
+
+
+@pytest.mark.asyncio
+async def test_update_member_deactivate_clears_position_assignments(
+    session,
+):
+    """Deactivating a member via update_member must also clear their position
+    assignments in planning sieges (mirrors deactivate_member behaviour).
+    """
+    member = Member(name="Leo", role=MemberRole.advanced, is_active=True)
+    session.add(member)
+    await session.flush()
+
+    siege = await _make_siege(session, SiegeStatus.planning)
+    session.add(SiegeMember(siege_id=siege.id, member_id=member.id))
+    await session.flush()
+
+    pos = await _assign_member_to_position(session, siege, member)
+    await session.commit()
+
+    # Confirm position is assigned before the update
+    await session.refresh(pos)
+    assert pos.member_id == member.id, "Precondition: position must be assigned to member"
+
+    # Act: deactivate via update_member (the PUT path)
+    await update_member(session, member.id, MemberUpdate(is_active=False))
+
+    # Assert (b): position is cleared
+    await session.refresh(pos)
+    assert pos.member_id is None, (
+        "update_member deactivation must clear position assignments in "
+        "planning sieges (issue #485 gap)"
     )
