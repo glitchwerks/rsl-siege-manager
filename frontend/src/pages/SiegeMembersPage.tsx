@@ -36,7 +36,7 @@ import {
   DialogFooter,
   DialogDescription,
 } from "../components/ui/dialog";
-import { ArrowLeft, Lock, UserPlus, Loader2 } from "lucide-react";
+import { ArrowLeft, Lock, UserPlus, Loader2, UserX } from "lucide-react";
 
 function AttackDaySelect({
   value,
@@ -86,7 +86,17 @@ function SiegeMemberRow({
 
   return (
     <TableRow>
-      <TableCell className="font-medium">{member.member_name}</TableCell>
+      <TableCell className="font-medium">
+        <span className={member.member_is_active === false ? "text-slate-500" : undefined}>
+          {member.member_name}
+        </span>
+        {member.member_is_active === false && (
+          <UserX
+            className="ml-1 inline-block h-3.5 w-3.5 text-slate-500"
+            aria-label="Inactive member"
+          />
+        )}
+      </TableCell>
       <TableCell className="text-sm text-slate-600">
         {{
           heavy_hitter: "Heavy Hitter",

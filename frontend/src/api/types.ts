@@ -114,6 +114,7 @@ export interface SiegeMember {
   member_name: string;
   member_role: string;
   member_power_level: string | null;
+  member_is_active: boolean;
   attack_day: number | null;
   has_reserve_set: boolean | null;
   attack_day_override: boolean;

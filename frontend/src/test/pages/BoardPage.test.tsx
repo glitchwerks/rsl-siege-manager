@@ -94,6 +94,7 @@ function makeSiegeMember(overrides: Partial<SiegeMember> = {}): SiegeMember {
     member_name: "Aethon",
     member_role: "heavy_hitter",
     member_power_level: "gt_25m",
+    member_is_active: true,
     attack_day: 1,
     has_reserve_set: false,
     attack_day_override: false,
