@@ -159,12 +159,15 @@ jobs:
             --url  "$RELEASE_URL")
 
           # Write to GITHUB_OUTPUT using a heredoc so multi-line values are
-          # handled safely by the Actions runner (EOF delimiter is unique).
+          # handled safely by the Actions runner.  Per-run unique delimiter
+          # prevents a highlights line equal to the sentinel from ending the
+          # heredoc early (same collision class as RELEASE_BODY in step above).
+          HL_DELIM="HIGHLIGHTS_EOF_$(openssl rand -hex 16)"
           {
-            echo "description<<__HIGHLIGHTS_EOF__"
+            echo "description<<$HL_DELIM"
             printf '%s' "$description"
             echo ""
-            echo "__HIGHLIGHTS_EOF__"
+            echo "$HL_DELIM"
           } >> "$GITHUB_OUTPUT"
 
       # ── POST to Discord ───────────────────────────────────────────────────
