@@ -67,9 +67,10 @@ const COMPONENTS: Components = {
   // Collapse the paragraph wrapper — bullets are single-line, no block needed.
   p: ({ children }) => <>{children}</>,
 
-  // Links open in a new tab with safe rel attributes.
-  a: ({ href, children }) => (
-    <a href={href} target="_blank" rel="noopener noreferrer">
+  // Links open in a new tab with safe rel attributes. Spread remaining props
+  // (title, etc.) but pin href/target/rel last so they can't be overridden.
+  a: ({ href, children, ...props }) => (
+    <a {...props} href={href} target="_blank" rel="noopener noreferrer">
       {children}
     </a>
   ),
