@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-06-12
+
+Member removal from planning sieges, inactive-member indicators, and stale-roster cleanup. Infrastructure: automated idempotency verification for infra-deploy CI, Pester test coverage for certificate tooling, Discord release announcements, and dependency housekeeping.
+
+### Added
+
+- **Remove member from a planning siege** — officers can now remove a member from an active planning siege directly from the roster, reassigning or clearing any positions they held. (#486, #490)
+- **Inactive-member indicator on siege roster rows** — roster rows for deactivated members now display a visual indicator icon so officers can identify stale assignments at a glance. (#487, #489)
+
+### Changed
+
+- **Bot exception-handler logs now include request endpoint and method** — enriched log context makes it straightforward to correlate bot errors with the originating API call. (#432, #491)
+
+### Fixed
+
+- **Stale SiegeMember rows after member deactivation** — deactivating a member now cleans up any open `SiegeMember` roster rows; inactive members no longer linger in cloned-siege rosters. (#485, #488)
+
+### Infrastructure
+
+- **Automated idempotency verification in infra-deploy CI** — the `infra-deploy.yml` workflow now runs an Azure what-if check after each deployment to assert the resulting state is idempotent. (#233, #471, #474, #475, #476, #477, #478, #479, #480, #481)
+- **Wire `DISCORD_DAY_1/2_ROLE_ID` dev environment variables** — day-role IDs are now provisioned in the dev environment to support day-role-sync testing end-to-end. (#463, #470)
+- **Discord release-announcement workflow** — publishing a GitHub Release now automatically posts a rich embed to the release-announcement channel via `notify-discord-release.yml`. (#469)
+- **Pester tests for `generate-origin-pfx.ps1`** — certificate-generation script now has PowerShell unit-test coverage via Pester. (#231, #473)
+- **Bump `actions/upload-artifact` 4 → 7** — CI workflow dependency update. (#484)
+- **Bump `actions/checkout` 4 → 6** — CI workflow dependency update. (#483)
+
+### Documentation
+
+- **Consolidate backend↔bot seam reference** — the canonical backend↔bot HTTP seam reference (URL resolution, auth, deployment shapes, ingress posture, Key Vault secrets) is now consolidated in `docs/bot-seam.md`. (#454, #472)
+
 ## [1.3.0] - 2026-05-26
 
 Day-role-sync producer (mom-bot integration) + sidecar bot support + member preferences API. See `RELEASING.md` for the release process this entry follows.
