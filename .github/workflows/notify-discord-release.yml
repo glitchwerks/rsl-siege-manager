@@ -121,12 +121,14 @@ jobs:
             echo "RELEASE_PUBLISHED=$RELEASE_PUBLISHED"
           } >> "$GITHUB_ENV"
 
-          # RELEASE_BODY may be multi-line — write with heredoc delimiter.
+          # RELEASE_BODY may be multi-line — write with a per-run unique
+          # delimiter so no release-body line can collide with the sentinel
+          # and end the heredoc early (or inject env vars).
+          DELIM="RELEASE_BODY_EOF_$(openssl rand -hex 16)"
           {
-            echo "RELEASE_BODY<<__BODY_EOF__"
-            printf '%s' "$RELEASE_BODY"
-            echo ""
-            echo "__BODY_EOF__"
+            echo "RELEASE_BODY<<$DELIM"
+            printf '%s\n' "$RELEASE_BODY"
+            echo "$DELIM"
           } >> "$GITHUB_ENV"
 
       - name: Checkout code
