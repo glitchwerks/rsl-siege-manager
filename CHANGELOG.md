@@ -7,9 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-06-13
+
+Patch release: markdown rendering in the changelog dropdown, a validation fix for level-6 strongholds, and repairs to the Discord release-announcement workflow.
+
 ### Changed
 
 - **Inline markdown in the "What's new" changelog dropdown** — bullet text now renders `**bold**`, *italic*, `` `inline code` ``, `[links](url)` (opening in a new tab), and bare `#NNN` issue references as clickable links, instead of showing the raw markdown. (#388)
+
+### Fixed
+
+- **Group-number validation rejected `group_number=10`** — a level-6 stronghold legitimately has 10 groups, but the validator's hardcoded upper bound flagged group 10 as out of range. The bound now agrees with the database constraint (≤ 10). (#495)
+
+### Infrastructure
+
+- **Discord release-announcement workflow repaired** — removed a broken `created_at == published_at` skip-guard that suppressed the initial v1.4.0 announcement, added a `workflow_dispatch` trigger so a missed announcement can be re-fired by tag, and scoped the job to the `prod` environment so it can read the `DISCORD_RELEASE_WEBHOOK_URL` secret. (#493, #497)
 
 ## [1.4.0] - 2026-06-12
 
