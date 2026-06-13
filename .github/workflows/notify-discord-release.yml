@@ -111,25 +111,30 @@ jobs:
             RELEASE_PUBLISHED="$EVT_PUBLISHED"
           fi
 
-          # Write all resolved values to GITHUB_ENV for downstream steps.
-          {
-            echo "RELEASE_TAG=$TAG_NAME"
-            echo "RELEASE_NAME=$RELEASE_NAME"
-            echo "RELEASE_URL=$RELEASE_URL"
-            echo "RELEASE_PRERELEASE=$RELEASE_PRERELEASE"
-            echo "RELEASE_AUTHOR=$RELEASE_AUTHOR"
-            echo "RELEASE_PUBLISHED=$RELEASE_PUBLISHED"
-          } >> "$GITHUB_ENV"
+          # Write all resolved values to GITHUB_ENV using heredoc-style writes
+          # so that ANY value containing a newline (release name, author, etc.)
+          # cannot corrupt the env file or inject unintended env vars.
+          # A single random delimiter is generated once per run and reused for
+          # every field — collision per field is impossible since each heredoc
+          # block is self-contained and the delimiter is 2^128-random.
+          DELIM="GHENV_EOF_$(openssl rand -hex 16)"
 
-          # RELEASE_BODY may be multi-line — write with a per-run unique
-          # delimiter so no release-body line can collide with the sentinel
-          # and end the heredoc early (or inject env vars).
-          DELIM="RELEASE_BODY_EOF_$(openssl rand -hex 16)"
-          {
-            echo "RELEASE_BODY<<$DELIM"
-            printf '%s\n' "$RELEASE_BODY"
-            echo "$DELIM"
-          } >> "$GITHUB_ENV"
+          # Helper: write_env KEY VALUE
+          write_env() {
+            {
+              echo "$1<<$DELIM"
+              printf '%s\n' "$2"
+              echo "$DELIM"
+            } >> "$GITHUB_ENV"
+          }
+
+          write_env RELEASE_TAG       "$TAG_NAME"
+          write_env RELEASE_NAME      "$RELEASE_NAME"
+          write_env RELEASE_URL       "$RELEASE_URL"
+          write_env RELEASE_PRERELEASE "$RELEASE_PRERELEASE"
+          write_env RELEASE_AUTHOR    "$RELEASE_AUTHOR"
+          write_env RELEASE_PUBLISHED "$RELEASE_PUBLISHED"
+          write_env RELEASE_BODY      "$RELEASE_BODY"
 
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
