@@ -61,6 +61,7 @@ jobs:
   notify:
     name: Post Discord Release Embed
     runs-on: ubuntu-latest
+    environment: prod
 
     steps:
       # ── Resolve release metadata ──────────────────────────────────────────
