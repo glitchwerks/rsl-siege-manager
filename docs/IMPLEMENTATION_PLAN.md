@@ -224,7 +224,7 @@ Phase 8 (Excel Import Script) ── can run any time after Phase 3; defer post-
    1. All assigned members must be active
    2. No member assigned more than `defense_scroll_count` times
    3. Building numbers within type-specific range
-   4. Group numbers 1–9
+   4. Group numbers 1–10 (level-6 strongholds have 10 groups)
    5. Position numbers 1 to `slot_count`
    6. Attack day must be 1 or 2
    7. Post buildings have exactly 1 group
