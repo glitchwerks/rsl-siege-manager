@@ -193,7 +193,7 @@ Represents an attack group within a building.
 |---|---|---|---|
 | `id` | PK | Auto-generated | |
 | `building_id` | FK → Building | NOT NULL, ON DELETE CASCADE | |
-| `group_number` | INT | 1-9, NOT NULL | Group within the building |
+| `group_number` | INT | 1-10, NOT NULL | Group within the building (level-6 strongholds have 10 groups) |
 | `slot_count` | INT | 1-3, NOT NULL, DEFAULT 3 | Number of position slots in this group |
 
 **Unique constraint:** `(building_id, group_number)`
@@ -1231,7 +1231,7 @@ Seeded into the `PostCondition` table on initial deployment. 36 conditions total
 
 | Constraint | Value | Notes |
 |---|---|---|
-| Group range | 1-9 | Per building |
+| Group range | 1-10 | Per building (level-6 strongholds have 10 groups) |
 | Position range | 1-3 | Per group; last group in a building may have fewer slots (see section 3.3) |
 | Building number range | 1-18 | Building instance on the siege map |
 | Attack days | 1 or 2 | Siege runs over 2 days |
@@ -1261,7 +1261,7 @@ These rules block siege activation and should also be enforced on individual wri
 | 1 | All assigned members active | Every `position.member_id` must reference an active `Member` record | VBA Validate |
 | 2 | No over-assignment | No member may be assigned to more positions than `siege.defense_scroll_count` | VBA Validate |
 | 3 | Building number valid | Building numbers must be within type-specific range (see `BuildingTypeConfig`) | Python `Position.__init__` |
-| 4 | Group number valid | Group numbers must be 1-9 | Python `Position.__init__` |
+| 4 | Group number valid | Group numbers must be 1-10 | Python `Position.__init__` |
 | 5 | Position number valid | Position numbers must be 1 to `building_group.slot_count` | Python `Position.__init__` |
 | 6 | Attack day valid | Attack day must be 1 or 2 (in `SiegeMember` records) | Python `SiegeAssignment.__init__` |
 | 7 | Post group constraint | Post buildings must have exactly 1 group with `slot_count` matching `BuildingTypeConfig` | Domain rule from GAPS.md |
