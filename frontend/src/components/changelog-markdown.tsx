@@ -7,47 +7,60 @@ import type { Components } from "react-markdown";
 
 const GITHUB_REPO = "https://github.com/glitchwerks/rsl-siege-manager";
 
+// Matches a full markdown link span `[label](href)` — used to carve the
+// bullet into link / non-link segments so the autolinker never touches a
+// ref inside a link's label OR href.
+const MARKDOWN_LINK_RE = /\[[^\]]*\]\([^)]*\)/g;
+
+// Matches a bare GitHub issue/PR reference: `#NNN`.
+const BARE_REF_RE = /#(\d+)/g;
+
 /**
- * Pre-process a raw bullet string before handing it to ReactMarkdown.
+ * Autolink bare `#NNN` refs within a plain-text segment (no markdown links).
  *
- * Transforms bare `#NNN` issue references (not already inside a markdown
- * link `[...](...)`]) into GitHub issue links:
- *   `#335` → `[#335](https://github.com/glitchwerks/rsl-siege-manager/issues/335)`
- *
- * The regex uses a negative lookbehind for `](` to avoid double-transforming
- * refs that are already part of a markdown link target, and a negative
- * lookbehind for `[` to skip the link-label half.
+ * Skips refs that look like a URL fragment/anchor (preceded by `/`, `=`, `?`,
+ * `&`), which can occur in a bare URL outside any `[...](...)` link.
  */
-function preprocess(bullet: string): string {
-  // Match a bare #NNN that is NOT already inside a markdown link href.
-  // The href portion of a markdown link looks like `](https://...)` —
-  // a `#` preceded by `](` (possibly with other chars) is inside a link.
-  // We use a two-step approach: replace all `#NNN` refs, then skip those
-  // that are already wrapped in a markdown link by only matching when the
-  // `#` is NOT immediately preceded by a URL character sequence from `](`.
-  //
-  // Simpler: replace any `#NNN` that is NOT inside an existing `[...](...)`
-  // link. We detect "inside a link href" by excluding #NNN that follows `](`
-  // somewhere in the same link context — too complex. Instead, we do a
-  // pre-scan: convert only bare `#NNN` (not preceded by `/`, `=`, `?`, or
-  // `&` which would indicate it's inside a URL fragment/query).
-  return bullet.replace(/#(\d+)/g, (match, num, offset) => {
-    // Check the character immediately before the `#`.
-    const prevChar = offset > 0 ? bullet[offset - 1] : "";
-    // Skip if this looks like a URL fragment/anchor (preceded by `/`, `=`, `?`, `&`)
-    // or if it's already inside a markdown link label/href.
-    // A `#` preceded by `](` means it's in a link href — skip.
-    const before = bullet.slice(0, offset);
-    // If the preceding context ends with `](` (ignoring any URL prefix), skip.
-    if (/\]\([^)]*$/.test(before)) {
-      return match;
-    }
-    // Also skip URL-internal fragments.
-    if (prevChar === "/" || prevChar === "=" || prevChar === "?" || prevChar === "&") {
+function autolinkRefs(text: string): string {
+  return text.replace(BARE_REF_RE, (match, num, offset: number) => {
+    const prevChar = offset > 0 ? text[offset - 1] : "";
+    if (
+      prevChar === "/" ||
+      prevChar === "=" ||
+      prevChar === "?" ||
+      prevChar === "&"
+    ) {
       return match;
     }
     return `[#${num}](${GITHUB_REPO}/issues/${num})`;
   });
+}
+
+/**
+ * Pre-process a raw bullet string before handing it to ReactMarkdown.
+ *
+ * Transforms bare `#NNN` issue references into GitHub issue links:
+ *   `#335` → `[#335](https://github.com/glitchwerks/rsl-siege-manager/issues/335)`
+ *
+ * Existing markdown links are carved out first and passed through verbatim, so
+ * a ref inside a link's label (`[PR #335](…/pull/335)`) or href is never
+ * rewritten — only refs in the surrounding plain text are linked.
+ */
+function preprocess(bullet: string): string {
+  let out = "";
+  let last = 0;
+  MARKDOWN_LINK_RE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = MARKDOWN_LINK_RE.exec(bullet)) !== null) {
+    // Autolink the plain-text gap before this link…
+    out += autolinkRefs(bullet.slice(last, m.index));
+    // …then emit the link span unchanged.
+    out += m[0];
+    last = m.index + m[0].length;
+  }
+  // Autolink the trailing plain-text segment after the last link.
+  out += autolinkRefs(bullet.slice(last));
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -56,16 +69,19 @@ function preprocess(bullet: string): string {
 
 /**
  * Component map for ReactMarkdown that:
- * - Collapses `<p>` wrappers into React.Fragment so single-line bullets
- *   don't introduce a block element inside `<li>`.
+ * - Renders the `<p>` wrapper as an inline `<span>` so the whole bullet body
+ *   stays a single flex item inside the `<li>` (`flex gap-1.5`). A Fragment
+ *   would make each inline node a separate flex child, inserting gaps between
+ *   inline runs and letting them wrap independently.
  * - Renders `<a>` with target="_blank" and rel="noopener noreferrer".
  * - Drops block-only elements (h1-h6, ul, ol, blockquote, pre, img) by
  *   rendering nothing — these should never appear in a single-line bullet,
  *   but we eliminate them defensively.
  */
 const COMPONENTS: Components = {
-  // Collapse the paragraph wrapper — bullets are single-line, no block needed.
-  p: ({ children }) => <>{children}</>,
+  // Render the paragraph wrapper as an inline span — keeps the bullet body as
+  // one flex item; span is inline so it introduces no block element.
+  p: ({ children }) => <span>{children}</span>,
 
   // Links open in a new tab with safe rel attributes. Spread remaining props
   // (title, etc.) but pin href/target/rel last so they can't be overridden.
