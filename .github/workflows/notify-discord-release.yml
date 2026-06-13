@@ -70,11 +70,27 @@ jobs:
       - name: Resolve release metadata
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # All github.event.* and inputs.* values are mapped here so that
+          # bash sees them as environment variables — never as literal text
+          # substituted into the script before the shell parses it.  This
+          # eliminates the script-injection vector (backticks, $(...), quotes,
+          # newlines in release body are shell-data, not shell-syntax).
+          EVENT_NAME:     ${{ github.event_name }}
+          INPUT_TAG:      ${{ inputs.tag }}
+          GH_REPOSITORY:  ${{ github.repository }}
+          EVT_TAG:        ${{ github.event.release.tag_name }}
+          EVT_NAME:       ${{ github.event.release.name }}
+          EVT_BODY:       ${{ github.event.release.body }}
+          EVT_URL:        ${{ github.event.release.html_url }}
+          EVT_PRERELEASE: ${{ github.event.release.prerelease }}
+          EVT_AUTHOR:     ${{ github.event.release.author.login }}
+          EVT_PUBLISHED:  ${{ github.event.release.published_at }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             # Fetch release metadata from the GitHub CLI for the given tag.
-            release_json=$(gh release view "${{ inputs.tag }}" \
-              --repo "${{ github.repository }}" \
+            # INPUT_TAG comes from env — no expression interpolation in the script body.
+            release_json=$(gh release view "$INPUT_TAG" \
+              --repo "$GH_REPOSITORY" \
               --json tagName,name,body,url,isPrerelease,author,publishedAt)
 
             TAG_NAME=$(printf '%s' "$release_json" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['tagName'])")
@@ -85,13 +101,14 @@ jobs:
             RELEASE_AUTHOR=$(printf '%s' "$release_json" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('author', {}).get('login', ''))")
             RELEASE_PUBLISHED=$(printf '%s' "$release_json" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['publishedAt'])")
           else
-            TAG_NAME="${{ github.event.release.tag_name }}"
-            RELEASE_NAME="${{ github.event.release.name }}"
-            RELEASE_BODY="${{ github.event.release.body }}"
-            RELEASE_URL="${{ github.event.release.html_url }}"
-            RELEASE_PRERELEASE="${{ github.event.release.prerelease }}"
-            RELEASE_AUTHOR="${{ github.event.release.author.login }}"
-            RELEASE_PUBLISHED="${{ github.event.release.published_at }}"
+            # release event: values come from env vars, not expression interpolation.
+            TAG_NAME="$EVT_TAG"
+            RELEASE_NAME="$EVT_NAME"
+            RELEASE_BODY="$EVT_BODY"
+            RELEASE_URL="$EVT_URL"
+            RELEASE_PRERELEASE="$EVT_PRERELEASE"
+            RELEASE_AUTHOR="$EVT_AUTHOR"
+            RELEASE_PUBLISHED="$EVT_PUBLISHED"
           fi
 
           # Write all resolved values to GITHUB_ENV for downstream steps.
