@@ -14,9 +14,13 @@
 #
 # ── What triggers a post ─────────────────────────────────────────────────────
 #
-#   Only fires on the initial publication of a release (created_at ==
-#   published_at per coord §R7).  Body-edit re-publications are skipped with
-#   an annotation so the log is clear but no false post is sent.
+#   release: types: [published]
+#     Fires only on the initial publication transition.  Body-edit events
+#     emit type "edited", not "published", so no timestamp guard is needed.
+#
+#   workflow_dispatch (tag input)
+#     Allows re-firing a missed or failed announcement for any existing tag
+#     without needing to re-publish the GitHub Release.
 #
 # ── Embed colour ─────────────────────────────────────────────────────────────
 #
@@ -42,6 +46,12 @@ name: Notify Discord — Release Published
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to announce (e.g. v1.4.0)"
+        required: true
+        type: string
 
 # No GitHub API writes — read-only is sufficient.
 permissions:
@@ -53,25 +63,86 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # ── Idempotency guard (coord §R7) ─────────────────────────────────────
-      # A re-publication (body edit) sets published_at > created_at.
-      # Log a notice and let the job succeed without posting.
-      # All downstream steps are gated on the inverse condition so they
-      # only execute on the initial publication.
-      - name: Skip re-publications
-        if: github.event.release.created_at != github.event.release.published_at
+      # ── Resolve release metadata ──────────────────────────────────────────
+      # On `release` events, read directly from github.event.release.*.
+      # On `workflow_dispatch`, fetch via `gh release view` for the given tag.
+      # Either way, writes the same set of env vars consumed by later steps.
+      - name: Resolve release metadata
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # All github.event.* and inputs.* values are mapped here so that
+          # bash sees them as environment variables — never as literal text
+          # substituted into the script before the shell parses it.  This
+          # eliminates the script-injection vector (backticks, $(...), quotes,
+          # newlines in release body are shell-data, not shell-syntax).
+          EVENT_NAME:     ${{ github.event_name }}
+          INPUT_TAG:      ${{ inputs.tag }}
+          GH_REPOSITORY:  ${{ github.repository }}
+          EVT_TAG:        ${{ github.event.release.tag_name }}
+          EVT_NAME:       ${{ github.event.release.name }}
+          EVT_BODY:       ${{ github.event.release.body }}
+          EVT_URL:        ${{ github.event.release.html_url }}
+          EVT_PRERELEASE: ${{ github.event.release.prerelease }}
+          EVT_AUTHOR:     ${{ github.event.release.author.login }}
+          EVT_PUBLISHED:  ${{ github.event.release.published_at }}
         run: |
-          echo "::notice::Skipping Discord notification — this is a re-publication (body edit), not the initial publish. created_at=${{ github.event.release.created_at }} published_at=${{ github.event.release.published_at }}"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            # Fetch release metadata from the GitHub CLI for the given tag.
+            # INPUT_TAG comes from env — no expression interpolation in the script body.
+            release_json=$(gh release view "$INPUT_TAG" \
+              --repo "$GH_REPOSITORY" \
+              --json tagName,name,body,url,isPrerelease,author,publishedAt)
+
+            TAG_NAME=$(printf '%s' "$release_json" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['tagName'])")
+            RELEASE_NAME=$(printf '%s' "$release_json" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['name'])")
+            RELEASE_BODY=$(printf '%s' "$release_json" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['body'])")
+            RELEASE_URL=$(printf '%s' "$release_json" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['url'])")
+            RELEASE_PRERELEASE=$(printf '%s' "$release_json" | python3 -c "import json,sys; d=json.load(sys.stdin); print(str(d['isPrerelease']).lower())")
+            RELEASE_AUTHOR=$(printf '%s' "$release_json" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('author', {}).get('login', ''))")
+            RELEASE_PUBLISHED=$(printf '%s' "$release_json" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['publishedAt'])")
+          else
+            # release event: values come from env vars, not expression interpolation.
+            TAG_NAME="$EVT_TAG"
+            RELEASE_NAME="$EVT_NAME"
+            RELEASE_BODY="$EVT_BODY"
+            RELEASE_URL="$EVT_URL"
+            RELEASE_PRERELEASE="$EVT_PRERELEASE"
+            RELEASE_AUTHOR="$EVT_AUTHOR"
+            RELEASE_PUBLISHED="$EVT_PUBLISHED"
+          fi
+
+          # Write all resolved values to GITHUB_ENV using heredoc-style writes
+          # so that ANY value containing a newline (release name, author, etc.)
+          # cannot corrupt the env file or inject unintended env vars.
+          # A single random delimiter is generated once per run and reused for
+          # every field — collision per field is impossible since each heredoc
+          # block is self-contained and the delimiter is 2^128-random.
+          DELIM="GHENV_EOF_$(openssl rand -hex 16)"
+
+          # Helper: write_env KEY VALUE
+          write_env() {
+            {
+              echo "$1<<$DELIM"
+              printf '%s\n' "$2"
+              echo "$DELIM"
+            } >> "$GITHUB_ENV"
+          }
+
+          write_env RELEASE_TAG       "$TAG_NAME"
+          write_env RELEASE_NAME      "$RELEASE_NAME"
+          write_env RELEASE_URL       "$RELEASE_URL"
+          write_env RELEASE_PRERELEASE "$RELEASE_PRERELEASE"
+          write_env RELEASE_AUTHOR    "$RELEASE_AUTHOR"
+          write_env RELEASE_PUBLISHED "$RELEASE_PUBLISHED"
+          write_env RELEASE_BODY      "$RELEASE_BODY"
 
       - name: Checkout code
-        if: github.event.release.created_at == github.event.release.published_at
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
 
       # ── Validate secrets ──────────────────────────────────────────────────
       # Fail fast if the webhook URL is not configured, rather than
       # reaching the POST step and getting an empty-URL curl error.
       - name: Validate webhook secret
-        if: github.event.release.created_at == github.event.release.published_at
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_RELEASE_WEBHOOK_URL }}
         run: |
@@ -85,13 +156,7 @@ jobs:
       # ## Highlights section (emoji optional), applies the 1500-char soft cap,
       # and falls back to "<name> published. View notes: <url>" if missing.
       - name: Extract Highlights description
-        if: github.event.release.created_at == github.event.release.published_at
         id: highlights
-        env:
-          RELEASE_BODY: ${{ github.event.release.body }}
-          RELEASE_TAG:  ${{ github.event.release.tag_name }}
-          RELEASE_NAME: ${{ github.event.release.name }}
-          RELEASE_URL:  ${{ github.event.release.html_url }}
         run: |
           description=$(printf '%s' "$RELEASE_BODY" | python3 scripts/extract_highlights.py \
             --tag  "$RELEASE_TAG" \
@@ -99,24 +164,21 @@ jobs:
             --url  "$RELEASE_URL")
 
           # Write to GITHUB_OUTPUT using a heredoc so multi-line values are
-          # handled safely by the Actions runner (EOF delimiter is unique).
+          # handled safely by the Actions runner.  Per-run unique delimiter
+          # prevents a highlights line equal to the sentinel from ending the
+          # heredoc early (same collision class as RELEASE_BODY in step above).
+          HL_DELIM="HIGHLIGHTS_EOF_$(openssl rand -hex 16)"
           {
-            echo "description<<__HIGHLIGHTS_EOF__"
+            echo "description<<$HL_DELIM"
             printf '%s' "$description"
             echo ""
-            echo "__HIGHLIGHTS_EOF__"
+            echo "$HL_DELIM"
           } >> "$GITHUB_OUTPUT"
 
       # ── POST to Discord ───────────────────────────────────────────────────
       - name: Post embed to Discord
-        if: github.event.release.created_at == github.event.release.published_at
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_RELEASE_WEBHOOK_URL }}
-          RELEASE_TAG:         ${{ github.event.release.tag_name }}
-          RELEASE_URL:         ${{ github.event.release.html_url }}
-          RELEASE_PRERELEASE:  ${{ github.event.release.prerelease }}
-          RELEASE_AUTHOR:      ${{ github.event.release.author.login }}
-          RELEASE_PUBLISHED:   ${{ github.event.release.published_at }}
           DESCRIPTION:         ${{ steps.highlights.outputs.description }}
         run: |
           # ── Title (coord §R3, §R8) ──────────────────────────────────────
