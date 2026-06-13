@@ -418,7 +418,49 @@ async def test_rule3_valid_building_number():
 
 @pytest.mark.asyncio
 async def test_rule4_invalid_group_number():
-    """Rule 4: group_number=10 → error."""
+    """Rule 4: group_number=11 exceeds the maximum of 10 → error.
+
+    Level-6 strongholds have 10 groups; group_number=11 is always invalid.
+    """
+    pos = _make_position(id=1)
+    group = _make_group(id=1, group_number=11)
+    group.positions = [pos]
+    building = _make_building(id=1)
+    building.groups = [group]
+    siege = _make_siege()
+    siege.buildings = [building]
+
+    session = _session_with_siege_and_configs(siege)
+    result = await svc_validate(session, 1)
+    rule4_errors = [e for e in result.errors if e.rule == 4]
+    assert len(rule4_errors) >= 1
+
+
+@pytest.mark.asyncio
+async def test_rule4_group_number_zero_is_invalid():
+    """Rule 4: group_number=0 is below the minimum of 1 → error."""
+    pos = _make_position(id=1)
+    group = _make_group(id=1, group_number=0)
+    group.positions = [pos]
+    building = _make_building(id=1)
+    building.groups = [group]
+    siege = _make_siege()
+    siege.buildings = [building]
+
+    session = _session_with_siege_and_configs(siege)
+    result = await svc_validate(session, 1)
+    rule4_errors = [e for e in result.errors if e.rule == 4]
+    assert len(rule4_errors) >= 1
+
+
+@pytest.mark.asyncio
+async def test_rule4_group_number_10_is_valid():
+    """Rule 4 pass: group_number=10 is valid for a level-6 stronghold.
+
+    The DB CHECK constraint allows group_number in [1, 10].  The validator
+    must align with the DB: group_number=10 must not produce a Rule 4 error.
+    Regression test for GitHub issue #495.
+    """
     pos = _make_position(id=1)
     group = _make_group(id=1, group_number=10)
     group.positions = [pos]
@@ -430,7 +472,10 @@ async def test_rule4_invalid_group_number():
     session = _session_with_siege_and_configs(siege)
     result = await svc_validate(session, 1)
     rule4_errors = [e for e in result.errors if e.rule == 4]
-    assert len(rule4_errors) >= 1
+    assert len(rule4_errors) == 0, (
+        "group_number=10 is valid for a level-6 stronghold (10 groups); "
+        f"Rule 4 must not fire, but got: {rule4_errors}"
+    )
 
 
 @pytest.mark.asyncio

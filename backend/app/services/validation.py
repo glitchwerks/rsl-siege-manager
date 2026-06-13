@@ -145,15 +145,19 @@ async def validate_siege(session: AsyncSession, siege_id: int) -> ValidationResu
                     )
                 )
 
-    # Rule 4: Group numbers 1–9
+    # Rule 4: Group numbers 1–10
+    # Upper bound matches the DB CHECK constraint on building_group.group_number
+    # (group_number >= 1 AND group_number <= 10) — level-6 strongholds have 10
+    # groups, so 10 is the true global maximum.  See: models/building_group.py.
+    _GROUP_NUMBER_MAX = 10
     for pos, group, building in all_positions:
-        if group.group_number < 1 or group.group_number > 9:
+        if group.group_number < 1 or group.group_number > _GROUP_NUMBER_MAX:
             errors.append(
                 ValidationIssue(
                     rule=4,
                     message=(
                         f"Group id={group.id} has group_number "
-                        f"{group.group_number} outside [1, 9]"
+                        f"{group.group_number} outside [1, {_GROUP_NUMBER_MAX}]"
                     ),
                     context={"group_id": group.id, "building_id": building.id},
                 )
