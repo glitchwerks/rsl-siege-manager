@@ -10,6 +10,7 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
+import { BulletMarkdown } from "./changelog-markdown";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -183,7 +184,7 @@ export default function ChangelogDropdown() {
                         className="flex items-start gap-1.5 text-xs text-slate-700"
                       >
                         <span className="mt-1 h-1 w-1 shrink-0 rounded-full bg-slate-400" />
-                        {bullet}
+                        <BulletMarkdown>{bullet}</BulletMarkdown>
                       </li>
                     ))}
                   </ul>

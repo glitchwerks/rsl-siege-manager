@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Inline markdown in the "What's new" changelog dropdown** — bullet text now renders `**bold**`, *italic*, `` `inline code` ``, `[links](url)` (opening in a new tab), and bare `#NNN` issue references as clickable links, instead of showing the raw markdown. (#388)
+
 ## [1.4.0] - 2026-06-12
 
 Member removal from planning sieges, inactive-member indicators, and stale-roster cleanup. Infrastructure: automated idempotency verification for infra-deploy CI, Pester test coverage for certificate tooling, Discord release announcements, and dependency housekeeping.
