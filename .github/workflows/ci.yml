@@ -135,6 +135,12 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements-dev.txt
 
+      - name: Check formatting with black
+        run: black --check app/ tests/
+
+      - name: Lint with ruff
+        run: ruff check app/ tests/
+
       - name: Run tests
         run: pytest tests/ -v
 
