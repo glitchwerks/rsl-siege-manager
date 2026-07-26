@@ -1,0 +1,44 @@
+repos:
+  - repo: local
+    hooks:
+      - id: backend-black
+        name: backend-black
+        entry: black --check
+        language: system
+        files: ^backend/
+        types_or: [python, pyi]
+        exclude: ^backend/alembic/versions/
+        pass_filenames: true
+      - id: backend-ruff
+        name: backend-ruff
+        entry: ruff check
+        language: system
+        files: ^backend/
+        types_or: [python, pyi]
+        exclude: ^backend/alembic/versions/
+        pass_filenames: true
+      - id: bot-black
+        name: bot-black
+        entry: black --check
+        language: system
+        files: ^bot/
+        types_or: [python, pyi]
+        pass_filenames: true
+      - id: bot-ruff
+        name: bot-ruff
+        entry: ruff check
+        language: system
+        files: ^bot/
+        types_or: [python, pyi]
+        pass_filenames: true
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+      - id: check-merge-conflict
+      - id: detect-private-key
+        exclude: ^scripts/tests/generate-origin-pfx\.Tests\.ps1$

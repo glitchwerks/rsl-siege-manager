@@ -98,6 +98,33 @@ cd frontend
 npm run lint
 ```
 
+### Optional: local pre-commit hooks via `prek`
+
+[`prek`](https://prek.j178.dev/) is an opt-in, Rust-based, pre-commit-config-compatible hook
+runner published to PyPI as a binary wheel. CI remains the authoritative lint and test gate;
+using `prek` does not change CI requirements.
+
+Install it with this repository's preferred tool, or use `pip` or `pipx`:
+
+```bash
+uv tool install prek   # recommended
+# or: pip install prek
+# or: pipx install prek
+```
+
+Then register the Git hook once from the repository root:
+
+```bash
+prek install
+```
+
+**Hard precondition: activate the relevant area's virtual environment
+(`backend/.venv` or `bot/.venv`, whichever area you are changing) before running `prek`.**
+The backend and bot hooks use `language: system`, so they invoke whichever `black` and `ruff`
+binaries appear first on `$PATH`, rather than a specific virtual environment. Without the
+correct environment active, `prek run` may fail with a command-not-found error or silently use
+versions that differ from CI, causing false passes or failures.
+
 ---
 
 ## Opening a pull request

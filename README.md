@@ -288,3 +288,5 @@ This project is licensed under the MIT License — see [LICENSE](LICENSE) for th
 ## Contributing
 
 Contributions are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) before opening a PR.
+
+Want local pre-commit linting? See [Optional: local pre-commit hooks via `prek`](CONTRIBUTING.md#optional-local-pre-commit-hooks-via-prek) in CONTRIBUTING.md.
