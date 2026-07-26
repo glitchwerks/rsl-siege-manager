@@ -678,8 +678,6 @@ This asynchronous pattern prevents HTTP timeouts when sending DMs to 30+ members
 Preserved from the current system:
 
 ```
-⚠️ **This bot is a work in progress. Please verify assignments manually if needed.** ⚠️
-
 **[1MOM] Masters of Magicka Siege Assignment (YYYY-MM-DD)**
 
 **Have Reserve Set:** Yes/No/Unknown
