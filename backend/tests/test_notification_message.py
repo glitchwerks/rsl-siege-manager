@@ -454,11 +454,12 @@ def test_no_blank_line_when_only_one_section():
         previous_positions=[],
         building_type_counts=SINGLE_STRONGHOLD_COUNTS,
     )
-    # The header contributes 3 blank lines (\n\n): one after the warning line,
-    # one between the title and the metadata block, and one between the metadata
-    # and the section block.  With only one section there are no inter-section
-    # separators, so the total count should be exactly 3.
-    assert msg.count("\n\n") == 3
+    # The header contributes 2 blank lines (\n\n): one between the title and
+    # the metadata block, and one between the metadata and the section block
+    # (issue #510 removed the work-in-progress disclaimer and its trailing
+    # blank line, dropping this from 3 to 2).  With only one section there
+    # are no inter-section separators, so the total count should be exactly 2.
+    assert msg.count("\n\n") == 2
 
 
 def test_blank_line_count_with_all_three_sections():
@@ -476,8 +477,9 @@ def test_blank_line_count_with_all_three_sections():
         previous_positions=[shared, only_prev],
         building_type_counts=SINGLE_STRONGHOLD_COUNTS,
     )
-    # Header contributes 3 blank lines + 2 inter-section separators = 5 total
-    assert msg.count("\n\n") == 5
+    # Header contributes 2 blank lines (issue #510 removed the disclaimer's
+    # trailing blank line) + 2 inter-section separators = 4 total
+    assert msg.count("\n\n") == 4
 
 
 # ---------------------------------------------------------------------------
@@ -503,6 +505,32 @@ def test_all_three_section_headers_exact_format():
     assert ":shield: ** No Change ** :shield:" in lines
     assert ":x: ** Remove From ** :x:" in lines
     assert ":crossed_swords: ** Set At ** :crossed_swords:" in lines
+
+
+# ---------------------------------------------------------------------------
+# 14. Work-in-progress disclaimer must not appear (issue #510)
+# ---------------------------------------------------------------------------
+
+
+def test_message_omits_work_in_progress_disclaimer():
+    """The message must not include the 'bot is a work in progress' disclaimer.
+
+    Regression coverage for issue #510: the disclaimer line and its
+    ``:warning:`` wrapper were removed entirely, and the message must now
+    start directly with the siege-assignment title line (no leading blank
+    line left behind from the removed disclaimer block).
+    """
+    msg = build_member_notification_message(
+        siege_date="2026-03-17",
+        has_reserve_set=True,
+        attack_day=2,
+        current_positions=[_post_pos(1)],
+        previous_positions=[],
+        building_type_counts=SINGLE_STRONGHOLD_COUNTS,
+    )
+    assert "work in progress" not in msg
+    assert "Please verify assignments manually" not in msg
+    assert msg.splitlines()[0].startswith("**[1MOM] Masters of Magicka Siege Assignment (")
 
 
 def test_header_line_not_a_position_line():
