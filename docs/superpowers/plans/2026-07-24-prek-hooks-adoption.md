@@ -42,15 +42,16 @@ dependency for the runner itself.
 
 CI invocations to mirror exactly (`.github/workflows/ci.yml`):
 - backend: `black --check app/ tests/` (line 62), `ruff check app/ tests/` (line 65)
-- bot: no explicit lint step in `bot-ci` job (lines 114-139) — only `pytest tests/ -v`. `bot/pyproject.toml` defines black/ruff config but CI doesn't currently invoke either for `bot/`. **Flag as an existing CI gap**, not something the hook has to match — the hook can still run black/ruff locally for `bot/` even though CI doesn't.
+- bot: **as of Phase 0 (shipped, PR #509), `bot-ci` now runs `black --check app/ tests/` + `ruff check app/ tests/`**, mirroring `backend-ci`. Prior to Phase 0 this was a CI gap (`bot-ci` ran only `pytest tests/ -v`); that gap is closed.
 - frontend: `npm run lint` (line 96, → `eslint .`)
 - infra: `az bicep lint --file infra/main.bicep` + per-module loop (`infra-ci.yml:85-92`), `az bicep build` (line 134)
 
-No `.pre-commit-config.yaml` exists today (confirmed via repo-root search). No open issue/PR overlaps this work (checked `gh issue list` / `gh pr list` against `pre-commit`, `prek`, `hooks` — zero hits). Related but non-blocking: [#464](https://github.com/glitchwerks/rsl-siege-manager/issues/464) (migrate backend/bot to `uv`) — if that lands first, hook commands become `uv run black` / `uv run ruff` instead of bare invocations; sequencing note only.
+At the time this survey (#507) was written, no `.pre-commit-config.yaml` existed. **As of Phase 1 (shipped, PR #509), a root `.pre-commit-config.yaml` now exists** with backend/bot black+ruff hooks and the general cross-cutting hooks below. Related but non-blocking: [#464](https://github.com/glitchwerks/rsl-siege-manager/issues/464) (migrate backend/bot to `uv`) — if that lands, hook commands become `uv run black` / `uv run ruff` instead of bare invocations; sequencing note only.
 
 ## Candidate hooks per area
 
 ### backend/
+
 - `black --check` (mirrors CI exactly)
 - `ruff check` (mirrors CI exactly)
 - Use `language: system` so the hook shells out to the venv's own `black`/`ruff` (already pinned in `backend/requirements-dev.txt`) rather than a hook-managed duplicate toolchain — keeps one source of truth for tool versions and gives best-effort parity with CI output (not a guarantee — see the venv-binding caveat immediately below).
@@ -109,8 +110,8 @@ Repo convention is `core.autocrlf=true`, working tree CRLF, repo stores LF (`~/.
 
 0. **✅ Phase 0 — shipped (PR #509):** Add `black --check app/ tests/` + `ruff check app/ tests/` to the `bot-ci` job in `.github/workflows/ci.yml` (mirrors the existing `backend-ci` steps). Closes the CI gap so the Phase 1 bot/ hook mirrors a real gate instead of being the only enforcement surface for that area.
 1. **✅ Phase 1 — shipped (PR #509):** Add `.pre-commit-config.yaml` with backend + bot black/ruff hooks and the general cross-cutting hooks (trailing-whitespace, end-of-file-fixer, check-yaml, check-added-large-files, check-merge-conflict, detect-private-key). Document in `CONTRIBUTING.md`, as a hard precondition (not a footnote): `prek install` is opt-in, but running it **requires the relevant area's venv active** — `language: system` hooks resolve whatever binary is first on `$PATH`, not a specific venv.
-2. **Phase 2 (not started):** Add frontend eslint + prettier hooks once Phase 1 is validated on a few real commits (catches any Windows CRLF friction early, per caveat above, before adding more hook surface). Document that `npm ci` in `frontend/` must have been run first (the prettier hook depends on `prettier-plugin-tailwindcss` from `node_modules`).
-3. **Phase 3:** Add infra bicep-lint/build hooks as an opt-in/manual stage, documented for infra contributors specifically. Before writing the config, decide the per-module lint mechanism (`pass_filenames: false` + inline loop, or a `scripts/` wrapper) — don't leave it open at implementation time.
+2. **Phase 2 (not started):** Add frontend eslint + prettier hooks once Phase 1 is validated on a few real commits. Document that `npm ci` in `frontend/` must have been run first (the prettier hook depends on `prettier-plugin-tailwindcss` from `node_modules`). Note: per the Windows/CRLF caveat above, `.gitattributes` already covers frontend's `eol=lf` file types, so Phase 2 is not where the residual CRLF risk gets validated — see Phase 3 below.
+3. **Phase 3:** Add infra bicep-lint/build hooks as an opt-in/manual stage, documented for infra contributors specifically. Before writing the config, decide the per-module lint mechanism (`pass_filenames: false` + inline loop, or a `scripts/` wrapper) — don't leave it open at implementation time. **This is also where the Windows/CRLF caveat's residual risk gets validated**: `.bicep` files are the file type `.gitattributes` doesn't cover, so confirm `trailing-whitespace`/`end-of-file-fixer` don't fight CRLF on `.bicep` (and, per #512, `.ps1`) before enabling infra hooks default-on.
 4. **Phase 4 (optional, needs separate discussion):** Consider `prek install --install-hooks` as a documented onboarding step in `README.md` setup instructions once Phases 1-3 are stable. CI remains the authoritative gate throughout — no CI step is removed or replaced at any phase.
 
 ## Review trail
@@ -121,7 +122,7 @@ Reviewed by `project-reviewer` (2026-07-24) — 1 BLOCKING, 5 CONCERN, 3 NIT, al
 
 ## Explicitly out of scope (per #507)
 
-- Actually adding `.pre-commit-config.yaml` (this plan's Phase 1 is the follow-up issue, not this document)
+- Actually adding `.pre-commit-config.yaml` was out of scope **for #507 itself** — that was #508's job (shipped in PR #509); this document is the plan, not the implementation
 - Replacing any existing CI lint/test step
 - CI-side `prek run --all-files` integration
 - Commit-message format enforcement
