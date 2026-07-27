@@ -131,6 +131,72 @@ versions that differ from CI, causing false passes or failures.
 run, the hook fails with a `Cannot find module` error; that failure means the prerequisite was
 not met, not that there is a real problem with the code being committed.
 
+**`.ps1` files and CRLF — verified safe, no `.gitattributes` change needed (issue [#512](https://github.com/glitchwerks/rsl-siege-manager/issues/512)).**
+`.gitattributes` forces `eol=lf` on `*.sh .py .ts .tsx .yml .yaml .json .md .txt`, but not on
+`*.ps1`. On this Windows checkout (`core.autocrlf=true`), `.ps1` files under `scripts/` are
+genuinely CRLF on disk (confirmed with `file scripts/generate-origin-pfx.ps1` →
+`... with CRLF line terminators`), unlike the extensions above which are normalized to LF on
+checkout.
+
+Running `trailing-whitespace --all-files` and `end-of-file-fixer --all-files` individually
+(a combined `prek run --all-files` errors out first on `backend-black`/`bot-black` unless the
+relevant venv is active per the precondition above, so each hook was run separately) against
+every tracked file produced zero modifications to any of the 8 tracked `.ps1` files:
+
+```
+$ prek run trailing-whitespace --files scripts/*.ps1 scripts/tests/generate-origin-pfx.Tests.ps1
+trim trailing whitespace.................................................Passed
+
+$ prek run end-of-file-fixer --files scripts/*.ps1 scripts/tests/generate-origin-pfx.Tests.ps1
+fix end of files.........................................................Passed
+```
+
+That "Passed" only proves the existing `.ps1` files had nothing to fix, not that a rewrite
+would preserve CRLF — both hooks short-circuit without writing a byte when the file already
+satisfies the rule. To test the mutation path, a scratch probe file was written with CRLF line
+endings, trailing spaces, and no final newline, then fed through each hook directly, with
+`od -c` diffing the bytes before/after:
+
+```
+$ printf 'Write-Output "a"\r\nWrite-Output "b"   \r\n' > scripts/_crlf-probe.ps1
+$ prek run trailing-whitespace --files scripts/_crlf-probe.ps1
+trim trailing whitespace.................................................Failed
+  Fixing scripts/_crlf-probe.ps1
+# od -c after: trailing spaces stripped, \r\n preserved on both lines
+
+$ printf 'Write-Output "a"\r\nWrite-Output "b"' > scripts/_crlf-probe.ps1
+$ prek run end-of-file-fixer --files scripts/_crlf-probe.ps1
+fix end of files.........................................................Failed
+  Fixing scripts/_crlf-probe.ps1
+# od -c after: file now ends "...b" + \n (bare LF, not \r\n)
+```
+
+(Probe file deleted after the test; not part of this change.)
+
+This confirms, with an actual rewrite rather than only no-op passes, why `.ps1` is safe:
+`pre_commit_hooks/trailing_whitespace_fixer.py` detects each line's existing terminator
+(`\r\n` vs `\n`) and re-appends whichever one it found — it never normalizes CRLF to LF.
+`pre_commit_hooks/end_of_file_fixer.py` treats both `\r` and `\n` as valid trailing
+line-break bytes when deciding whether a file already ends cleanly, but when it *does* need to
+append a missing terminator (line 21 of that file) it always writes a bare `\n`. On a CRLF
+file that is otherwise missing its final newline, this produces one line with a different EOL
+than the rest of the file. In this repo that is harmless in practice — `core.autocrlf=true`
+normalizes the file back to consistent CRLF on the next checkout, and none of the 8 tracked
+`.ps1` files were missing a final newline to begin with — but it is the one caveat to the
+"neither hook touches CRLF" claim above.
+
+A repo-wide `trailing-whitespace --all-files` / `end-of-file-fixer --all-files` pass on this
+checkout modified only 3 unrelated pre-existing files (`CLAUDE.md`, `docs/siege_levels.md`,
+`scripts/excel-import/requirements.txt` — each missing a final newline or carrying a stray
+trailing blank line, already covered by the existing `.md`/`.txt` `eol=lf` rules and unrelated
+to CRLF; reverted, out of scope for issue #512, tracked separately). No other extension
+missing from the `eol=lf` list exhibited a CRLF-driven ghost modification either.
+
+Conclusion: no `.gitattributes` or `.pre-commit-config.yaml` change was needed for `.ps1`
+files. (The pre-existing `detect-private-key` exclusion for
+`scripts/tests/generate-origin-pfx.Tests.ps1` in `.pre-commit-config.yaml` is a separate,
+unrelated false-positive fix from PR #509 and is untouched by this verification.)
+
 ---
 
 ## Opening a pull request
