@@ -33,13 +33,13 @@ repos:
         pass_filenames: true
       - id: frontend-eslint
         name: frontend-eslint
-        entry: bash -c 'cd frontend && npx eslint .'
+        entry: bash -c 'cd frontend && npx --no-install eslint .'
         language: system
         files: ^frontend/
         pass_filenames: false
       - id: frontend-prettier
         name: frontend-prettier
-        entry: bash -c 'cd frontend && npx prettier --check src'
+        entry: bash -c 'cd frontend && npx --no-install prettier --check src'
         language: system
         files: ^frontend/src/
         pass_filenames: false

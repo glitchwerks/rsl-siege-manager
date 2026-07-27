@@ -127,7 +127,7 @@ versions that differ from CI, causing false passes or failures.
 
 **Frontend precondition: run `npm ci` in `frontend/` before running `prek`.** The
 `frontend-prettier` hook depends on the `prettier-plugin-tailwindcss` plugin declared in
-`frontend/.prettierrc`, which lives in `frontend/node_modules`. Without `npm ci` having been
+`frontend/package.json`, which lives in `frontend/node_modules`. Without `npm ci` having been
 run, the hook fails with a `Cannot find module` error; that failure means the prerequisite was
 not met, not that there is a real problem with the code being committed.
 
