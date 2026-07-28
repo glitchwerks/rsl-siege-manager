@@ -220,4 +220,3 @@ Key domain docs (read before implementing business logic):
 - **Image generation**: Playwright headless HTML/CSS → PNG — `project_image_generation.md`
 - **Notifications**: async DM batches tracked via `NotificationBatch` + `NotificationBatchResult` DB tables — `project_notifications.md`
 - **Excel import**: one-time backend CLI script only, no UI or API endpoint — `project_excel_import.md`
-
