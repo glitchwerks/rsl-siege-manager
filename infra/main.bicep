@@ -315,8 +315,7 @@ module containerEnv 'modules/container-env.bicep' = {
     location: location
     environment: environment
     appPrefix: appPrefix
-    logAnalyticsCustomerId: logAnalytics.outputs.customerId
-    logAnalyticsPrimaryKey: logAnalytics.outputs.primarySharedKey
+    logAnalyticsWorkspaceId: logAnalytics.outputs.workspaceId
     // Pass the UAMI so the environment can authenticate to KV during cert import.
     certIdentityId: certIdentity.outputs.identityId
   }

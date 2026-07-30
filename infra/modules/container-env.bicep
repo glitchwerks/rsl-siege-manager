@@ -7,12 +7,8 @@ param environment string
 @description('Short prefix for resource naming')
 param appPrefix string
 
-@description('Log Analytics workspace customer ID')
-param logAnalyticsCustomerId string
-
-@description('Log Analytics workspace primary shared key')
-@secure()
-param logAnalyticsPrimaryKey string
+@description('Resource ID of the Log Analytics workspace to route Container Apps Environment logs to')
+param logAnalyticsWorkspaceId string
 
 @description('Resource ID of the user-assigned managed identity used to import certs from Key Vault. Leave empty to omit (identity block will be SystemAssigned).')
 param certIdentityId string = ''
@@ -53,12 +49,24 @@ resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2024-08-02-
       }
   properties: {
     appLogsConfiguration: {
-      destination: 'log-analytics'
-      logAnalyticsConfiguration: {
-        customerId: logAnalyticsCustomerId
-        sharedKey: logAnalyticsPrimaryKey
-      }
+      destination: 'azure-monitor'
     }
+  }
+}
+
+// Routes CAE console + system logs to Log Analytics via the platform resource-log
+// pipeline (diagnostic settings) instead of the legacy shared-key custom-log
+// ingest. Destination tables lose the _CL suffix: ContainerAppConsoleLogs /
+// ContainerAppSystemLogs. See issue #521.
+resource caeDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
+  name: 'cae-logs-to-law'
+  scope: containerAppsEnvironment
+  properties: {
+    workspaceId: logAnalyticsWorkspaceId
+    logs: [
+      { category: 'ContainerAppConsoleLogs', enabled: true }
+      { category: 'ContainerAppSystemLogs', enabled: true }
+    ]
   }
 }
 

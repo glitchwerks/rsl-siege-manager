@@ -279,7 +279,7 @@ az containerapp logs show \
 # Query Log Analytics for errors in the last hour
 az monitor log-analytics query \
   --workspace {WORKSPACE_ID} \
-  --analytics-query "ContainerAppConsoleLogs_CL | where TimeGenerated > ago(1h) | where Log_s contains 'ERROR'"
+  --analytics-query "ContainerAppConsoleLogs | where TimeGenerated > ago(1h) | where Log contains 'ERROR'"
 ```
 
 ## Scale a Container App

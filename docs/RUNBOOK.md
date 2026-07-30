@@ -338,11 +338,11 @@ or run queries via CLI:
 az monitor log-analytics query \
   --workspace {LOG_ANALYTICS_WORKSPACE} \
   --analytics-query "
-    ContainerAppConsoleLogs_CL
-    | where ContainerAppName_s == '{CONTAINER_APP_API}'
-    | where Log_s has 'ERROR'
+    ContainerAppConsoleLogs
+    | where ContainerAppName == '{CONTAINER_APP_API}'
+    | where Log has 'ERROR'
     | where TimeGenerated > ago(1h)
-    | project TimeGenerated, Log_s
+    | project TimeGenerated, Log
     | order by TimeGenerated desc
     | take 100
   " \
@@ -352,12 +352,12 @@ az monitor log-analytics query \
 az monitor log-analytics query \
   --workspace {LOG_ANALYTICS_WORKSPACE} \
   --analytics-query "
-    ContainerAppConsoleLogs_CL
-    | where ContainerAppName_s == '{CONTAINER_APP_API}'
-    | where Log_s has 'duration'
-    | extend duration_ms = extract('duration_ms=(\\\\d+)', 1, Log_s)
+    ContainerAppConsoleLogs
+    | where ContainerAppName == '{CONTAINER_APP_API}'
+    | where Log has 'duration'
+    | extend duration_ms = extract('duration_ms=(\\\\d+)', 1, Log)
     | where toint(duration_ms) > 2000
-    | project TimeGenerated, Log_s, duration_ms
+    | project TimeGenerated, Log, duration_ms
     | order by TimeGenerated desc
   " \
   --output table
@@ -382,10 +382,10 @@ To find all log lines for a specific request:
 az monitor log-analytics query \
   --workspace {LOG_ANALYTICS_WORKSPACE} \
   --analytics-query "
-    ContainerAppConsoleLogs_CL
-    | where ContainerAppName_s == '{CONTAINER_APP_API}'
-    | where Log_s has '{REQUEST_ID}'
-    | project TimeGenerated, Log_s
+    ContainerAppConsoleLogs
+    | where ContainerAppName == '{CONTAINER_APP_API}'
+    | where Log has '{REQUEST_ID}'
+    | project TimeGenerated, Log
     | order by TimeGenerated asc
   " \
   --output table
@@ -675,10 +675,10 @@ page shows a spinner for an extended period.
    az monitor log-analytics query \
      --workspace {LOG_ANALYTICS_WORKSPACE} \
      --analytics-query "
-       ContainerAppConsoleLogs_CL
-       | where ContainerAppName_s == '{CONTAINER_APP_API}'
-       | where Log_s has 'QueuePool limit'
-       | project TimeGenerated, Log_s
+       ContainerAppConsoleLogs
+       | where ContainerAppName == '{CONTAINER_APP_API}'
+       | where Log has 'QueuePool limit'
+       | project TimeGenerated, Log
        | order by TimeGenerated desc
        | take 20
      " \
