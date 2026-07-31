@@ -56,7 +56,10 @@
       "Bash(.venv/Scripts/python.exe -m pytest tests/ -v)",
       "Bash(gh issue:*)",
       "WebFetch(domain:discord.com)",
-      "WebFetch(domain:docs.discord.com)"
+      "WebFetch(domain:docs.discord.com)",
+      "Skill(clean-gone)",
+      "Skill(dispatch)",
+      "Skill(superpowers:test-driven-development)"
     ]
   },
   "hooks": {
