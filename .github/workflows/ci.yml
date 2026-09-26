@@ -23,14 +23,8 @@ concurrency:
   group: ci-${{ github.head_ref || github.run_id }}
   cancel-in-progress: true
 
-# Least-privilege permissions. pull-requests: write is required for the
-# on-failure comment steps that tag @claude on failing PRs.
-# contents: write and actions: read are required by the claude-lint-fix
-# reusable workflow (it pushes fix commits and reads workflow run logs).
 permissions:
-  contents: write
-  pull-requests: write
-  actions: read
+  contents: read
 
 jobs:
   backend-ci:
@@ -226,15 +220,3 @@ jobs:
 
       - name: Run validation script tests
         run: pytest scripts/tests/ -v
-
-
-  claude-lint-fix:
-    name: Claude Lint Fix
-    needs: [backend-ci, frontend-ci, bot-ci]
-    if: failure() && github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork
-    uses: glitchwerks/github-actions/.github/workflows/claude-lint-fix.yml@31e162d256ada38e09af0c2123637f5de238d1ef # v2.6.2
-    secrets: inherit
-    with:
-      pr_number: ${{ github.event.pull_request.number }}
-      run_id: ${{ github.run_id }}
-      auto_apply: false
