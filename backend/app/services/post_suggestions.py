@@ -50,7 +50,6 @@ from sqlalchemy.orm import selectinload
 
 from app.models.building import Building
 from app.models.building_group import BuildingGroup
-from app.models.enums import SiegeStatus
 from app.models.member import Member
 from app.models.position import Position
 from app.models.post import Post
@@ -63,6 +62,7 @@ from app.schemas.post_suggestions import (
     PostSuggestionPreviewResult,
     StaleEntry,
 )
+from app.services.siege_lock import require_planning_siege
 
 PREVIEW_TTL_MINUTES = 30
 
@@ -112,10 +112,7 @@ async def preview_post_suggestions(
     siege = siege_result.scalar_one_or_none()
     if siege is None:
         raise HTTPException(status_code=404, detail="Siege not found")
-    if siege.status == SiegeStatus.complete:
-        raise HTTPException(
-            status_code=400, detail="Cannot suggest assignments for a completed siege"
-        )
+    require_planning_siege(siege)
 
     # ------------------------------------------------------------------
     # Query existing assignment counts per member (excludes disabled,
@@ -365,11 +362,7 @@ async def apply_post_suggestions(
     siege = siege_result.scalar_one_or_none()
     if siege is None:
         raise HTTPException(status_code=404, detail="Siege not found")
-    if siege.status == SiegeStatus.complete:
-        raise HTTPException(
-            status_code=400,
-            detail="Cannot apply suggestions to a completed siege",
-        )
+    require_planning_siege(siege)
 
     if siege.post_suggest_preview is None or siege.post_suggest_preview_expires_at is None:
         raise HTTPException(

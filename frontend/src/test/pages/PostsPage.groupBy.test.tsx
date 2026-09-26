@@ -121,7 +121,7 @@ function setupHandlers(posts: Post[] = [makePost()]) {
       HttpResponse.json({
         id: SIEGE_ID,
         name: "Test Siege",
-        status: "draft",
+        status: "planning",
         attack_day: null,
         created_at: "2024-01-01T00:00:00Z",
         member_count: 0,
@@ -131,9 +131,7 @@ function setupHandlers(posts: Post[] = [makePost()]) {
     http.get(`/api/sieges/${SIEGE_ID}/board`, () =>
       HttpResponse.json({ siege_id: SIEGE_ID, buildings: [] })
     ),
-    http.get("/api/post-conditions", () =>
-      HttpResponse.json(SAMPLE_CONDITIONS)
-    )
+    http.get("/api/post-conditions", () => HttpResponse.json(SAMPLE_CONDITIONS))
   );
 }
 
@@ -156,7 +154,9 @@ async function expandFirstPost(user: ReturnType<typeof userEvent.setup>) {
   await user.click(expandBtn);
   // Wait for conditions to load (the picker renders once allConditions arrives)
   await waitFor(() =>
-    expect(screen.getByPlaceholderText(/filter conditions/i)).toBeInTheDocument()
+    expect(
+      screen.getByPlaceholderText(/filter conditions/i)
+    ).toBeInTheDocument()
   );
 }
 
@@ -226,9 +226,9 @@ describe("PostsPage — Group-by toggle in PostRow condition picker", () => {
     const rowToggle = screen.getByRole("radiogroup", { name: "Row group-by" });
     await user.click(within(rowToggle).getByRole("radio", { name: "Type" }));
 
-    expect(
-      localStorage.getItem("siege-web:postConditions:groupBy")
-    ).toBe("type");
+    expect(localStorage.getItem("siege-web:postConditions:groupBy")).toBe(
+      "type"
+    );
   });
 
   it("initialises in type mode when localStorage already has 'type'", async () => {
@@ -267,11 +267,15 @@ describe("PostsPage — master Toggle All override (issue #377)", () => {
 
     // Both rows start in default level mode — verify level headings are visible
     await waitFor(() =>
-      expect(screen.getAllByText(/stronghold level 1/i).length).toBeGreaterThanOrEqual(2)
+      expect(
+        screen.getAllByText(/stronghold level 1/i).length
+      ).toBeGreaterThanOrEqual(2)
     );
 
     // Click the master "Type" radio (scoped to master to avoid per-row ambiguity)
-    const masterGroup = screen.getByRole("radiogroup", { name: "Master group-by" });
+    const masterGroup = screen.getByRole("radiogroup", {
+      name: "Master group-by",
+    });
     await user.click(within(masterGroup).getByRole("radio", { name: "Type" }));
 
     // Both rows should now show type headings
@@ -288,7 +292,9 @@ describe("PostsPage — master Toggle All override (issue #377)", () => {
     await expandAllPosts(user);
 
     // First broadcast master → type
-    const masterGroup = screen.getByRole("radiogroup", { name: "Master group-by" });
+    const masterGroup = screen.getByRole("radiogroup", {
+      name: "Master group-by",
+    });
     await user.click(within(masterGroup).getByRole("radio", { name: "Type" }));
     await waitFor(() =>
       expect(screen.getAllByText("Role").length).toBeGreaterThanOrEqual(2)
@@ -296,8 +302,12 @@ describe("PostsPage — master Toggle All override (issue #377)", () => {
 
     // Now flip only the first row back to level by clicking its own "Level" radio.
     // Per-row radiogroups have aria-label="Row group-by".
-    const rowGroups = screen.getAllByRole("radiogroup", { name: "Row group-by" });
-    await user.click(within(rowGroups[0]).getByRole("radio", { name: "Level" }));
+    const rowGroups = screen.getAllByRole("radiogroup", {
+      name: "Row group-by",
+    });
+    await user.click(
+      within(rowGroups[0]).getByRole("radio", { name: "Level" })
+    );
 
     // Row A switches back to level headings
     await waitFor(() =>
@@ -320,12 +330,14 @@ describe("PostsPage — master Toggle All override (issue #377)", () => {
       expect(screen.queryByText("Loading...")).not.toBeInTheDocument()
     );
 
-    const masterGroup = screen.getByRole("radiogroup", { name: "Master group-by" });
+    const masterGroup = screen.getByRole("radiogroup", {
+      name: "Master group-by",
+    });
     await user.click(within(masterGroup).getByRole("radio", { name: "Type" }));
 
-    expect(
-      localStorage.getItem("siege-web:postConditions:groupBy")
-    ).toBe("type");
+    expect(localStorage.getItem("siege-web:postConditions:groupBy")).toBe(
+      "type"
+    );
   });
 
   it("initial render reads master value from localStorage", async () => {
@@ -336,7 +348,9 @@ describe("PostsPage — master Toggle All override (issue #377)", () => {
     );
 
     // The master toggle's "Type" radio must be active (aria-checked=true)
-    const masterGroup = screen.getByRole("radiogroup", { name: "Master group-by" });
+    const masterGroup = screen.getByRole("radiogroup", {
+      name: "Master group-by",
+    });
     expect(
       within(masterGroup).getByRole("radio", { name: "Type" })
     ).toHaveAttribute("aria-checked", "true");

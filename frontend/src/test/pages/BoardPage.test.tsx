@@ -7,7 +7,7 @@
  *  - Position cell visual states rendered from board API data
  *  - Context-menu actions: Mark RESERVE, Clear, Assign member
  *  - MemberBucket search and role-filter interactions
- *  - Locked (siege complete) board — context menu button hidden, auto-fill disabled
+ *  - Locked (siege active or complete) board — context menu button hidden, auto-fill disabled
  *  - Validation dialog: error-severity rows render with red badge and message
  *  - Validation dialog: warning-severity rows render with yellow badge and message
  *  - Validation dialog: "No issues found" shown when both arrays empty
@@ -78,7 +78,7 @@ function makeSiege(overrides: Partial<Siege> = {}): Siege {
   return {
     id: 42,
     date: "2026-03-22",
-    status: "active",
+    status: "planning",
     defense_scroll_count: 0,
     computed_scroll_count: 0,
     created_at: "2026-03-19T00:00:00Z",
@@ -345,36 +345,27 @@ describe("BoardPage — position context menu", () => {
   });
 });
 
-// ─── Locked board (siege complete) ────────────────────────────────────────
+// ─── Locked board (siege active or complete) ──────────────────────────────
 
 describe("BoardPage — locked board", () => {
-  it("hides the chevron context button on all positions when siege is complete", async () => {
-    const positions = [makePosition({ id: 1, position_number: 1 })];
-    setupDefaultHandlers(
-      makeBoard(positions),
-      makeSiege({ status: "complete" })
-    );
-    renderBoard();
-    await waitFor(() =>
-      expect(screen.queryByText(/loading board/i)).not.toBeInTheDocument()
-    );
+  it.each(["active", "complete"] as const)(
+    "hides position editing when siege is %s",
+    async (status) => {
+      const positions = [makePosition({ id: 1, position_number: 1 })];
+      setupDefaultHandlers(makeBoard(positions), makeSiege({ status }));
+      renderBoard();
+      await waitFor(() =>
+        expect(screen.queryByText(/loading board/i)).not.toBeInTheDocument()
+      );
 
-    // When isLocked=true the button is not rendered at all (conditional render, not just hidden)
-    const cell = screen.getByText("1.").closest('[class*="group"]');
-    expect(cell?.querySelector("button")).toBeNull();
-  });
-
-  it("disables the Preview Auto-fill button when siege is complete", async () => {
-    setupDefaultHandlers(makeBoard(), makeSiege({ status: "complete" }));
-    renderBoard();
-    await waitFor(() =>
-      expect(screen.queryByText(/loading board/i)).not.toBeInTheDocument()
-    );
-
-    expect(
-      screen.getByRole("button", { name: /preview auto-fill/i })
-    ).toBeDisabled();
-  });
+      // When isLocked=true the button is not rendered at all (conditional render, not just hidden)
+      const cell = screen.getByText("1.").closest('[class*="group"]');
+      expect(cell?.querySelector("button")).toBeNull();
+      expect(
+        screen.getByRole("button", { name: /preview auto-fill/i })
+      ).toBeDisabled();
+    }
+  );
 });
 
 // ─── MemberBucket ─────────────────────────────────────────────────────────
@@ -586,9 +577,7 @@ describe("BoardPage — validation dialog", () => {
 
     await user.click(screen.getByRole("button", { name: /^validate$/i }));
 
-    await waitFor(() =>
-      expect(screen.getByRole("dialog")).toBeInTheDocument()
-    );
+    await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument());
     expect(screen.getByText(/error 1/i)).toBeInTheDocument();
     expect(
       screen.getByText(/assigned member 'alice' is not active/i)
@@ -619,9 +608,7 @@ describe("BoardPage — validation dialog", () => {
 
     await user.click(screen.getByRole("button", { name: /^validate$/i }));
 
-    await waitFor(() =>
-      expect(screen.getByRole("dialog")).toBeInTheDocument()
-    );
+    await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument());
     expect(screen.getByText(/warning 10/i)).toBeInTheDocument();
     expect(
       screen.getByText(/building has fewer members than recommended/i)
@@ -643,9 +630,7 @@ describe("BoardPage — validation dialog", () => {
 
     await user.click(screen.getByRole("button", { name: /^validate$/i }));
 
-    await waitFor(() =>
-      expect(screen.getByRole("dialog")).toBeInTheDocument()
-    );
+    await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument());
     expect(screen.getByText(/no issues found/i)).toBeInTheDocument();
   });
 });

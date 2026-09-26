@@ -107,6 +107,8 @@ pytest
 ## Key Conventions
 
 ### Backend
+- All siege-scoped mutations require `siege.status == planning`. Lifecycle
+  transitions are the only exception.
 - Async everywhere: `AsyncSession`, `asyncpg`, `async def` route handlers.
 - Settings via Pydantic `BaseSettings` in `app/config.py`; loaded from `.env`.
 - All routes registered under `/api` prefix.

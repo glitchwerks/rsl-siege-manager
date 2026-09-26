@@ -15,6 +15,7 @@ from app.models.position import Position
 from app.models.siege import Siege
 from app.models.siege_member import SiegeMember
 from app.schemas.siege_member import MemberPreferenceSummary, SiegeMemberUpdate
+from app.services.siege_lock import require_planning_siege
 from app.services.sieges import get_siege
 
 
@@ -91,10 +92,10 @@ async def list_siege_members(session: AsyncSession, siege_id: int) -> list[Siege
 
 async def add_siege_member(session: AsyncSession, siege_id: int, member_id: int) -> SiegeMember:
     siege = await get_siege(session, siege_id)
-    if siege.status != SiegeStatus.planning:
-        raise HTTPException(
-            status_code=400, detail="Members can only be added during the planning phase"
-        )
+    require_planning_siege(
+        siege,
+        detail="Members can only be added during the planning phase",
+    )
 
     # Verify the member exists and is active
     member_result = await session.execute(select(Member).where(Member.id == member_id))
@@ -163,11 +164,10 @@ async def remove_siege_member(
         HTTPException 404: No SiegeMember row found for (siege_id, member_id).
     """
     siege = await get_siege(session, siege_id)
-    if siege.status != SiegeStatus.planning:
-        raise HTTPException(
-            status_code=400,
-            detail="Members can only be removed during the planning phase",
-        )
+    require_planning_siege(
+        siege,
+        detail="Members can only be removed during the planning phase",
+    )
 
     result = await session.execute(
         select(SiegeMember)
@@ -249,10 +249,7 @@ async def update_siege_member(
         HTTPException 404: SiegeMember record not found.
     """
     siege = await get_siege(session, siege_id)
-    if siege.status == SiegeStatus.complete:
-        raise HTTPException(
-            status_code=400, detail="Siege is complete — member data is fully locked"
-        )
+    require_planning_siege(siege)
 
     result = await session.execute(
         select(SiegeMember).where(

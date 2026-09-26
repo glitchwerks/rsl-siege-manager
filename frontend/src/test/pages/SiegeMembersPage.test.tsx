@@ -19,7 +19,11 @@ import { Routes, Route } from "react-router-dom";
 import { server } from "../server";
 import { renderWithProviders } from "../utils";
 import SiegeMembersPage from "../../pages/SiegeMembersPage";
-import type { Siege, SiegeMember, AttackDayPreviewResult } from "../../api/types";
+import type {
+  Siege,
+  SiegeMember,
+  AttackDayPreviewResult,
+} from "../../api/types";
 
 // ─── Server lifecycle ──────────────────────────────────────────────────────────
 
@@ -42,9 +46,7 @@ function makeSiege(overrides: Partial<Siege> = {}): Siege {
   };
 }
 
-function makeSiegeMember(
-  overrides: Partial<SiegeMember> = {}
-): SiegeMember {
+function makeSiegeMember(overrides: Partial<SiegeMember> = {}): SiegeMember {
   return {
     siege_id: 99,
     member_id: 1,
@@ -83,9 +85,8 @@ function registerHandlers(
     http.get(`/api/sieges/${siege.id}/members`, () =>
       HttpResponse.json(members)
     ),
-    http.post(
-      `/api/sieges/${siege.id}/members/auto-assign-attack-day`,
-      () => HttpResponse.json(preview)
+    http.post(`/api/sieges/${siege.id}/members/auto-assign-attack-day`, () =>
+      HttpResponse.json(preview)
     )
   );
 }
@@ -115,9 +116,7 @@ async function openPreviewDialog() {
   );
   // Wait for the dialog title to confirm the modal is open
   await waitFor(() => {
-    expect(
-      screen.getByText(/attack day preview/i)
-    ).toBeInTheDocument();
+    expect(screen.getByText(/attack day preview/i)).toBeInTheDocument();
   });
   return screen.getByRole("dialog");
 }
@@ -207,4 +206,34 @@ describe("SiegeMembersPage — Attack Day Preview dialog (no empty cells)", () =
     expect(within(dialog).getByText(/day 1 \(2\)/i)).toBeInTheDocument();
     expect(within(dialog).getByText(/day 2 \(1\)/i)).toBeInTheDocument();
   });
+});
+
+describe("SiegeMembersPage — locked editing", () => {
+  it.each(["active", "complete"] as const)(
+    "disables member mutations when siege is %s",
+    async (status) => {
+      registerHandlers(
+        makeSiege({ status }),
+        [makeSiegeMember({ attack_day: 1 })],
+        makePreview([], [])
+      );
+      renderPage();
+
+      await waitFor(() =>
+        expect(
+          screen.getByRole("button", { name: /auto-assign attack days/i })
+        ).toBeDisabled()
+      );
+      expect(
+        screen.getByRole("button", { name: /auto-assign reserves/i })
+      ).toBeDisabled();
+      expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+      for (const checkbox of screen.getAllByRole("checkbox")) {
+        expect(checkbox).toBeDisabled();
+      }
+      expect(
+        screen.queryByRole("button", { name: /remove alpha from siege/i })
+      ).not.toBeInTheDocument();
+    }
+  );
 });

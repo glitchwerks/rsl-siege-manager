@@ -154,6 +154,21 @@ async function waitForPageLoad() {
   );
 }
 
+describe("SiegeSettingsPage — locked editing", () => {
+  it.each(["active", "complete"] as const)(
+    "disables settings mutations when siege is %s",
+    async (status) => {
+      renderPage(makeSiege({ status }));
+      await waitForPageLoad();
+
+      expect(screen.getByLabelText(/^date$/i)).toBeDisabled();
+      expect(
+        screen.getByRole("button", { name: /save settings/i })
+      ).toBeDisabled();
+    }
+  );
+});
+
 // ─── Notify Members button ─────────────────────────────────────────────────
 
 describe("SiegeSettingsPage — Notify Members button", () => {

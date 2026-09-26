@@ -52,6 +52,7 @@ import {
   Search,
 } from "lucide-react";
 import { BUILDING_COLORS, BUILDING_LABELS } from "../lib/buildingColors";
+import { isSiegeLocked as getIsSiegeLocked } from "../lib/siege";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -132,10 +133,8 @@ function PositionCell({
   });
 
   const mutation = useMutation({
-    mutationFn: (data: {
-      member_id?: number | null;
-      is_reserve?: boolean;
-    }) => updatePosition(siegeId, position.id, data),
+    mutationFn: (data: { member_id?: number | null; is_reserve?: boolean }) =>
+      updatePosition(siegeId, position.id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["board", siegeId] });
       queryClient.invalidateQueries({ queryKey: ["post-suggestions-status"] });
@@ -477,10 +476,7 @@ function BuildingTableRow({
 
   const allPositions = building.groups.flatMap((g) => g.positions);
   const filledCount = allPositions.filter(
-    (p) =>
-      !p.is_disabled &&
-      !p.is_reserve &&
-      p.member_id != null
+    (p) => !p.is_disabled && !p.is_reserve && p.member_id != null
   ).length;
   const activeCount = allPositions.filter((p) => !p.is_disabled).length;
 
@@ -783,17 +779,11 @@ export default function BoardPage() {
 
   const totalSlots = allPositions.length;
   const assignedCount = allPositions.filter(
-    (p) =>
-      !p.is_disabled &&
-      !p.is_reserve &&
-      p.member_id != null
+    (p) => !p.is_disabled && !p.is_reserve && p.member_id != null
   ).length;
   const reserveCount = allPositions.filter((p) => p.is_reserve).length;
   const emptyCount = allPositions.filter(
-    (p) =>
-      !p.is_disabled &&
-      !p.is_reserve &&
-      p.member_id == null
+    (p) => !p.is_disabled && !p.is_reserve && p.member_id == null
   ).length;
   // Per-member assignment counts (all buildings including posts)
   const memberAssignments = useMemo(() => {
@@ -858,7 +848,7 @@ export default function BoardPage() {
 
   const totalScrolls = siege?.computed_scroll_count ?? 0;
   const scrollsPerMember = totalScrolls < 90 ? 3 : 4;
-  const isLocked = siege?.status === "complete";
+  const isLocked = getIsSiegeLocked(siege);
 
   // The member currently being dragged (for the DragOverlay chip)
   const activeMember = useMemo(

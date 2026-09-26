@@ -53,6 +53,7 @@ import {
 import { isAxiosError } from "axios";
 import { cn } from "../lib/utils";
 import { BUILDING_COLORS, BUILDING_LABELS } from "../lib/buildingColors";
+import { isSiegeLocked } from "../lib/siege";
 
 export default function SiegeSettingsPage() {
   const { id } = useParams<{ id: string }>();
@@ -85,6 +86,7 @@ export default function SiegeSettingsPage() {
     queryKey: ["siege", siegeId],
     queryFn: () => getSiege(siegeId),
   });
+  const siegeLocked = isSiegeLocked(siege);
 
   const { data: buildings } = useQuery({
     queryKey: ["buildings", siegeId],
@@ -661,7 +663,7 @@ export default function SiegeSettingsPage() {
               type="date"
               value={date}
               onChange={(e) => setDate(e.target.value)}
-              disabled={siege?.status === "complete"}
+              disabled={siegeLocked}
             />
           </div>
           <div className="space-y-1.5">
@@ -685,7 +687,7 @@ export default function SiegeSettingsPage() {
           )}
           <Button
             onClick={() => updateMutation.mutate()}
-            disabled={updateMutation.isPending || siege?.status === "complete"}
+            disabled={updateMutation.isPending || siegeLocked}
           >
             {updateMutation.isPending ? "Saving..." : "Save Settings"}
           </Button>
@@ -749,7 +751,7 @@ export default function SiegeSettingsPage() {
                                 ? cn(colors.header, "text-white")
                                 : "bg-white text-slate-600 hover:bg-slate-100"
                             )}
-                            disabled={siege?.status === "complete"}
+                            disabled={siegeLocked}
                             onClick={() => {
                               if (lvl !== b.level) {
                                 updateBuildingMutation.mutate({
@@ -767,9 +769,9 @@ export default function SiegeSettingsPage() {
                         <Checkbox
                           id={`broken-${b.id}`}
                           checked={b.is_broken}
-                          disabled={siege?.status === "complete"}
+                          disabled={siegeLocked}
                           onCheckedChange={
-                            siege?.status === "complete"
+                            siegeLocked
                               ? undefined
                               : (v) =>
                                   updateBuildingMutation.mutate({

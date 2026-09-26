@@ -13,7 +13,7 @@ import { Routes, Route } from "react-router-dom";
 import { server } from "../server";
 import { renderWithProviders } from "../utils";
 import PostsPage from "../../pages/PostsPage";
-import type { Post } from "../../api/types";
+import type { Post, Siege } from "../../api/types";
 
 // ─── Server lifecycle ──────────────────────────────────────────────────────────
 
@@ -32,6 +32,19 @@ function makePost(overrides: Partial<Post> = {}): Post {
     priority: 1,
     description: null,
     active_conditions: [],
+    ...overrides,
+  };
+}
+
+function makeSiege(overrides: Partial<Siege> = {}): Siege {
+  return {
+    id: 42,
+    date: "2026-03-22",
+    status: "planning",
+    defense_scroll_count: 0,
+    computed_scroll_count: 0,
+    created_at: "2026-03-19T00:00:00Z",
+    updated_at: "2026-03-19T00:00:00Z",
     ...overrides,
   };
 }
@@ -67,16 +80,7 @@ describe("PostsPage — sort order", () => {
     ];
 
     server.use(
-      http.get("/api/sieges/42", () =>
-        HttpResponse.json({
-          id: 42,
-          name: "Siege 42",
-          status: "draft",
-          attack_day: null,
-          created_at: "2024-01-01T00:00:00Z",
-          member_count: 0,
-        })
-      ),
+      http.get("/api/sieges/42", () => HttpResponse.json(makeSiege())),
       http.get("/api/sieges/42/posts", () => HttpResponse.json(posts)),
       http.get("/api/sieges/42/board", () =>
         HttpResponse.json({ siege_id: 42, buildings: [] })
@@ -96,4 +100,27 @@ describe("PostsPage — sort order", () => {
 
     expect(postHeadings).toEqual(["Post 1", "Post 2", "Post 3"]);
   });
+});
+
+describe("PostsPage — locked editing", () => {
+  it.each(["active", "complete"] as const)(
+    "hides post edit controls when siege is %s",
+    async (status) => {
+      server.use(
+        http.get("/api/sieges/42", () =>
+          HttpResponse.json(makeSiege({ status }))
+        ),
+        http.get("/api/sieges/42/posts", () => HttpResponse.json([makePost()])),
+        http.get("/api/sieges/42/board", () =>
+          HttpResponse.json({ siege_id: 42, buildings: [] })
+        )
+      );
+
+      renderPostsPage();
+      await screen.findByText("Post 1");
+
+      const postRow = screen.getByText("Post 1").closest("div.rounded-lg");
+      expect(postRow?.querySelector("button")).toBeNull();
+    }
+  );
 });

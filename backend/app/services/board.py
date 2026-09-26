@@ -5,11 +5,11 @@ from sqlalchemy.orm import selectinload
 
 from app.models.building import Building
 from app.models.building_group import BuildingGroup
-from app.models.enums import SiegeStatus
 from app.models.member import Member
 from app.models.position import Position
 from app.models.siege import Siege
 from app.schemas.board import PositionUpdate
+from app.services.siege_lock import require_planning_siege
 
 
 async def get_board(session: AsyncSession, siege_id: int) -> dict:
@@ -124,16 +124,15 @@ async def update_position(
 
     Raises:
         404 if position not found or doesn't belong to this siege.
-        400 if siege is complete.
+        400 if siege is not in planning.
         400 on invalid flag combinations or member constraints.
     """
-    # Verify siege exists and is not complete
+    # Verify siege exists and is editable.
     siege_result = await session.execute(select(Siege).where(Siege.id == siege_id))
     siege = siege_result.scalar_one_or_none()
     if siege is None:
         raise HTTPException(status_code=404, detail="Siege not found")
-    if siege.status == SiegeStatus.complete:
-        raise HTTPException(status_code=400, detail="Cannot modify a completed siege")
+    require_planning_siege(siege)
 
     # Fetch position and verify it belongs to this siege
     stmt = (
@@ -173,16 +172,15 @@ async def bulk_update_positions(
 
     Each update dict must have: position_id, member_id, is_reserve, is_disabled.
     Raises:
-        400 if siege is complete.
+        400 if siege is not in planning.
         404/400 per the same rules as update_position.
     """
-    # Verify siege exists and is not complete
+    # Verify siege exists and is editable.
     siege_result = await session.execute(select(Siege).where(Siege.id == siege_id))
     siege = siege_result.scalar_one_or_none()
     if siege is None:
         raise HTTPException(status_code=404, detail="Siege not found")
-    if siege.status == SiegeStatus.complete:
-        raise HTTPException(status_code=400, detail="Cannot modify a completed siege")
+    require_planning_siege(siege)
 
     # Load all positions for the siege in one query
     all_positions_result = await session.execute(
