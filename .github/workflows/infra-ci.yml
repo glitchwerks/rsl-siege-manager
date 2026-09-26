@@ -2,7 +2,9 @@ name: Infra CI
 
 # ── Gate structure ─────────────────────────────────────────────────────────────
 #
-# Four sequential gates protect the infra/ directory on every PR to main:
+# Four sequential gates protect the infra/ directory on PRs to main. Gates 1
+# and 2 run for every PR; Azure-authenticated gates 3 and 4 skip fork and
+# Dependabot PRs because GitHub does not expose repository secrets to them.
 #
 #   Gate 1 — infra-lint (no Azure auth)
 #             az bicep lint on main.bicep and all modules/*.bicep.
@@ -109,11 +111,12 @@ jobs:
   # version availability against real ARM — but creates NO resources. Secrets
   # that are required by the param file but must not be stored in the repo are
   # overridden here with placeholder values; ARM validates the shape (type,
-  # length, allowed characters) but does not use them.
+  # length, allowed characters) but does not use them. Dependabot PRs stop at
+  # Gate 2 because their workflow runs cannot access AZURE_CREDENTIALS.
   infra-validate-dev:
     name: ARM Preflight Validation (dev)
     needs: infra-build
-    if: github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork
+    if: github.event_name != 'pull_request' || (!github.event.pull_request.head.repo.fork && github.event.pull_request.user.login != 'dependabot[bot]')
     runs-on: ubuntu-latest
 
     steps:
@@ -157,7 +160,7 @@ jobs:
   infra-what-if-dev:
     name: What-if Change Impact (dev)
     needs: infra-validate-dev
-    if: github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork
+    if: github.event_name != 'pull_request' || (!github.event.pull_request.head.repo.fork && github.event.pull_request.user.login != 'dependabot[bot]')
     runs-on: ubuntu-latest
 
     steps:
