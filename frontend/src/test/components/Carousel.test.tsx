@@ -1,4 +1,4 @@
-import { screen, fireEvent } from "@testing-library/react";
+import { screen, fireEvent, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect } from "vitest";
 import { renderWithProviders } from "../utils";
@@ -10,8 +10,8 @@ const SLIDES: CarouselSlide[] = [
   { placeholder: "Slide C", title: "Title C", description: "Desc C" },
 ];
 
-function renderCarousel() {
-  return renderWithProviders(<Carousel slides={SLIDES} />);
+function renderCarousel(slides = SLIDES) {
+  return renderWithProviders(<Carousel slides={slides} />);
 }
 
 describe("Carousel", () => {
@@ -26,6 +26,31 @@ describe("Carousel", () => {
     SLIDES.forEach((s) => {
       expect(screen.getByText(s.title)).toBeInTheDocument();
     });
+  });
+
+  it("renders a lazy-loaded image using the slide title as alt text", () => {
+    const imageSlide: CarouselSlide = {
+      placeholder: "Image fallback",
+      title: "Assignment board",
+      description: "Assignment board screenshot",
+      image: "/landing/carousel-assignment-board.png",
+    };
+
+    renderCarousel([imageSlide]);
+
+    const image = screen.getByRole("img", { name: imageSlide.title });
+    expect(image).toHaveAttribute("src", imageSlide.image);
+    expect(image).toHaveAttribute("loading", "lazy");
+  });
+
+  it("renders the placeholder instead of an image when no image is provided", () => {
+    renderCarousel([SLIDES[0]]);
+
+    const slide = screen.getByTestId("carousel-slide-0");
+    const placeholder = within(slide).getByText(SLIDES[0].placeholder);
+    expect(within(slide).queryByRole("img")).not.toBeInTheDocument();
+    expect(placeholder).toBeInTheDocument();
+    expect(placeholder.parentElement?.tagName).toBe("DIV");
   });
 
   it("renders one dot per slide", () => {
