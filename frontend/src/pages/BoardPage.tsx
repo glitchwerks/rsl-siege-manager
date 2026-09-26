@@ -115,12 +115,14 @@ function PositionCell({
   memberRoleMap,
   onUpdate,
   isLocked,
+  isMemberHighlighted,
 }: {
   position: PositionResponse;
   siegeId: number;
   memberRoleMap: Record<number, string>;
   onUpdate: () => void;
   isLocked?: boolean;
+  isMemberHighlighted: boolean;
 }) {
   const queryClient = useQueryClient();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -132,10 +134,8 @@ function PositionCell({
   });
 
   const mutation = useMutation({
-    mutationFn: (data: {
-      member_id?: number | null;
-      is_reserve?: boolean;
-    }) => updatePosition(siegeId, position.id, data),
+    mutationFn: (data: { member_id?: number | null; is_reserve?: boolean }) =>
+      updatePosition(siegeId, position.id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["board", siegeId] });
       queryClient.invalidateQueries({ queryKey: ["post-suggestions-status"] });
@@ -175,21 +175,29 @@ function PositionCell({
     return <span className="text-xs text-slate-300">—</span>;
   }
 
-  const cellBg = position.is_disabled ? "bg-slate-100" : "bg-white";
+  const cellBg = isMemberHighlighted
+    ? "bg-violet-50"
+    : position.is_disabled
+      ? "bg-slate-100"
+      : "bg-white";
 
   const borderStyle = isOver
     ? "border-violet-400 ring-2 ring-violet-400"
-    : position.is_disabled
-      ? "border-slate-200"
-      : position.member_id != null
+    : isMemberHighlighted
+      ? "border-violet-500 ring-2 ring-inset ring-violet-500"
+      : position.is_disabled
         ? "border-slate-200"
-        : "border-dashed border-slate-200";
+        : position.member_id != null
+          ? "border-slate-200"
+          : "border-dashed border-slate-200";
 
   return (
     <>
       <div
         ref={setNodeRef}
-        className={`group relative flex min-h-[28px] items-center justify-between rounded border px-1.5 py-0.5 ${cellBg} ${borderStyle} cursor-default`}
+        data-position-id={position.id}
+        data-member-highlighted={isMemberHighlighted}
+        className={`group relative flex min-h-[28px] items-center justify-between rounded border px-1.5 py-0.5 transition-shadow ${cellBg} ${borderStyle} cursor-default`}
       >
         <span className="mr-1 shrink-0 text-xs text-slate-400">
           {position.position_number}.
@@ -256,11 +264,15 @@ function DraggableMemberRow({
   count,
   scrollLimit,
   isLocked,
+  isSelected,
+  onSelect,
 }: {
   member: SiegeMember;
   count: number;
   scrollLimit: number;
   isLocked: boolean;
+  isSelected: boolean;
+  onSelect: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } =
     useDraggable({
@@ -293,9 +305,21 @@ function DraggableMemberRow({
       title={tooltip || undefined}
       className={`flex items-center gap-1.5 border-l-4 px-2 py-1.5 ${overLimit ? "border-red-300 bg-red-50" : roleColor} ${
         isDragging ? "opacity-40" : ""
-      } ${!isLocked ? "cursor-grab active:cursor-grabbing" : ""}`}
+      } ${isSelected ? "ring-2 ring-inset ring-violet-500" : ""} ${
+        !isLocked ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"
+      }`}
       {...listeners}
       {...attributes}
+      aria-pressed={isSelected}
+      onClick={onSelect}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          onSelect();
+          return;
+        }
+        listeners?.onKeyDown?.(event);
+      }}
     >
       <span className="min-w-0 flex-1 truncate text-xs font-medium text-slate-800">
         {member.member_name}
@@ -359,11 +383,15 @@ function MemberBucket({
   memberAssignments,
   scrollLimit,
   isLocked,
+  selectedMemberId,
+  onSelectMember,
 }: {
   siegeMembers: SiegeMember[];
   memberAssignments: Record<number, number>;
   scrollLimit: number;
   isLocked: boolean;
+  selectedMemberId: number | null;
+  onSelectMember: (memberId: number) => void;
 }) {
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<RoleFilter>("all");
@@ -440,6 +468,8 @@ function MemberBucket({
                 count={memberAssignments[m.member_id] ?? 0}
                 scrollLimit={scrollLimit}
                 isLocked={isLocked}
+                isSelected={selectedMemberId === m.member_id}
+                onSelect={() => onSelectMember(m.member_id)}
               />
             ))}
           </div>
@@ -460,12 +490,14 @@ function BuildingTableRow({
   memberRoleMap,
   onUpdate,
   isLocked,
+  selectedMemberId,
 }: {
   building: BuildingResponse;
   siegeId: number;
   memberRoleMap: Record<number, string>;
   onUpdate: () => void;
   isLocked?: boolean;
+  selectedMemberId: number | null;
 }) {
   const colors = BUILDING_COLORS[building.building_type];
 
@@ -477,10 +509,7 @@ function BuildingTableRow({
 
   const allPositions = building.groups.flatMap((g) => g.positions);
   const filledCount = allPositions.filter(
-    (p) =>
-      !p.is_disabled &&
-      !p.is_reserve &&
-      p.member_id != null
+    (p) => !p.is_disabled && !p.is_reserve && p.member_id != null
   ).length;
   const activeCount = allPositions.filter((p) => !p.is_disabled).length;
 
@@ -526,6 +555,10 @@ function BuildingTableRow({
                       memberRoleMap={memberRoleMap}
                       onUpdate={onUpdate}
                       isLocked={isLocked}
+                      isMemberHighlighted={
+                        selectedMemberId != null &&
+                        pos.member_id === selectedMemberId
+                      }
                     />
                   ))}
                 </div>
@@ -558,6 +591,7 @@ function BuildingTypeSection({
   onUpdate,
   isLocked,
   defaultExpanded,
+  selectedMemberId,
 }: {
   type: BuildingType;
   buildings: BuildingResponse[];
@@ -566,6 +600,7 @@ function BuildingTypeSection({
   onUpdate: () => void;
   isLocked?: boolean;
   defaultExpanded: boolean;
+  selectedMemberId: number | null;
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const colors = BUILDING_COLORS[type];
@@ -600,6 +635,7 @@ function BuildingTypeSection({
               memberRoleMap={memberRoleMap}
               onUpdate={onUpdate}
               isLocked={isLocked}
+              selectedMemberId={selectedMemberId}
             />
           ))}
         </div>
@@ -616,12 +652,14 @@ function BuildingsTab({
   memberRoleMap,
   onUpdate,
   isLocked,
+  selectedMemberId,
 }: {
   buildings: BuildingResponse[];
   siegeId: number;
   memberRoleMap: Record<number, string>;
   onUpdate: () => void;
   isLocked?: boolean;
+  selectedMemberId: number | null;
 }) {
   const nonPostBuildings = buildings.filter((b) => b.building_type !== "post");
 
@@ -666,6 +704,7 @@ function BuildingsTab({
           onUpdate={onUpdate}
           isLocked={isLocked}
           defaultExpanded={true}
+          selectedMemberId={selectedMemberId}
         />
       ))}
     </div>
@@ -722,6 +761,7 @@ export default function BoardPage() {
   const [validation, setValidation] = useState<ValidationResult | null>(null);
   const [validationOpen, setValidationOpen] = useState(false);
   const [activeMemberId, setActiveMemberId] = useState<number | null>(null);
+  const [selectedMemberId, setSelectedMemberId] = useState<number | null>(null);
 
   const { data: board, isLoading: boardLoading } = useQuery({
     queryKey: ["board", siegeId],
@@ -783,17 +823,11 @@ export default function BoardPage() {
 
   const totalSlots = allPositions.length;
   const assignedCount = allPositions.filter(
-    (p) =>
-      !p.is_disabled &&
-      !p.is_reserve &&
-      p.member_id != null
+    (p) => !p.is_disabled && !p.is_reserve && p.member_id != null
   ).length;
   const reserveCount = allPositions.filter((p) => p.is_reserve).length;
   const emptyCount = allPositions.filter(
-    (p) =>
-      !p.is_disabled &&
-      !p.is_reserve &&
-      p.member_id == null
+    (p) => !p.is_disabled && !p.is_reserve && p.member_id == null
   ).length;
   // Per-member assignment counts (all buildings including posts)
   const memberAssignments = useMemo(() => {
@@ -916,6 +950,10 @@ export default function BoardPage() {
     // board is already invalidated inside PositionCell's mutation
   }
 
+  function handleSelectMember(memberId: number) {
+    setSelectedMemberId((current) => (current === memberId ? null : memberId));
+  }
+
   // ── Render ───────────────────────────────────────────────────────────────────
 
   if (boardLoading) {
@@ -1020,6 +1058,8 @@ export default function BoardPage() {
             memberAssignments={memberAssignments}
             scrollLimit={scrollsPerMember}
             isLocked={isLocked}
+            selectedMemberId={selectedMemberId}
+            onSelectMember={handleSelectMember}
           />
 
           {/* Right: Tab shell + content */}
@@ -1058,6 +1098,7 @@ export default function BoardPage() {
                 memberRoleMap={memberRoleMap}
                 onUpdate={refreshBoard}
                 isLocked={isLocked}
+                selectedMemberId={selectedMemberId}
               />
             )}
             {activeTab === "posts" && (

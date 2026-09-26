@@ -513,6 +513,77 @@ describe("BoardPage — MemberBucket", () => {
     ) as HTMLElement;
     expect(within(bucketRow).getByText("2")).toBeInTheDocument();
   });
+
+  it("highlights every grid position assigned to the selected member", async () => {
+    const user = userEvent.setup();
+    const positions = [
+      makePosition({
+        id: 1,
+        position_number: 1,
+        member_id: 1,
+        member_name: "Aethon",
+      }),
+      makePosition({
+        id: 2,
+        position_number: 2,
+        member_id: 1,
+        member_name: "Aethon",
+      }),
+      makePosition({
+        id: 3,
+        position_number: 3,
+        member_id: 2,
+        member_name: "Brint",
+      }),
+    ];
+    setupDefaultHandlers(makeBoard(positions), makeSiege(), members);
+    const { container } = renderBoard();
+    await waitFor(() =>
+      expect(screen.queryByText(/loading board/i)).not.toBeInTheDocument()
+    );
+
+    const aethonRow = screen
+      .getAllByText("Aethon")
+      .map((element) => element.closest('[aria-pressed="false"]'))
+      .find((element) => element != null) as HTMLElement;
+    const aethonPositionOne = container.querySelector('[data-position-id="1"]');
+    const aethonPositionTwo = container.querySelector('[data-position-id="2"]');
+    const brintPosition = container.querySelector('[data-position-id="3"]');
+
+    await user.click(aethonRow);
+
+    expect(aethonRow).toHaveAttribute("aria-pressed", "true");
+    expect(aethonPositionOne).toHaveAttribute(
+      "data-member-highlighted",
+      "true"
+    );
+    expect(aethonPositionTwo).toHaveAttribute(
+      "data-member-highlighted",
+      "true"
+    );
+    expect(brintPosition).toHaveAttribute("data-member-highlighted", "false");
+
+    await user.click(aethonRow);
+
+    expect(aethonRow).toHaveAttribute("aria-pressed", "false");
+    expect(aethonPositionOne).toHaveAttribute(
+      "data-member-highlighted",
+      "false"
+    );
+    expect(aethonPositionTwo).toHaveAttribute(
+      "data-member-highlighted",
+      "false"
+    );
+
+    aethonRow.focus();
+    await user.keyboard("{Enter}");
+
+    expect(aethonRow).toHaveAttribute("aria-pressed", "true");
+    expect(aethonPositionOne).toHaveAttribute(
+      "data-member-highlighted",
+      "true"
+    );
+  });
 });
 
 // ─── Action buttons ────────────────────────────────────────────────────────
@@ -586,9 +657,7 @@ describe("BoardPage — validation dialog", () => {
 
     await user.click(screen.getByRole("button", { name: /^validate$/i }));
 
-    await waitFor(() =>
-      expect(screen.getByRole("dialog")).toBeInTheDocument()
-    );
+    await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument());
     expect(screen.getByText(/error 1/i)).toBeInTheDocument();
     expect(
       screen.getByText(/assigned member 'alice' is not active/i)
@@ -619,9 +688,7 @@ describe("BoardPage — validation dialog", () => {
 
     await user.click(screen.getByRole("button", { name: /^validate$/i }));
 
-    await waitFor(() =>
-      expect(screen.getByRole("dialog")).toBeInTheDocument()
-    );
+    await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument());
     expect(screen.getByText(/warning 10/i)).toBeInTheDocument();
     expect(
       screen.getByText(/building has fewer members than recommended/i)
@@ -643,9 +710,7 @@ describe("BoardPage — validation dialog", () => {
 
     await user.click(screen.getByRole("button", { name: /^validate$/i }));
 
-    await waitFor(() =>
-      expect(screen.getByRole("dialog")).toBeInTheDocument()
-    );
+    await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument());
     expect(screen.getByText(/no issues found/i)).toBeInTheDocument();
   });
 });

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Selected-member assignment highlighting** — selecting a member in the Board sidebar now highlights every building-grid position assigned to that member; selecting the same member again clears the highlight.
+
 ## [1.4.1] - 2026-06-13
 
 Patch release: markdown rendering in the changelog dropdown, a validation fix for level-6 strongholds, and repairs to the Discord release-announcement workflow.
