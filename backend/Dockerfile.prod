@@ -1,6 +1,12 @@
-FROM mcr.microsoft.com/playwright/python:v1.49.0-noble
+# Keep the preinstalled browsers aligned with the Playwright version in uv.lock.
+FROM mcr.microsoft.com/playwright/python:v1.63.0-noble
+
+COPY --from=ghcr.io/astral-sh/uv:0.11.28 /uv /uvx /bin/
 
 WORKDIR /app
+ENV PATH="/app/.venv/bin:$PATH" \
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy
 
 # Install system dependencies for asyncpg
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -8,9 +14,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Install the exact production dependency graph from the committed lockfile.
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev
 
 # Copy application code
 COPY . .

@@ -27,6 +27,26 @@ permissions:
   contents: read
 
 jobs:
+  python-lockfiles:
+    name: Python lockfile check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: "0.11.28"
+          python-version: "3.12"
+
+      - name: Check backend lockfile
+        run: uv lock --project backend --check
+
+      - name: Check bot lockfile
+        run: uv lock --project bot --check
+
   backend-ci:
     name: Backend Lint & Test
     runs-on: ubuntu-latest
@@ -44,25 +64,26 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v7
+      - name: Install uv and Python 3.12
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
+          version: "0.11.28"
           python-version: "3.12"
 
       - name: Install dependencies
-        run: pip install -r requirements-dev.txt
+        run: uv sync --frozen --dev
 
       - name: Check formatting with black
-        run: black --check app/ tests/
+        run: uv run --frozen black --check app/ tests/
 
       - name: Lint with ruff
-        run: ruff check app/ tests/
+        run: uv run --frozen ruff check app/ tests/
 
       - name: Run tests with coverage
         # Integration suite at tests/integration/ runs in the dedicated
         # `Sidecar Integration Tests` job (which sets up bot/.venv). Excluding
         # here prevents this job from trying to spawn the bot subprocess.
-        run: pytest tests/ --cov=app --ignore=tests/integration
+        run: uv run --frozen pytest tests/ --cov=app --ignore=tests/integration
 
 
   frontend-ci:
@@ -121,22 +142,23 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v7
+      - name: Install uv and Python 3.12
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
+          version: "0.11.28"
           python-version: "3.12"
 
       - name: Install dependencies
-        run: pip install -r requirements-dev.txt
+        run: uv sync --frozen --dev
 
       - name: Check formatting with black
-        run: black --check app/ tests/
+        run: uv run --frozen black --check app/ tests/
 
       - name: Lint with ruff
-        run: ruff check app/ tests/
+        run: uv run --frozen ruff check app/ tests/
 
       - name: Run tests
-        run: pytest tests/ -v
+        run: uv run --frozen pytest tests/ -v
 
 
   # Regression check for #302: verifies the frontend Docker build succeeds when
@@ -162,6 +184,32 @@ jobs:
         run: rm -f frontend/CHANGELOG.md
 
 
+  backend-docker-build:
+    name: Backend Docker build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Build backend image
+        run: docker build -f backend/Dockerfile -t siege-api:ci ./backend
+
+
+  bot-docker-build:
+    name: Bot Docker build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Build bot image
+        run: docker build -f bot/Dockerfile -t siege-bot:ci ./bot
+
+
   # Integration tests for the bot HTTP sidecar surface.  Runs the bundled
   # bot in fake mode (BOT_TEST_MODE=fake, no Discord token required) as a
   # real subprocess on port 8001, then exercises every documented endpoint
@@ -171,7 +219,7 @@ jobs:
   # Two distinct Python environments are required:
   #   bot/.venv  — The bot subprocess interpreter (has discord.py, uvicorn).
   #                conftest.py locates this via _BOT_PYTHON (cross-platform).
-  #   System pip — The backend test runner (has pytest, httpx).
+  #   backend/.venv — The backend test runner (has pytest, httpx).
   sidecar-integration-tests:
     name: Sidecar Integration Tests
     runs-on: ubuntu-latest
@@ -182,24 +230,21 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v7
+      - name: Install uv and Python 3.12
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
+          version: "0.11.28"
           python-version: "3.12"
 
-      - name: Create bot venv for subprocess
-        run: python -m venv bot/.venv
-
       - name: Install bot dependencies into bot venv
-        run: bot/.venv/bin/pip install -r bot/requirements-dev.txt
+        run: uv sync --project bot --frozen --dev
 
       - name: Install backend test runner dependencies
-        working-directory: backend
-        run: pip install -r requirements-dev.txt
+        run: uv sync --project backend --frozen --dev
 
       - name: Run sidecar integration tests
         working-directory: backend
-        run: pytest tests/integration/sidecar/ -v
+        run: uv run --frozen pytest tests/integration/sidecar/ -v
 
 
   validation-script-tests:
@@ -210,13 +255,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v7
+      - name: Install uv and Python 3.12
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
+          version: "0.11.28"
           python-version: '3.12'
 
-      - name: Install pytest
-        run: pip install pytest>=8.3
+      - name: Install test dependencies
+        run: uv sync --project backend --frozen --dev
 
       - name: Run validation script tests
-        run: pytest scripts/tests/ -v
+        run: uv run --project backend --frozen pytest scripts/tests/ -v

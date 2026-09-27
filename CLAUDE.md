@@ -58,26 +58,26 @@ Services: frontend `localhost:5173`, backend `localhost:8000`, bot `localhost:80
 ### Backend
 ```bash
 cd backend
-pip install -r requirements-dev.txt
+uv sync --frozen --dev
 
 # Run
-uvicorn app.main:app --reload
+uv run uvicorn app.main:app --reload
 
 # Test
-pytest --ignore=tests/test_schema.py -v     # standard run (test_schema.py requires live DB)
-pytest tests/test_health.py                 # single file
-pytest -k "test_health"                     # single test by name
-pytest --cov=app --cov-report=term-missing
+uv run pytest --ignore=tests/test_schema.py -v     # standard run (test_schema.py requires live DB)
+uv run pytest tests/test_health.py                 # single file
+uv run pytest -k "test_health"                     # single test by name
+uv run pytest --cov=app --cov-report=term-missing
 
 # Lint / format
-black .
-ruff check .
-ruff check . --fix
+uv run black .
+uv run ruff check .
+uv run ruff check . --fix
 
 # Migrations
-alembic revision --autogenerate -m "description"
-alembic upgrade head
-alembic downgrade -1
+uv run alembic revision --autogenerate -m "description"
+uv run alembic upgrade head
+uv run alembic downgrade -1
 ```
 
 ### Frontend
@@ -99,9 +99,9 @@ npx prettier --write src/
 ### Bot
 ```bash
 cd bot
-pip install -r requirements-dev.txt
-python app/main.py   # runs Discord client + HTTP sidecar concurrently
-pytest
+uv sync --frozen --dev
+uv run python app/main.py   # runs Discord client + HTTP sidecar concurrently
+uv run pytest
 ```
 
 ## Key Conventions

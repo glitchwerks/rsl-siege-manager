@@ -1,5 +1,7 @@
 FROM python:3.12-slim
 
+COPY --from=ghcr.io/astral-sh/uv:0.11.28 /uv /uvx /bin/
+
 # Inject git SHA at build time so the version endpoint can surface it.
 # Default to "unknown" when building locally without passing --build-arg.
 ARG GIT_SHA=unknown
@@ -8,6 +10,9 @@ ARG BUILD_NUMBER=unknown
 ENV BUILD_NUMBER=$BUILD_NUMBER
 ARG FRONTEND_VERSION=unknown
 ENV FRONTEND_VERSION=$FRONTEND_VERSION
+ENV PATH="/app/.venv/bin:$PATH" \
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy
 
 WORKDIR /app
 
@@ -17,12 +22,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Install the exact production dependency graph from the committed lockfile.
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev
 
 # Install Playwright browser binaries.
-# pip install only brings in the Python package; the actual Chromium binary and
+# uv sync only brings in the Python package; the actual Chromium binary and
 # its system-level dependencies (fonts, shared libs) must be fetched separately.
 # --with-deps handles apt packages required on Debian slim images.
 RUN playwright install --with-deps chromium

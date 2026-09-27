@@ -16,6 +16,7 @@ Components changed: siege-api.
 ### Infrastructure / repo
 
 - Added per-component semantic-version guidance, pull-request prompts, blocking CI enforcement with an audited bypass, and exact deployed-version verification. (#311)
+- Replaced floating Python installs with committed backend and bot `uv` lockfiles, frozen CI and container installs, lock-drift checks, and container-build coverage. (#464)
 
 ## [1.4.2] - 2026-09-27
 
