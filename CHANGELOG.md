@@ -9,11 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.4.2] - 2026-09-27
 
-Correctness and usability patch: active sieges are now immutable, selected members are easier to locate on the assignment board, external-sidecar local development works as documented, and Azure logging no longer depends on the retired Data Collector API.
-
-### Added
-
-- **Selected-member assignment highlighting** — selecting a member in the Board sidebar now highlights every building-grid position assigned to that member; selecting the same member again clears the highlight. (#532, #533)
+Correctness and maintenance patch: active sieges are now immutable, external-sidecar local development works as documented, and Azure logging no longer depends on the retired Data Collector API.
 
 ### Changed
 
