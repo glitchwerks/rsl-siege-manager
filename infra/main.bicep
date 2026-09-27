@@ -207,6 +207,10 @@ param alertEmail string
 @secure()
 param slackAlertWebhookUrl string
 
+// Every deployment path must supply the webhook. This prevents an omitted
+// override from replacing the working Key Vault value with an empty secret.
+assert slackAlertWebhookUrlProvided = !empty(trim(slackAlertWebhookUrl))
+
 // ── Modules ──────────────────────────────────────────────────────────────────
 
 module logAnalytics 'modules/log-analytics.bicep' = {

@@ -110,6 +110,10 @@ Write-Host "                         discordGuildId=`$env:DISCORD_GUILD_ID ``" -
 Write-Host "                         slackAlertWebhookUrl=`$env:SLACK_ALERT_WEBHOOK_URL" -ForegroundColor White
 
 if ($SecretsLoaded) {
+    if ([string]::IsNullOrWhiteSpace($env:SLACK_ALERT_WEBHOOK_URL)) {
+        Write-Error "SLACK_ALERT_WEBHOOK_URL is required for deployment. Add it to $EnvFile or the current environment."
+        exit 1
+    }
     Write-Host ""
     Write-Host "==> Deploying Bicep template..." -ForegroundColor Cyan
     az deployment group create `

@@ -47,8 +47,10 @@ def test_slack_body_is_sanitized_and_distinguishes_state() -> None:
     assert "parameters('alertEnvironment')" in template
     assert "fallbackInvestigationUrl" in template
     assert "not(contains(coalesce(" in template
-    assert "'\\n'" in template
-    assert "'\\r'" in template
+    assert "decodeUriComponent('%0A')" in template
+    assert "decodeUriComponent('%0D')" in template
+    assert "'\\n'" not in template
+    assert "'\\r'" not in template
     assert "alertContext" not in template
     assert "customProperties" not in template
 
@@ -71,6 +73,14 @@ def test_bootstrap_deployment_preserves_slack_webhook_secret() -> None:
     )
 
     assert "slackAlertWebhookUrl=$env:SLACK_ALERT_WEBHOOK_URL" in bootstrap
+    assert "[string]::IsNullOrWhiteSpace($env:SLACK_ALERT_WEBHOOK_URL)" in bootstrap
+
+
+def test_root_template_rejects_an_empty_slack_webhook() -> None:
+    template = (ROOT / "infra" / "main.bicep").read_text(encoding="utf-8")
+
+    assert "assert slackAlertWebhookUrlProvided" in template
+    assert "!empty(trim(slackAlertWebhookUrl))" in template
 
 
 def test_callback_and_webhook_are_not_module_outputs() -> None:
