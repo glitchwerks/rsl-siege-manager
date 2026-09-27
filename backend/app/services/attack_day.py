@@ -14,6 +14,7 @@ from app.schemas.attack_day import (
     AttackDayAssignment,
     AttackDayPreviewResult,
 )
+from app.services.siege_lock import lock_planning_siege
 
 PREVIEW_TTL_MINUTES = 30
 DAY2_TARGET = 10
@@ -24,14 +25,11 @@ def _now_utc() -> datetime:
 
 
 async def preview_attack_day(session: AsyncSession, siege_id: int) -> AttackDayPreviewResult:
-    siege_result = await session.execute(
-        select(Siege)
-        .where(Siege.id == siege_id)
-        .options(selectinload(Siege.siege_members).selectinload(SiegeMember.member))
+    siege = await lock_planning_siege(
+        session,
+        siege_id,
+        selectinload(Siege.siege_members).selectinload(SiegeMember.member),
     )
-    siege = siege_result.scalar_one_or_none()
-    if siege is None:
-        raise HTTPException(status_code=404, detail="Siege not found")
 
     assignments: dict[int, int] = {}  # member_id -> attack_day
 
@@ -155,14 +153,11 @@ async def apply_attack_day(session: AsyncSession, siege_id: int) -> AttackDayApp
         HTTPException 404: Siege not found.
         HTTPException 409: No valid (non-expired) preview exists.
     """
-    siege_result = await session.execute(
-        select(Siege)
-        .where(Siege.id == siege_id)
-        .options(selectinload(Siege.siege_members).selectinload(SiegeMember.member))
+    siege = await lock_planning_siege(
+        session,
+        siege_id,
+        selectinload(Siege.siege_members).selectinload(SiegeMember.member),
     )
-    siege = siege_result.scalar_one_or_none()
-    if siege is None:
-        raise HTTPException(status_code=404, detail="Siege not found")
 
     if siege.attack_day_preview is None or siege.attack_day_preview_expires_at is None:
         raise HTTPException(status_code=409, detail="No valid preview to apply, generate a new one")

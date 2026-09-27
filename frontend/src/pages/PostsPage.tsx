@@ -19,6 +19,7 @@ import {
   useGroupByPreference,
   GROUP_BY_STORAGE_KEY,
 } from "../lib/useGroupByPreference";
+import { isSiegeLocked } from "../lib/siege";
 
 const PRIORITY_LABELS: Record<number, string> = {
   0: "Unset",
@@ -54,7 +55,8 @@ function PostRow({
   const queryClient = useQueryClient();
   const [expanded, setExpanded] = useState(initialExpanded);
   const [condFilter, setCondFilter] = useState("");
-  const [groupByMode, setGroupByMode] = useGroupByPreference(GROUP_BY_STORAGE_KEY);
+  const [groupByMode, setGroupByMode] =
+    useGroupByPreference(GROUP_BY_STORAGE_KEY);
   // Tracks the last forcedVersion this row applied so the effect does not re-fire
   // when other deps (groupByMode, forcedMode) change after a per-row flip.
   const appliedVersionRef = useRef(0);
@@ -208,45 +210,44 @@ function PostRow({
               />
             </div>
             {condGroups.map((group) => {
-                const filtered = condFilter
-                  ? group.items.filter((c) =>
-                      c.description
-                        .toLowerCase()
-                        .includes(condFilter.toLowerCase())
-                    )
-                  : group.items;
-                if (filtered.length === 0) return null;
-                return (
-                  <div key={group.heading} className="mb-3">
-                    <p className="mb-1 text-xs font-medium text-slate-500">
-                      {group.heading}
-                    </p>
-                    <div className="grid grid-cols-2 gap-1.5">
-                      {filtered.map((c) => {
-                        const checked = selectedConditions.has(c.id);
-                        const disabled =
-                          !checked && selectedConditions.size >= 3;
-                        return (
-                          <div key={c.id} className="flex items-center gap-2">
-                            <Checkbox
-                              id={`cond-${post.id}-${c.id}`}
-                              checked={checked}
-                              disabled={disabled}
-                              onCheckedChange={() => toggleCondition(c.id)}
-                            />
-                            <Label
-                              htmlFor={`cond-${post.id}-${c.id}`}
-                              className="text-xs font-normal"
-                            >
-                              {c.description}
-                            </Label>
-                          </div>
-                        );
-                      })}
-                    </div>
+              const filtered = condFilter
+                ? group.items.filter((c) =>
+                    c.description
+                      .toLowerCase()
+                      .includes(condFilter.toLowerCase())
+                  )
+                : group.items;
+              if (filtered.length === 0) return null;
+              return (
+                <div key={group.heading} className="mb-3">
+                  <p className="mb-1 text-xs font-medium text-slate-500">
+                    {group.heading}
+                  </p>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {filtered.map((c) => {
+                      const checked = selectedConditions.has(c.id);
+                      const disabled = !checked && selectedConditions.size >= 3;
+                      return (
+                        <div key={c.id} className="flex items-center gap-2">
+                          <Checkbox
+                            id={`cond-${post.id}-${c.id}`}
+                            checked={checked}
+                            disabled={disabled}
+                            onCheckedChange={() => toggleCondition(c.id)}
+                          />
+                          <Label
+                            htmlFor={`cond-${post.id}-${c.id}`}
+                            className="text-xs font-normal"
+                          >
+                            {c.description}
+                          </Label>
+                        </div>
+                      );
+                    })}
                   </div>
-                );
-              })}
+                </div>
+              );
+            })}
             <Button
               size="sm"
               variant="secondary"
@@ -275,7 +276,8 @@ export default function PostsPage() {
   // init); per-row toggles are independent after mount. The master broadcasts
   // via broadcastVersion — each PostRow's useEffect fires only when that
   // version bumps, ensuring the override is explicit (not reactive).
-  const [masterMode, setMasterMode] = useGroupByPreference(GROUP_BY_STORAGE_KEY);
+  const [masterMode, setMasterMode] =
+    useGroupByPreference(GROUP_BY_STORAGE_KEY);
   const [broadcastVersion, setBroadcastVersion] = useState(0);
 
   function broadcastMode(next: GroupByMode) {
@@ -287,6 +289,7 @@ export default function PostsPage() {
     queryKey: ["siege", siegeId],
     queryFn: () => getSiege(siegeId),
   });
+  const siegeLocked = isSiegeLocked(siege);
 
   const {
     data: posts,
@@ -302,7 +305,9 @@ export default function PostsPage() {
     queryFn: () => getBoard(siegeId),
   });
 
-  const sorted = posts?.slice().sort((a, b) => a.building_number - b.building_number);
+  const sorted = posts
+    ?.slice()
+    .sort((a, b) => a.building_number - b.building_number);
 
   return (
     <div>
@@ -348,7 +353,7 @@ export default function PostsPage() {
               key={post.id}
               post={post}
               siegeId={siegeId}
-              isLocked={siege?.status === "complete"}
+              isLocked={siegeLocked}
               initialExpanded={expandPostNumber === post.building_number}
               building={board?.buildings.find((b) => b.id === post.building_id)}
               forcedMode={masterMode}

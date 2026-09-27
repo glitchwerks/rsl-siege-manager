@@ -9,12 +9,12 @@ from sqlalchemy.orm import selectinload
 
 from app.models.building import Building
 from app.models.building_group import BuildingGroup
-from app.models.enums import SiegeStatus
 from app.models.member import Member
 from app.models.position import Position
 from app.models.siege import Siege
 from app.models.siege_member import SiegeMember
 from app.schemas.autofill import AutofillApplyResult, AutofillAssignment, AutofillPreviewResult
+from app.services.siege_lock import lock_planning_siege
 from app.services.sieges import compute_scroll_count, scrolls_per_player
 
 PREVIEW_TTL_MINUTES = 30
@@ -25,21 +25,14 @@ def _now_utc() -> datetime:
 
 
 async def preview_autofill(session: AsyncSession, siege_id: int) -> AutofillPreviewResult:
-    siege_result = await session.execute(
-        select(Siege)
-        .where(Siege.id == siege_id)
-        .options(
-            selectinload(Siege.buildings)
-            .selectinload(Building.groups)
-            .selectinload(BuildingGroup.positions),
-            selectinload(Siege.siege_members).selectinload(SiegeMember.member),
-        )
+    siege = await lock_planning_siege(
+        session,
+        siege_id,
+        selectinload(Siege.buildings)
+        .selectinload(Building.groups)
+        .selectinload(BuildingGroup.positions),
+        selectinload(Siege.siege_members).selectinload(SiegeMember.member),
     )
-    siege = siege_result.scalar_one_or_none()
-    if siege is None:
-        raise HTTPException(status_code=404, detail="Siege not found")
-    if siege.status == SiegeStatus.complete:
-        raise HTTPException(status_code=400, detail="Cannot auto-fill a completed siege")
 
     # 1. Collect empty, non-disabled, non-reserve positions (skip broken buildings)
     empty_positions: list[Position] = []
@@ -120,10 +113,7 @@ async def preview_autofill(session: AsyncSession, siege_id: int) -> AutofillPrev
 
 
 async def apply_autofill(session: AsyncSession, siege_id: int) -> AutofillApplyResult:
-    siege_result = await session.execute(select(Siege).where(Siege.id == siege_id))
-    siege = siege_result.scalar_one_or_none()
-    if siege is None:
-        raise HTTPException(status_code=404, detail="Siege not found")
+    siege = await lock_planning_siege(session, siege_id)
 
     if siege.autofill_preview is None or siege.autofill_preview_expires_at is None:
         raise HTTPException(status_code=409, detail="No valid preview to apply, generate a new one")

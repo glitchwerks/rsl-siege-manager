@@ -14,6 +14,7 @@ from app.models.siege import Siege
 from app.models.siege_member import SiegeMember
 from app.schemas.siege import SiegeCreate, SiegeUpdate
 from app.services.building_capacity import get_team_count
+from app.services.siege_lock import lock_planning_siege
 
 
 def scrolls_per_player(total_positions: int) -> int:
@@ -142,9 +143,9 @@ async def create_siege(session: AsyncSession, data: SiegeCreate) -> Siege:
 
 
 async def update_siege(session: AsyncSession, siege_id: int, data: SiegeUpdate) -> Siege:
-    siege = await get_siege(session, siege_id)
-    if siege.status != SiegeStatus.planning:
-        raise HTTPException(status_code=400, detail="Only planning sieges can be updated")
+    siege = await lock_planning_siege(
+        session, siege_id, detail="Only planning sieges can be updated"
+    )
     updates = data.model_dump(exclude_unset=True)
     for field, value in updates.items():
         setattr(siege, field, value)
@@ -154,8 +155,8 @@ async def update_siege(session: AsyncSession, siege_id: int, data: SiegeUpdate) 
 
 
 async def delete_siege(session: AsyncSession, siege_id: int) -> None:
-    siege = await get_siege(session, siege_id)
-    if siege.status != SiegeStatus.planning:
-        raise HTTPException(status_code=400, detail="Only planning sieges can be deleted")
+    siege = await lock_planning_siege(
+        session, siege_id, detail="Only planning sieges can be deleted"
+    )
     await session.delete(siege)
     await session.commit()

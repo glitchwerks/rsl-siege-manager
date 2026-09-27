@@ -92,12 +92,15 @@ describe("SiegeLayout", () => {
     expect(screen.getByText("Board content")).toBeInTheDocument();
   });
 
-  it("shows the locked banner when siege status is complete", async () => {
-    renderLayout("/sieges/42/board", makeSiege({ status: "complete" }));
-    expect(
-      await screen.findByText(/this siege is locked/i)
-    ).toBeInTheDocument();
-  });
+  it.each(["active", "complete"] as const)(
+    "shows the locked banner when siege status is %s",
+    async (status) => {
+      renderLayout("/sieges/42/board", makeSiege({ status }));
+      expect(
+        await screen.findByText(/siege data cannot be edited/i)
+      ).toBeInTheDocument();
+    }
+  );
 
   it("does not show locked banner for a planning siege", () => {
     renderLayout("/sieges/42/board", makeSiege({ status: "planning" }));

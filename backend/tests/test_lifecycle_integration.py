@@ -278,6 +278,7 @@ async def test_full_siege_lifecycle():
         r = MagicMock()
         if activate_call_count == 0:
             # Siege lookup
+            assert stmt._for_update_arg is not None
             r.scalar_one_or_none.return_value = configured_siege
         elif activate_call_count == 1:
             # Active siege check (looking for another active siege) — none found

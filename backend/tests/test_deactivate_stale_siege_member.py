@@ -6,6 +6,7 @@ tests/test_post_suggestions_integration.py) so no live DB is required.
 """
 
 import pytest
+from fastapi import HTTPException
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -214,6 +215,28 @@ async def test_deactivate_does_not_remove_siege_member_from_active_siege(session
     assert (
         result.scalar_one_or_none() is not None
     ), "SiegeMember row must be preserved in active sieges after deactivation"
+
+
+@pytest.mark.asyncio
+async def test_deactivate_rejects_member_assigned_in_active_siege(session):
+    """An immutable active assignment must not be made invalid by deactivation."""
+    member = Member(name="Active Assignee", role=MemberRole.advanced, is_active=True)
+    session.add(member)
+    await session.flush()
+
+    siege = await _make_siege(session, SiegeStatus.active)
+    session.add(SiegeMember(siege_id=siege.id, member_id=member.id))
+    position = await _assign_member_to_position(session, siege, member)
+    await session.commit()
+
+    with pytest.raises(HTTPException) as exc_info:
+        await deactivate_member(session, member.id)
+
+    assert exc_info.value.status_code == 409
+    assert f"active siege {siege.id}" in exc_info.value.detail
+    assert member.is_active is True
+    await session.refresh(position)
+    assert position.member_id == member.id
 
 
 @pytest.mark.asyncio

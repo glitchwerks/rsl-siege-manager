@@ -89,7 +89,7 @@ function makeSiege(overrides: Partial<Siege> = {}): Siege {
   return {
     id: 42,
     date: "2026-03-22",
-    status: "active",
+    status: "planning",
     defense_scroll_count: 0,
     computed_scroll_count: 0,
     created_at: "2026-03-19T00:00:00Z",
@@ -297,7 +297,9 @@ describe("PostsTab — matched condition display", () => {
  * - Post 1 (building_number=1): the post the user is looking at (unassigned)
  * - Post 2 (building_number=2): already has member 1 assigned with condition 5
  */
-function makeTwoPostBoard(post2Position: Partial<PositionResponse> = {}): BoardResponse {
+function makeTwoPostBoard(
+  post2Position: Partial<PositionResponse> = {}
+): BoardResponse {
   return {
     siege_id: 42,
     buildings: [
@@ -375,7 +377,16 @@ describe("PostsTab — inline duplicate-condition indicator (#196)", () => {
       http.get("/api/sieges/42/posts", () => HttpResponse.json([post1, post2])),
       http.get("/api/sieges/42/members/preferences", () =>
         HttpResponse.json([
-          { member_id: 1, preferences: [{ id: 5, description: "Great Fortification", stronghold_level: 3 }] },
+          {
+            member_id: 1,
+            preferences: [
+              {
+                id: 5,
+                description: "Great Fortification",
+                stronghold_level: 3,
+              },
+            ],
+          },
         ])
       )
     );
@@ -426,7 +437,12 @@ describe("PostsTab — inline duplicate-condition indicator (#196)", () => {
       http.get("/api/sieges/42/posts", () => HttpResponse.json([post1, post2])),
       http.get("/api/sieges/42/members/preferences", () =>
         HttpResponse.json([
-          { member_id: 1, preferences: [{ id: 7, description: "Stone Skin", stronghold_level: 3 }] },
+          {
+            member_id: 1,
+            preferences: [
+              { id: 7, description: "Stone Skin", stronghold_level: 3 },
+            ],
+          },
         ])
       )
     );
@@ -443,7 +459,11 @@ describe("PostsTab — inline duplicate-condition indicator (#196)", () => {
       expect(labels.some((el) => el.closest("label") !== null)).toBe(true);
     });
     // No "Post N" warning text should be present inside a label (inline indicator)
-    expect(screen.queryAllByText(/^Post \d+$/).filter((el) => el.closest("label") !== null)).toHaveLength(0);
+    expect(
+      screen
+        .queryAllByText(/^Post \d+$/)
+        .filter((el) => el.closest("label") !== null)
+    ).toHaveLength(0);
   });
 
   it("does not show warning icon when duplicateMap entry matches the same post (self-reference)", async () => {
@@ -497,7 +517,16 @@ describe("PostsTab — inline duplicate-condition indicator (#196)", () => {
       http.get("/api/sieges/42/posts", () => HttpResponse.json([post1])),
       http.get("/api/sieges/42/members/preferences", () =>
         HttpResponse.json([
-          { member_id: 1, preferences: [{ id: 5, description: "Great Fortification", stronghold_level: 3 }] },
+          {
+            member_id: 1,
+            preferences: [
+              {
+                id: 5,
+                description: "Great Fortification",
+                stronghold_level: 3,
+              },
+            ],
+          },
         ])
       )
     );
@@ -514,7 +543,11 @@ describe("PostsTab — inline duplicate-condition indicator (#196)", () => {
       expect(labels.some((el) => el.closest("label") !== null)).toBe(true);
     });
     // No inline "Post N" warning inside a label (self-reference should not trigger indicator)
-    expect(screen.queryAllByText(/^Post \d+$/).filter((el) => el.closest("label") !== null)).toHaveLength(0);
+    expect(
+      screen
+        .queryAllByText(/^Post \d+$/)
+        .filter((el) => el.closest("label") !== null)
+    ).toHaveLength(0);
   });
 
   it("post-click amber confirmation dialog still appears when Assign is clicked for a duplicate (additive behavior)", async () => {
@@ -548,7 +581,16 @@ describe("PostsTab — inline duplicate-condition indicator (#196)", () => {
       http.get("/api/sieges/42/posts", () => HttpResponse.json([post1, post2])),
       http.get("/api/sieges/42/members/preferences", () =>
         HttpResponse.json([
-          { member_id: 1, preferences: [{ id: 5, description: "Great Fortification", stronghold_level: 3 }] },
+          {
+            member_id: 1,
+            preferences: [
+              {
+                id: 5,
+                description: "Great Fortification",
+                stronghold_level: 3,
+              },
+            ],
+          },
         ])
       )
     );
@@ -561,7 +603,9 @@ describe("PostsTab — inline duplicate-condition indicator (#196)", () => {
 
     // Wait for the Assign button to appear
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /^assign$/i })).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /^assign$/i })
+      ).toBeInTheDocument();
     });
 
     // Click Assign — should trigger the existing confirmation flow
@@ -590,21 +634,29 @@ describe("PostsTab — Suggest Assignments toolbar", () => {
     ).toBeInTheDocument();
   });
 
-  it("Suggest Assignments button is disabled when siege is locked", async () => {
-    const user = userEvent.setup();
-    // A completed siege is locked
-    setupHandlers(
-      makePostBoard(),
-      makeSiege({ status: "complete" }),
-      [],
-      [makePost()]
-    );
-    renderBoard();
-    await navigateToPostsTab(user);
+  it.each(["active", "complete"] as const)(
+    "disables Suggest Assignments when siege is %s",
+    async (status) => {
+      const user = userEvent.setup();
+      let previewCallCount = 0;
+      setupHandlers(makePostBoard(), makeSiege({ status }), [], [makePost()]);
+      server.use(
+        http.post("/api/sieges/42/post-suggestions", () => {
+          previewCallCount++;
+          return HttpResponse.json(makePostPreviewResult());
+        })
+      );
+      renderBoard();
+      await navigateToPostsTab(user);
 
-    const btn = screen.getByRole("button", { name: /suggest assignments/i });
-    expect(btn).toBeDisabled();
-  });
+      const btn = screen.getByRole("button", {
+        name: /suggest assignments/i,
+      });
+      expect(btn).toBeDisabled();
+      expect(previewCallCount).toBe(0);
+      expect(screen.queryByText("Checking…")).not.toBeInTheDocument();
+    }
+  );
 });
 
 // ─── Optimal-status chip (issue #364) ────────────────────────────────────────
@@ -667,7 +719,10 @@ describe("PostsTab — optimal-status chip (#364)", () => {
       http.post("/api/sieges/42/post-suggestions", () =>
         HttpResponse.json(
           makePostPreviewResult({
-            assignments: [makeOptimalAssignment(101), makeOptimalAssignment(102)],
+            assignments: [
+              makeOptimalAssignment(101),
+              makeOptimalAssignment(102),
+            ],
           })
         )
       )

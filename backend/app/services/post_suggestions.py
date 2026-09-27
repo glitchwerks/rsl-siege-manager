@@ -50,7 +50,6 @@ from sqlalchemy.orm import selectinload
 
 from app.models.building import Building
 from app.models.building_group import BuildingGroup
-from app.models.enums import SiegeStatus
 from app.models.member import Member
 from app.models.position import Position
 from app.models.post import Post
@@ -63,6 +62,7 @@ from app.schemas.post_suggestions import (
     PostSuggestionPreviewResult,
     StaleEntry,
 )
+from app.services.siege_lock import lock_planning_siege
 
 PREVIEW_TTL_MINUTES = 30
 
@@ -94,28 +94,19 @@ async def preview_post_suggestions(
         HTTPException(404): Siege not found.
         HTTPException(400): Siege is complete — cannot generate suggestions.
     """
-    siege_result = await session.execute(
-        select(Siege)
-        .where(Siege.id == siege_id)
-        .options(
-            selectinload(Siege.posts)
-            .selectinload(Post.building)
-            .selectinload(Building.groups)
-            .selectinload(BuildingGroup.positions)
-            .selectinload(Position.matched_condition),
-            selectinload(Siege.posts).selectinload(Post.active_conditions),
-            selectinload(Siege.siege_members)
-            .selectinload(SiegeMember.member)
-            .selectinload(Member.post_preferences),
-        )
+    siege = await lock_planning_siege(
+        session,
+        siege_id,
+        selectinload(Siege.posts)
+        .selectinload(Post.building)
+        .selectinload(Building.groups)
+        .selectinload(BuildingGroup.positions)
+        .selectinload(Position.matched_condition),
+        selectinload(Siege.posts).selectinload(Post.active_conditions),
+        selectinload(Siege.siege_members)
+        .selectinload(SiegeMember.member)
+        .selectinload(Member.post_preferences),
     )
-    siege = siege_result.scalar_one_or_none()
-    if siege is None:
-        raise HTTPException(status_code=404, detail="Siege not found")
-    if siege.status == SiegeStatus.complete:
-        raise HTTPException(
-            status_code=400, detail="Cannot suggest assignments for a completed siege"
-        )
 
     # ------------------------------------------------------------------
     # Query existing assignment counts per member (excludes disabled,
@@ -361,15 +352,7 @@ async def apply_post_suggestions(
         HTTPException(409): Preview missing/expired OR stale state detected.
             When stale, the detail is {"stale_entries": [...]}.
     """
-    siege_result = await session.execute(select(Siege).where(Siege.id == siege_id))
-    siege = siege_result.scalar_one_or_none()
-    if siege is None:
-        raise HTTPException(status_code=404, detail="Siege not found")
-    if siege.status == SiegeStatus.complete:
-        raise HTTPException(
-            status_code=400,
-            detail="Cannot apply suggestions to a completed siege",
-        )
+    siege = await lock_planning_siege(session, siege_id)
 
     if siege.post_suggest_preview is None or siege.post_suggest_preview_expires_at is None:
         raise HTTPException(

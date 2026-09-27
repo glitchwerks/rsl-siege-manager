@@ -13,6 +13,7 @@ from app.models.post_condition import PostCondition
 from app.models.siege import Siege
 from app.models.siege_member import SiegeMember
 from app.schemas.member import MemberCreate, MemberPreferencesUpdate, MemberUpdate
+from app.services.siege_lock import lock_all_planning_sieges
 
 
 async def list_members(session: AsyncSession, is_active: bool | None) -> list[Member]:
@@ -48,10 +49,8 @@ async def create_member(session: AsyncSession, data: MemberCreate) -> Member:
     session.add(member)
     await session.flush()
 
-    planning_sieges = await session.execute(
-        select(Siege).where(Siege.status == SiegeStatus.planning)
-    )
-    for siege in planning_sieges.scalars().all():
+    planning_sieges = await lock_all_planning_sieges(session)
+    for siege in planning_sieges:
         session.add(SiegeMember(siege_id=siege.id, member_id=member.id))
 
     await session.commit()
@@ -74,14 +73,41 @@ async def _clear_member_from_planning_sieges(session: AsyncSession, member_id: i
         session: The active async database session.
         member_id: Primary key of the member to remove from planning sieges.
     """
-    # Clear position assignments in planning sieges.
+    # Lock planning sieges before checking active assignments or writing roster
+    # state. If activation is in progress, this waits for its status change to
+    # commit before the active-assignment query below runs.
+    # Activation takes the same row lock, so either cleanup commits first and
+    # activation validates the cleaned state, or activation commits first and
+    # the updated row no longer qualifies as planning here.
+    planning_sieges = await lock_all_planning_sieges(session)
+    planning_siege_ids = [siege.id for siege in planning_sieges]
+
+    active_assignment_result = await session.execute(
+        select(Siege.id)
+        .join(Building, Building.siege_id == Siege.id)
+        .join(BuildingGroup, BuildingGroup.building_id == Building.id)
+        .join(Position, Position.building_group_id == BuildingGroup.id)
+        .where(Siege.status == SiegeStatus.active)
+        .where(Position.member_id == member_id)
+        .limit(1)
+    )
+    active_siege_id = active_assignment_result.scalar_one_or_none()
+    if active_siege_id is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Member cannot be deactivated while assigned in active siege {active_siege_id}",
+        )
+
+    if not planning_siege_ids:
+        return
+
+    # Clear position assignments in the locked planning sieges.
     stmt = (
         select(Position)
         .join(BuildingGroup, Position.building_group_id == BuildingGroup.id)
         .join(Building, BuildingGroup.building_id == Building.id)
-        .join(Siege, Building.siege_id == Siege.id)
         .where(Position.member_id == member_id)
-        .where(Siege.status == SiegeStatus.planning)
+        .where(Building.siege_id.in_(planning_siege_ids))
     )
     result = await session.execute(stmt)
     positions = result.scalars().all()
@@ -92,9 +118,7 @@ async def _clear_member_from_planning_sieges(session: AsyncSession, member_id: i
     await session.execute(
         delete(SiegeMember)
         .where(SiegeMember.member_id == member_id)
-        .where(
-            SiegeMember.siege_id.in_(select(Siege.id).where(Siege.status == SiegeStatus.planning))
-        )
+        .where(SiegeMember.siege_id.in_(planning_siege_ids))
     )
 
 
@@ -115,8 +139,9 @@ async def update_member(session: AsyncSession, member_id: int, data: MemberUpdat
         The refreshed ``Member`` instance after the update.
 
     Raises:
-        HTTPException: 404 if the member does not exist, 409 if reactivating
-            would exceed the 30-active-member limit.
+        HTTPException: 404 if the member does not exist, or 409 if reactivating
+            would exceed the 30-active-member limit or deactivation would
+            invalidate an active-siege assignment.
     """
     member = await get_member(session, member_id)
     updates = data.model_dump(exclude_unset=True)
@@ -135,11 +160,11 @@ async def update_member(session: AsyncSession, member_id: int, data: MemberUpdat
     # detect active → inactive reliably regardless of update field order.
     transitioning_to_inactive = updates.get("is_active") is False and member.is_active is True
 
-    for field, value in updates.items():
-        setattr(member, field, value)
-
     if transitioning_to_inactive:
         await _clear_member_from_planning_sieges(session, member_id)
+
+    for field, value in updates.items():
+        setattr(member, field, value)
 
     await session.commit()
     await session.refresh(member)
@@ -151,7 +176,9 @@ async def deactivate_member(session: AsyncSession, member_id: int) -> Member:
 
     Sets ``is_active = False``, clears position assignments in planning sieges,
     and removes ``SiegeMember`` rows from planning sieges. Active and complete
-    sieges are left untouched so historical records are preserved.
+    complete sieges are left untouched so historical records are preserved.
+    Deactivation is rejected when the member has an assignment in an active
+    siege.
 
     Args:
         session: The active async database session.
@@ -161,12 +188,12 @@ async def deactivate_member(session: AsyncSession, member_id: int) -> Member:
         The refreshed ``Member`` instance after deactivation.
 
     Raises:
-        HTTPException: 404 if the member does not exist.
+        HTTPException: 404 if the member does not exist, or 409 if deactivation
+            would leave an assignment in an active siege invalid.
     """
     member = await get_member(session, member_id)
-    member.is_active = False
-
     await _clear_member_from_planning_sieges(session, member_id)
+    member.is_active = False
 
     await session.commit()
     await session.refresh(member)
