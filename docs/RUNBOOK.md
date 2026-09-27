@@ -817,15 +817,15 @@ Two deployment workflows exist:
 | Workflow | Trigger | Deploys |
 |---|---|---|
 | `deploy.yml` | Automatic — `push` to `main`; `v*` tag for prod | Application code (Docker images → Container Apps) |
-| `infra-deploy.yml` | Manual — `workflow_dispatch` only (current) | Bicep templates → Azure resource group |
+| `infra-deploy.yml` | Automatic to dev on `infra/**` pushes to `main`; manual to dev/prod | Bicep templates → Azure resource group |
 
-**Bicep changes never deploy themselves.** A PR that modifies both application code and `infra/**` is not fully shipped until you manually run `infra-deploy.yml` against both `dev` and `prod` after the PR merges.
+**Bicep changes deploy automatically to dev after merge.** Every main commit publishes its immutable application images, but only the current `main` revision enters the ordinary dev deployment path. The infrastructure workflow waits for the triggering commit's image set before applying Bicep, then reconciles the apps to the latest `main` images if the branch advanced while it was running. This prevents mixed app/infra changes, slow builds, and closely spaced merges from restoring stale images or leaving Bicep unapplied. Automatic runs use the committed `useExternalSidecar` value from `main.dev.bicepparam`; manual runs may override it. Production remains an explicit promotion: manually run `infra-deploy.yml` with `environment=prod` after the dev deployment and validation succeed.
 
 ### What the What-if check does (and does not) do
 
-Every PR that touches `infra/**` runs a `What-if Change Impact (dev)` CI check. This check runs `az deployment group what-if` and surfaces what *would* change the next time `infra-deploy.yml` runs — it does not deploy anything. Drift from stacked, unrun Bicep changes is visible here, but the check is a backstop, not a substitute for actually running the workflow.
+Every PR that touches `infra/**` runs a `What-if Change Impact (dev)` CI check. This check runs `az deployment group what-if` and surfaces what will change when the PR merges; it does not deploy anything from the PR branch. After merge, the push-triggered `infra-deploy.yml` run repeats the gates and applies the reviewed template to dev.
 
-If the What-if output shows unexpected changes, it is a signal that prior Bicep PRs were merged without a follow-up `infra-deploy.yml` run.
+If the What-if output shows unexpected changes, do not merge. Resolve the drift or document why the additional changes are expected before the automatic dev apply can run.
 
 ### Hybrid trigger decision (2026-05-07, #272)
 
@@ -858,7 +858,7 @@ The `push`-triggered run is gated to `dev` via `if: github.event_name == 'push'`
 - The failure mode that prompted this decision (#252): multiple Bicep changes stacked between manual runs, were forgotten, and dev drifted silently from `main`. Auto-deploying dev on any `infra/**` push makes that class of drift structurally impossible.
 - Prod retains the explicit human gate because (a) it carries the full production blast radius and (b) prod app deploys are already tag-gated — keeping the same shape for infra is consistent with the rest of the deployment story.
 
-**Implementation status:** The workflow change (adding the `paths` filter and the dev/prod job split) is tracked as a follow-up issue filed after #272 merged. Until that follow-up lands, `infra-deploy.yml` is still `workflow_dispatch`-only for both environments — run it manually after every Bicep PR.
+**Implementation status:** Landed in #290. Dev deploys automatically for `infra/**` pushes to `main`; manual dispatch remains available for dev recovery and is the only path to production.
 
 ---
 

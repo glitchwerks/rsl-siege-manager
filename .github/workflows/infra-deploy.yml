@@ -2,11 +2,10 @@ name: Infra Deploy
 
 # ── Purpose ────────────────────────────────────────────────────────────────────
 #
-# Manual-only workflow for deploying infrastructure changes via Bicep.
+# Hybrid workflow for deploying infrastructure changes via Bicep.
 #
-# workflow_dispatch only — infra changes are intentional, never automatic.
-# Automatic deploys on push are deliberately excluded; infra changes require
-# a human to pick a target environment and initiate the run.
+# Pushes to main that touch infra/** deploy automatically to dev. Production
+# remains workflow_dispatch-only so it always retains an explicit human gate.
 #
 # Infra CI gates run first before any deployment (lint → build → validate →
 # what-if). The deploy job will not start until all four gates pass.
@@ -27,6 +26,11 @@ name: Infra Deploy
 # ──────────────────────────────────────────────────────────────────────────────
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'infra/**'
   workflow_dispatch:
     inputs:
       environment:
@@ -49,7 +53,7 @@ on:
 # queue and wait.
 
 concurrency:
-  group: infra-deploy-${{ inputs.environment }}
+  group: infra-deploy-${{ github.event_name == 'push' && 'dev' || inputs.environment }}
   cancel-in-progress: false
 
 # ── Permissions ──────────────────────────────────────────────────────────────
@@ -76,14 +80,14 @@ jobs:
 
 # ── Deploy (dev) ─────────────────────────────────────────────────────────────
 #
-# Deploys infra to the dev environment. The `environment: dev` block is the
-# GitHub Environment approval gate — configure Required Reviewers in Settings
-# → Environments → dev to enforce manual sign-off before deployment begins.
+# Deploys infra to dev automatically after an infra/** change reaches main, or
+# manually when workflow_dispatch selects dev. The dev environment permits main
+# and intentionally has no required-reviewer gate.
 
   deploy-dev:
     name: Deploy Infra (dev)
     needs: infra-gates
-    if: inputs.environment == 'dev'
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.environment == 'dev')
     runs-on: ubuntu-latest
     environment: dev
 
@@ -91,7 +95,17 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
 
-      - name: Validate external sidecar configuration
+      - name: Validate external sidecar configuration (automatic)
+        if: github.event_name == 'push'
+        run: |
+          if grep -Eq '^param useExternalSidecar = true([[:space:]]|$)' infra/main.dev.bicepparam; then
+            ./scripts/validate-external-sidecar.sh infra/main.dev.bicepparam
+          else
+            echo "useExternalSidecar=false in the committed dev parameters; skipping external sidecar validation"
+          fi
+
+      - name: Validate external sidecar configuration (manual)
+        if: github.event_name == 'workflow_dispatch'
         uses: ./.github/actions/validate-external-sidecar
         with:
           param-file: infra/main.dev.bicepparam
@@ -102,24 +116,42 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Get current image tag (dev)
+      - name: Resolve image tag (dev)
+        env:
+          ACR_NAME: ${{ vars.ACR_NAME }}
+          # Allow queued main deploys enough time to publish this commit's images.
+          ACR_WAIT_ATTEMPTS: 80
         run: |
-          # Preserve the currently-running image tag to prevent silent rollback to :latest.
-          # Falls back to 'latest' if the container app doesn't exist (e.g., first deployment).
-          IMAGE_TAG=$(az containerapp show \
-            --name siege-web-api-dev \
-            --resource-group ${{ vars.RESOURCE_GROUP }} \
-            --query "properties.template.containers[0].image" \
-            --output tsv 2>/dev/null | awk -F: '{print $NF}') || IMAGE_TAG="latest"
-          if [ -z "$IMAGE_TAG" ]; then
-            echo "⚠️  Could not determine current image tag, defaulting to 'latest'"
-            IMAGE_TAG="latest"
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            # deploy.yml builds this same commit concurrently. Wait for its exact
+            # images so both workflows converge on one deterministic revision.
+            IMAGE_TAG="$GITHUB_SHA"
+            ./scripts/wait-for-acr-images.sh \
+              "$ACR_NAME" \
+              "$IMAGE_TAG" \
+              siege-api siege-frontend siege-bot
+          else
+            # Manual infra recovery preserves the currently-running application.
+            IMAGE_TAG=$(az containerapp show \
+              --name siege-web-api-dev \
+              --resource-group ${{ vars.RESOURCE_GROUP }} \
+              --query "properties.template.containers[0].image" \
+              --output tsv 2>/dev/null | awk -F: '{print $NF}') || IMAGE_TAG="latest"
+            if [[ -z "$IMAGE_TAG" ]]; then
+              echo "⚠️  Could not determine current image tag, defaulting to 'latest'"
+              IMAGE_TAG="latest"
+            fi
           fi
           echo "Using image tag: ${IMAGE_TAG}"
-          echo "IMAGE_TAG=${IMAGE_TAG}" >> $GITHUB_ENV
+          echo "IMAGE_TAG=${IMAGE_TAG}" >> "$GITHUB_ENV"
 
       - name: Deploy infra (dev)
         run: |
+          sidecar_parameters=()
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            sidecar_parameters+=(--parameters "useExternalSidecar=${{ inputs.useExternalSidecar }}")
+          fi
+
           az deployment group create \
             --resource-group ${{ vars.RESOURCE_GROUP }} \
             --template-file infra/main.bicep \
@@ -134,7 +166,58 @@ jobs:
             --parameters discordClientSecret="${{ secrets.DISCORD_CLIENT_SECRET }}" \
             --parameters discordRedirectUri="${{ vars.DISCORD_REDIRECT_URI }}" \
             --parameters imageTag="${{ env.IMAGE_TAG }}" \
-            --parameters useExternalSidecar=${{ inputs.useExternalSidecar }}
+            "${sidecar_parameters[@]}"
+
+      - name: Reconcile dev apps to latest main images
+        if: github.event_name == 'push'
+        env:
+          ACR_NAME: ${{ vars.ACR_NAME }}
+          ACR_LOGIN_SERVER: ${{ vars.ACR_LOGIN_SERVER }}
+          GH_TOKEN: ${{ github.token }}
+          RESOURCE_GROUP: ${{ vars.RESOURCE_GROUP }}
+          ACR_WAIT_ATTEMPTS: 80
+        run: |
+          deployed_sha="${{ env.IMAGE_TAG }}"
+
+          for attempt in {1..5}; do
+            latest_sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
+            if [[ "$latest_sha" == "$deployed_sha" ]]; then
+              echo "Dev infrastructure and application images are current at ${latest_sha}"
+              exit 0
+            fi
+
+            echo "Main advanced to ${latest_sha}; reconciling application images"
+            ./scripts/wait-for-acr-images.sh \
+              "$ACR_NAME" \
+              "$latest_sha" \
+              siege-api siege-frontend siege-bot
+
+            az containerapp update \
+              --name siege-web-api-dev \
+              --resource-group "$RESOURCE_GROUP" \
+              --image "${ACR_LOGIN_SERVER}/siege-api:${latest_sha}"
+            az containerapp update \
+              --name siege-web-frontend-dev \
+              --resource-group "$RESOURCE_GROUP" \
+              --image "${ACR_LOGIN_SERVER}/siege-frontend:${latest_sha}"
+
+            if ! grep -Eq '^param useExternalSidecar = true([[:space:]]|$)' infra/main.dev.bicepparam; then
+              az containerapp update \
+                --name siege-web-bot-dev \
+                --resource-group "$RESOURCE_GROUP" \
+                --image "${ACR_LOGIN_SERVER}/siege-bot:${latest_sha}"
+            fi
+
+            deployed_sha="$latest_sha"
+            latest_after=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
+            if [[ "$latest_after" == "$deployed_sha" ]]; then
+              echo "Dev application images reconciled to ${deployed_sha}"
+              exit 0
+            fi
+          done
+
+          echo "::error::Main changed repeatedly during infrastructure reconciliation"
+          exit 1
 
 # ── Deploy (prod) ────────────────────────────────────────────────────────────
 #
@@ -145,7 +228,7 @@ jobs:
   deploy-prod:
     name: Deploy Infra (prod)
     needs: infra-gates
-    if: inputs.environment == 'prod'
+    if: github.event_name == 'workflow_dispatch' && inputs.environment == 'prod'
     runs-on: ubuntu-latest
     environment: prod
 
