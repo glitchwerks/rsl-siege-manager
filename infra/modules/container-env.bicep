@@ -25,12 +25,10 @@ var envName = '${appPrefix}-cae-${environment}-${uniqueString(resourceGroup().id
 // identity block (None). This keeps the resource declaration unconditional and
 // avoids the Bicep limitation around conditional identity blocks.
 
-// API VERSION NOTE: Using preview `2024-08-02-preview` because the environment-level
-// user-assigned identity block is not present in the GA API `2024-03-01`. The preview
-// surface is scoped to this resource only; all other managed-env operations stay on GA.
-// MIGRATION: revert to GA once the identity block ships in a GA API version.
-// Track: https://aka.ms/azure-rest-api-specs (Microsoft.App API changelog).
-resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2024-08-02-preview' = {
+// API VERSION NOTE: GA `2025-07-01` includes the environment-level user-assigned
+// identity surface required for Key Vault certificate imports and retains Bicep
+// type validation. Verified against Microsoft Learn on 2026-09-27 (issue #283).
+resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2025-07-01' = {
   name: envName
   location: location
   tags: {

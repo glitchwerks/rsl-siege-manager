@@ -306,21 +306,17 @@ resource apiApp 'Microsoft.App/containerApps@2025-07-01' = {
 // set to true completes the binding. This avoids an ARM deployment failure that
 // would occur if the KV cert reference pointed at a non-existent secret.
 
-// API VERSION NOTE: Using preview `2024-08-02-preview` because the environment-level
-// user-assigned identity block is not present in the GA API `2024-03-01`. The preview
-// surface is scoped to this resource only; all other managed-env operations stay on GA.
-// MIGRATION: revert to GA once the identity block ships in a GA API version.
-// Track: https://aka.ms/azure-rest-api-specs (Microsoft.App API changelog).
-resource containerAppsEnv 'Microsoft.App/managedEnvironments@2024-08-02-preview' existing = {
+// API VERSION NOTE: GA `2025-07-01` includes the environment-level user-assigned
+// identity surface required for Key Vault certificate imports and retains Bicep
+// type validation. Verified against Microsoft Learn on 2026-09-27 (issue #283).
+resource containerAppsEnv 'Microsoft.App/managedEnvironments@2025-07-01' existing = {
   name: containerAppsEnvironmentName
 }
 
-// API VERSION NOTE: Using preview `2024-08-02-preview` because `certificateKeyVaultProperties`
-// is not present in the GA API `2024-03-01`. This property is the KV-import path that lets
-// Container Apps pull the PFX directly from Key Vault without staging it through Bicep.
-// The preview surface is scoped to this resource only; all other resources stay on GA.
-// MIGRATION: revert to GA once certificateKeyVaultProperties ships in a GA API version.
-// Track: https://aka.ms/azure-rest-api-specs (Microsoft.App API changelog).
+// API VERSION NOTE: GA `2025-07-01` includes certificateKeyVaultProperties,
+// which lets Container Apps import the PFX directly without staging certificate
+// bytes through Bicep and retains Bicep type validation. Verified against
+// Microsoft Learn on 2026-09-27 (#283).
 //
 // BYO certificate resource: Container Apps imports the PFX from Key Vault using
 // the environment's user-assigned managed identity. The certificateKeyVaultProperties
@@ -331,7 +327,7 @@ resource containerAppsEnv 'Microsoft.App/managedEnvironments@2024-08-02-preview'
 // This resource is only created when both enableCustomDomain=true and a non-empty
 // customDomainHostname are provided. Bicep conditional resources are declared
 // with an `if` expression on the resource statement.
-resource originCert 'Microsoft.App/managedEnvironments/certificates@2024-08-02-preview' = if (bindCert) {
+resource originCert 'Microsoft.App/managedEnvironments/certificates@2025-07-01' = if (bindCert) {
   parent: containerAppsEnv
   name: certResourceName
   location: location
