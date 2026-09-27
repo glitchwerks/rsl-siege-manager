@@ -243,7 +243,8 @@ jobs:
         run: uv sync --project backend --frozen --dev
 
       - name: Run sidecar integration tests
-        run: uv run --project backend --frozen pytest tests/integration/sidecar/ -v
+        working-directory: backend
+        run: uv run --frozen pytest tests/integration/sidecar/ -v
 
 
   validation-script-tests:
