@@ -40,9 +40,10 @@ on:
 
 # ── Concurrency ────────────────────────────────────────────────────────────────
 #
-# Main-push runs share the group `deploy-main-pipeline` and run in order. Every
-# merged commit must publish its immutable images because an automatic infra
-# deployment may be waiting for that exact SHA before applying Bicep.
+# Main-push runs use a unique group per SHA. Every merged commit must publish
+# its immutable images because an automatic infra deployment may be waiting for
+# that exact SHA before applying Bicep. The dev deployment jobs below use their
+# own replacement groups so only the newest eligible application revision wins.
 #
 # Tag-triggered runs get a unique group per tag (`deploy-tag-refs/tags/v1.2.3`)
 # so two different tags never cancel each other — each prod deploy completes
@@ -75,7 +76,7 @@ concurrency:
     ${{
       github.ref_type == 'tag' && format('deploy-tag-{0}', github.ref) ||
       github.event_name == 'workflow_dispatch' && github.run_id ||
-      'deploy-main-pipeline'
+      format('deploy-main-build-{0}', github.sha)
     }}
   cancel-in-progress: false
 
@@ -205,6 +206,36 @@ jobs:
           docker tag ${{ vars.ACR_LOGIN_SERVER }}/${{ matrix.service }}:${{ github.sha }} "${PROD_IMAGE}:${{ github.sha }}"
           docker push "${PROD_IMAGE}:${{ github.sha }}"
 
+# ── Select latest dev revision ───────────────────────────────────────────────
+#
+# Every main commit publishes immutable images, but an older build can finish
+# after a newer one. Only the current main SHA may enter the ordinary dev deploy
+# path. Per-service concurrency below handles a newer merge that arrives after
+# this check by replacing the older in-progress deployment.
+
+  select-latest-dev:
+    name: Select latest dev revision
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: github.ref_type == 'branch' && github.ref == 'refs/heads/main'
+    outputs:
+      deploy: ${{ steps.latest.outputs.deploy }}
+
+    steps:
+      - name: Compare commit with main
+        id: latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          latest_sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
+          if [[ "$GITHUB_SHA" == "$latest_sha" ]]; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+            echo "${GITHUB_SHA} is the current main revision"
+          else
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping stale dev deploy for ${GITHUB_SHA}; main is ${latest_sha}"
+          fi
+
 # ── Deploy API (dev) ───────────────────────────────────────────────────────────
 #
 # Migrations run automatically inside the container via entrypoint.sh
@@ -217,10 +248,15 @@ jobs:
 
   deploy-api-dev:
     name: Deploy API (dev)
-    needs: build-and-push
+    needs:
+      - build-and-push
+      - select-latest-dev
     runs-on: ubuntu-latest
-    if: github.ref_type == 'branch' && github.ref == 'refs/heads/main'
+    if: needs.select-latest-dev.outputs.deploy == 'true'
     environment: dev
+    concurrency:
+      group: deploy-api-dev
+      cancel-in-progress: true
 
     steps:
       - name: Log in to Azure
@@ -246,6 +282,9 @@ jobs:
     runs-on: ubuntu-latest
     if: github.ref_type == 'branch' && github.ref == 'refs/heads/main'
     environment: dev
+    concurrency:
+      group: deploy-frontend-dev
+      cancel-in-progress: true
 
     steps:
       - name: Log in to Azure
@@ -266,6 +305,9 @@ jobs:
     runs-on: ubuntu-latest
     if: github.ref_type == 'branch' && github.ref == 'refs/heads/main'
     environment: dev
+    concurrency:
+      group: deploy-bot-dev
+      cancel-in-progress: true
 
     steps:
       - name: Log in to Azure

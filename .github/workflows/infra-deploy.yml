@@ -168,6 +168,57 @@ jobs:
             --parameters imageTag="${{ env.IMAGE_TAG }}" \
             "${sidecar_parameters[@]}"
 
+      - name: Reconcile dev apps to latest main images
+        if: github.event_name == 'push'
+        env:
+          ACR_NAME: ${{ vars.ACR_NAME }}
+          ACR_LOGIN_SERVER: ${{ vars.ACR_LOGIN_SERVER }}
+          GH_TOKEN: ${{ github.token }}
+          RESOURCE_GROUP: ${{ vars.RESOURCE_GROUP }}
+          ACR_WAIT_ATTEMPTS: 80
+        run: |
+          deployed_sha="${{ env.IMAGE_TAG }}"
+
+          for attempt in {1..5}; do
+            latest_sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
+            if [[ "$latest_sha" == "$deployed_sha" ]]; then
+              echo "Dev infrastructure and application images are current at ${latest_sha}"
+              exit 0
+            fi
+
+            echo "Main advanced to ${latest_sha}; reconciling application images"
+            ./scripts/wait-for-acr-images.sh \
+              "$ACR_NAME" \
+              "$latest_sha" \
+              siege-api siege-frontend siege-bot
+
+            az containerapp update \
+              --name siege-web-api-dev \
+              --resource-group "$RESOURCE_GROUP" \
+              --image "${ACR_LOGIN_SERVER}/siege-api:${latest_sha}"
+            az containerapp update \
+              --name siege-web-frontend-dev \
+              --resource-group "$RESOURCE_GROUP" \
+              --image "${ACR_LOGIN_SERVER}/siege-frontend:${latest_sha}"
+
+            if ! grep -Eq '^param useExternalSidecar = true([[:space:]]|$)' infra/main.dev.bicepparam; then
+              az containerapp update \
+                --name siege-web-bot-dev \
+                --resource-group "$RESOURCE_GROUP" \
+                --image "${ACR_LOGIN_SERVER}/siege-bot:${latest_sha}"
+            fi
+
+            deployed_sha="$latest_sha"
+            latest_after=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
+            if [[ "$latest_after" == "$deployed_sha" ]]; then
+              echo "Dev application images reconciled to ${deployed_sha}"
+              exit 0
+            fi
+          done
+
+          echo "::error::Main changed repeatedly during infrastructure reconciliation"
+          exit 1
+
 # ── Deploy (prod) ────────────────────────────────────────────────────────────
 #
 # Deploys infra to the prod environment. The `environment: prod` block is the

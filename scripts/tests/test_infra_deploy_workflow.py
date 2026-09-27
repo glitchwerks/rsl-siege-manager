@@ -57,11 +57,29 @@ def test_automatic_deploy_waits_for_exact_commit_images() -> None:
     assert "ACR_WAIT_ATTEMPTS: 80" in workflow
 
 
-def test_main_image_builds_cannot_be_cancelled_while_infra_waits() -> None:
+def test_every_main_commit_gets_a_non_replacing_image_build_slot() -> None:
     workflow = APP_DEPLOY_WORKFLOW_PATH.read_text(encoding="utf-8")
 
-    assert "'deploy-main-pipeline'" in workflow
+    assert "format('deploy-main-build-{0}', github.sha)" in workflow
     assert "cancel-in-progress: false" in workflow
+
+
+def test_only_latest_main_revision_enters_normal_dev_deploy() -> None:
+    workflow = APP_DEPLOY_WORKFLOW_PATH.read_text(encoding="utf-8")
+
+    assert 'latest_sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)' in workflow
+    assert "if: needs.select-latest-dev.outputs.deploy == 'true'" in workflow
+    assert "group: deploy-api-dev" in workflow
+    assert "group: deploy-frontend-dev" in workflow
+    assert "group: deploy-bot-dev" in workflow
+
+
+def test_infra_deploy_reconciles_if_main_advanced() -> None:
+    workflow = _workflow_text()
+
+    assert "Reconcile dev apps to latest main images" in workflow
+    assert 'if [[ "$latest_sha" == "$deployed_sha" ]]' in workflow
+    assert "for attempt in {1..5}" in workflow
 
 
 def test_automatic_deploy_preserves_committed_sidecar_setting() -> None:
