@@ -107,4 +107,6 @@ async def test_siege_mutations_reject_non_planning_status(mutation, status):
 
     assert exc_info.value.status_code == 400
     assert "planning" in exc_info.value.detail.lower()
+    lock_statement = session.execute.await_args_list[0].args[0]
+    assert lock_statement._for_update_arg is not None
     session.commit.assert_not_awaited()

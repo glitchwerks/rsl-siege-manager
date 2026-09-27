@@ -97,7 +97,7 @@ describe("SiegeLayout", () => {
     async (status) => {
       renderLayout("/sieges/42/board", makeSiege({ status }));
       expect(
-        await screen.findByText(/this siege is locked/i)
+        await screen.findByText(/siege data cannot be edited/i)
       ).toBeInTheDocument();
     }
   );

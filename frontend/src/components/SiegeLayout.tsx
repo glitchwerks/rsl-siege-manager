@@ -65,10 +65,10 @@ export default function SiegeLayout() {
     <>
       {/* ── Tab navigation ── */}
       <div className="-mx-4 mb-4 border-b border-slate-200 bg-slate-50 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
-        {isSiegeLocked(siege) && (
+        {siege && isSiegeLocked(siege) && (
           <div className="flex items-center gap-2 py-2 text-sm font-medium text-red-700">
             <Lock className="h-4 w-4 shrink-0" />
-            This siege is locked — no changes allowed
+            This siege is locked — siege data cannot be edited
           </div>
         )}
         <div className="flex gap-1">

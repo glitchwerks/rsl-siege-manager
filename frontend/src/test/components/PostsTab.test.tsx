@@ -638,11 +638,13 @@ describe("PostsTab — Suggest Assignments toolbar", () => {
     "disables Suggest Assignments when siege is %s",
     async (status) => {
       const user = userEvent.setup();
-      setupHandlers(
-        makePostBoard(),
-        makeSiege({ status }),
-        [],
-        [makePost()]
+      let previewCallCount = 0;
+      setupHandlers(makePostBoard(), makeSiege({ status }), [], [makePost()]);
+      server.use(
+        http.post("/api/sieges/42/post-suggestions", () => {
+          previewCallCount++;
+          return HttpResponse.json(makePostPreviewResult());
+        })
       );
       renderBoard();
       await navigateToPostsTab(user);
@@ -651,6 +653,8 @@ describe("PostsTab — Suggest Assignments toolbar", () => {
         name: /suggest assignments/i,
       });
       expect(btn).toBeDisabled();
+      expect(previewCallCount).toBe(0);
+      expect(screen.queryByText("Checking…")).not.toBeInTheDocument();
     }
   );
 });

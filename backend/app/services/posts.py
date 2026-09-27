@@ -9,7 +9,7 @@ from app.models.post_active_condition import post_active_condition
 from app.models.post_condition import PostCondition
 from app.models.siege import Siege
 from app.schemas.post import PostUpdate
-from app.services.siege_lock import require_planning_siege
+from app.services.siege_lock import lock_planning_siege
 
 
 async def _get_siege_or_404(session: AsyncSession, siege_id: int) -> Siege:
@@ -58,8 +58,7 @@ async def update_post(session: AsyncSession, siege_id: int, post_id: int, data: 
         404 if post not found or doesn't belong to siege.
         400 if siege is not in planning.
     """
-    siege = await _get_siege_or_404(session, siege_id)
-    require_planning_siege(siege)
+    await lock_planning_siege(session, siege_id)
 
     post = await _get_post_for_siege_or_404(session, siege_id, post_id)
 
@@ -89,8 +88,7 @@ async def set_post_conditions(
             detail="A post can have at most 3 active conditions",
         )
 
-    siege = await _get_siege_or_404(session, siege_id)
-    require_planning_siege(siege)
+    await lock_planning_siege(session, siege_id)
 
     post = await _get_post_for_siege_or_404(session, siege_id, post_id)
 

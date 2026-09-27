@@ -26,7 +26,7 @@ async def activate_siege(session: AsyncSession, siege_id: int) -> Siege:
     Phase 4 will replace this with the full 16-rule validation engine.
     The stub passes if the siege has at least one building configured.
     """
-    result = await session.execute(select(Siege).where(Siege.id == siege_id))
+    result = await session.execute(select(Siege).where(Siege.id == siege_id).with_for_update())
     siege = result.scalar_one_or_none()
     if siege is None:
         raise HTTPException(status_code=404, detail="Siege not found")

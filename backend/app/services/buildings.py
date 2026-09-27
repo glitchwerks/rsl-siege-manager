@@ -11,8 +11,7 @@ from app.models.post import Post
 from app.models.post_priority_config import PostPriorityConfig
 from app.schemas.building import BuildingCreate, BuildingUpdate, GroupCreate
 from app.services.building_capacity import get_team_count
-from app.services.siege_lock import require_planning_siege
-from app.services.sieges import get_siege
+from app.services.siege_lock import lock_planning_siege
 
 
 async def _rebuild_groups_for_level(
@@ -171,9 +170,9 @@ async def list_buildings(session: AsyncSession, siege_id: int) -> list[Building]
 
 
 async def add_building(session: AsyncSession, siege_id: int, data: BuildingCreate) -> Building:
-    siege = await get_siege(session, siege_id)
-    require_planning_siege(
-        siege,
+    await lock_planning_siege(
+        session,
+        siege_id,
         detail="Buildings can only be added to planning sieges",
     )
 
@@ -261,16 +260,15 @@ async def add_building(session: AsyncSession, siege_id: int, data: BuildingCreat
 async def update_building(
     session: AsyncSession, siege_id: int, building_id: int, data: BuildingUpdate
 ) -> Building:
-    siege = await get_siege(session, siege_id)
+    await lock_planning_siege(
+        session,
+        siege_id,
+        detail="Building layout is locked — siege is active or complete",
+    )
     # This gate is the stability invariant for compute_scroll_count in sieges.py:
     # by rejecting all building mutations (level changes, breaking, unbreaking) once
     # a siege is active or complete, we guarantee the scroll count cannot shift
     # under an in-progress siege.
-    require_planning_siege(
-        siege,
-        detail="Building layout is locked — siege is active or complete",
-    )
-
     building = await _get_building(session, siege_id, building_id)
 
     if data.is_broken is not None:
@@ -322,9 +320,9 @@ async def update_building(
 
 
 async def delete_building(session: AsyncSession, siege_id: int, building_id: int) -> None:
-    siege = await get_siege(session, siege_id)
-    require_planning_siege(
-        siege,
+    await lock_planning_siege(
+        session,
+        siege_id,
         detail="Building layout is locked — siege is active or complete",
     )
     building = await _get_building(session, siege_id, building_id)
@@ -335,9 +333,9 @@ async def delete_building(session: AsyncSession, siege_id: int, building_id: int
 async def add_group(
     session: AsyncSession, siege_id: int, building_id: int, data: GroupCreate
 ) -> BuildingGroup:
-    siege = await get_siege(session, siege_id)
-    require_planning_siege(
-        siege,
+    await lock_planning_siege(
+        session,
+        siege_id,
         detail="Building layout is locked — siege is active or complete",
     )
 
@@ -385,9 +383,9 @@ async def add_group(
 async def delete_group(
     session: AsyncSession, siege_id: int, building_id: int, group_id: int
 ) -> None:
-    siege = await get_siege(session, siege_id)
-    require_planning_siege(
-        siege,
+    await lock_planning_siege(
+        session,
+        siege_id,
         detail="Building layout is locked — siege is active or complete",
     )
 
