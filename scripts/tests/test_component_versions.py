@@ -59,6 +59,22 @@ def test_backward_or_prerelease_version_fails(monkeypatch) -> None:
     assert "not a stable" in module.check("base")[0]
 
 
+def test_direct_version_regression_fails_without_surface_change(monkeypatch) -> None:
+    monkeypatch.setattr(module, "affected_components", lambda _base: {})
+
+    def version_at(component, revision=None):
+        if component.name == "siege-api":
+            return "1.4.2" if revision else "1.4.1"
+        return "1.4.2"
+
+    monkeypatch.setattr(module, "_version_at", version_at)
+
+    errors = module.check("base")
+
+    assert len(errors) == 1
+    assert "must not move backward" in errors[0]
+
+
 def test_bypass_requires_auditable_reason(monkeypatch) -> None:
     monkeypatch.setattr(
         module,

@@ -34,7 +34,12 @@ def expected_versions(version: dict[str, object], expected_sha: str) -> dict[str
     }
 
 
-def validate(health: dict[str, object], version: dict[str, object], expected_sha: str) -> list[str]:
+def validate(
+    health: dict[str, object],
+    version: dict[str, object],
+    frontend_marker: dict[str, object],
+    expected_sha: str,
+) -> list[str]:
     errors: list[str] = []
     if health.get("status") != "healthy":
         errors.append("health status is not healthy")
@@ -45,6 +50,12 @@ def validate(health: dict[str, object], version: dict[str, object], expected_sha
     for key, value in expected.items():
         if version.get(key) != value:
             errors.append(f"{key} mismatch: expected {value!r}, got {version.get(key)!r}")
+    for key in ("frontend_version", "git_sha"):
+        if frontend_marker.get(key) != expected[key]:
+            errors.append(
+                f"frontend marker {key} mismatch: expected {expected[key]!r}, "
+                f"got {frontend_marker.get(key)!r}"
+            )
     return errors
 
 
@@ -75,7 +86,8 @@ def main() -> int:
         try:
             health = _get_json(f"{base_url}/api/health")
             version = _get_json(f"{base_url}/api/version")
-            last_errors = validate(health, version, args.expected_sha)
+            frontend_marker = _get_json(f"{base_url}/version.json")
+            last_errors = validate(health, version, frontend_marker, args.expected_sha)
             if not last_errors:
                 print(json.dumps(version, sort_keys=True))
                 print(f"Deployment is healthy with exact versions for {args.expected_sha}.")

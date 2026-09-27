@@ -36,7 +36,9 @@ def test_exact_versions_pass(tmp_path, monkeypatch) -> None:
         "git_sha": sha,
     }
 
-    assert module.validate({"status": "healthy"}, version, sha) == []
+    marker = {"frontend_version": "1.5.0+42.abcdef0", "git_sha": sha}
+
+    assert module.validate({"status": "healthy"}, version, marker, sha) == []
 
 
 def test_null_or_stale_frontend_fails(tmp_path, monkeypatch) -> None:
@@ -49,7 +51,8 @@ def test_null_or_stale_frontend_fails(tmp_path, monkeypatch) -> None:
         "git_sha": sha,
     }
 
-    errors = module.validate({"status": "healthy"}, version, sha)
+    marker = {"frontend_version": "1.5.0+42.abcdef0", "git_sha": sha}
+    errors = module.validate({"status": "healthy"}, version, marker, sha)
 
     assert any("frontend_version mismatch" in error for error in errors)
 
@@ -63,6 +66,27 @@ def test_wrong_sha_metadata_fails(tmp_path, monkeypatch) -> None:
         "git_sha": "abcdef0123456789",
     }
 
+    marker = {
+        "frontend_version": "1.5.0+42.1234567",
+        "git_sha": "abcdef0123456789",
+    }
     assert "expected build metadata" in module.validate(
-        {"status": "healthy"}, version, "abcdef0123456789"
+        {"status": "healthy"}, version, marker, "abcdef0123456789"
     )[0]
+
+
+def test_stale_frontend_artifact_fails(tmp_path, monkeypatch) -> None:
+    _version_files(tmp_path, monkeypatch)
+    sha = "abcdef0123456789"
+    version = {
+        "backend_version": "1.4.2+42.abcdef0",
+        "bot_version": "1.4.3+42.abcdef0",
+        "frontend_version": "1.5.0+42.abcdef0",
+        "git_sha": sha,
+    }
+    marker = {"frontend_version": "1.4.2+41.1234567", "git_sha": "1234567890"}
+
+    errors = module.validate({"status": "healthy"}, version, marker, sha)
+
+    assert any("frontend marker frontend_version mismatch" in error for error in errors)
+    assert any("frontend marker git_sha mismatch" in error for error in errors)

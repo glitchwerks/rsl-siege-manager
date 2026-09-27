@@ -108,8 +108,8 @@ def check(base: str, allow_bypass: bool = False, pr_body: str = "") -> list[str]
         return []
 
     errors: list[str] = []
-    for name, paths in affected.items():
-        component = COMPONENTS[name]
+    versions: dict[str, tuple[tuple[int, int, int], tuple[int, int, int], str, str]] = {}
+    for name, component in COMPONENTS.items():
         old = _version_at(component, base)
         new = _version_at(component)
         try:
@@ -117,6 +117,18 @@ def check(base: str, allow_bypass: bool = False, pr_body: str = "") -> list[str]
         except ValueError as exc:
             errors.append(f"{name}: {exc}")
             continue
+        versions[name] = (old_semver, new_semver, old, new)
+        if new_semver < old_semver:
+            errors.append(
+                f"{name}: {component.version_path} must not move backward "
+                f"({old} -> {new})"
+            )
+
+    for name, paths in affected.items():
+        if name not in versions:
+            continue
+        component = COMPONENTS[name]
+        old_semver, new_semver, old, new = versions[name]
         if new_semver <= old_semver:
             errors.append(
                 f"{name}: external surface changed but {component.version_path} "
