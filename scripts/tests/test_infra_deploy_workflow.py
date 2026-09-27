@@ -103,3 +103,33 @@ def test_idempotency_check_uses_bot_service_token() -> None:
     workflow = workflow_path.read_text(encoding="utf-8")
 
     assert '--parameters botServiceToken="${{ secrets.BOT_SERVICE_TOKEN }}"' in workflow
+
+
+def test_deploys_pass_slack_webhook_from_environment_secret() -> None:
+    workflow = _workflow_text()
+
+    parameter = (
+        '--parameters slackAlertWebhookUrl="${{ secrets.SLACK_ALERT_WEBHOOK_URL }}"'
+    )
+    assert workflow.count(parameter) == 2
+
+
+def test_idempotency_check_uses_slack_webhook_secret() -> None:
+    workflow_path = Path(__file__).parents[2] / ".github" / "workflows" / "idempotency-check.yml"
+    workflow = workflow_path.read_text(encoding="utf-8")
+
+    assert (
+        '--parameters slackAlertWebhookUrl="${{ secrets.SLACK_ALERT_WEBHOOK_URL }}"'
+        in workflow
+    )
+
+
+def test_infra_ci_uses_only_a_placeholder_slack_webhook() -> None:
+    workflow_path = Path(__file__).parents[2] / ".github" / "workflows" / "infra-ci.yml"
+    workflow = workflow_path.read_text(encoding="utf-8")
+
+    placeholder = (
+        '--parameters slackAlertWebhookUrl="https://hooks.slack.com/services/ci/placeholder/value"'
+    )
+    assert workflow.count(placeholder) == 2
+    assert "secrets.SLACK_ALERT_WEBHOOK_URL" not in workflow

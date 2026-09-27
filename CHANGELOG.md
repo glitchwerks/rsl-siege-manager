@@ -19,6 +19,7 @@ Components changed: siege-api, siege-frontend.
 
 ### Infrastructure / repo
 
+- Added a secret-backed Azure Logic App that routes sanitized common-schema infrastructure alerts to Slack while retaining email fallback. (#539)
 - Added per-component semantic-version guidance, pull-request prompts, blocking CI enforcement with an audited bypass, and exact deployed-version verification. (#311)
 - Replaced floating Python installs with committed backend and bot `uv` lockfiles, frozen CI and container installs, lock-drift checks, and container-build coverage. (#464)
 

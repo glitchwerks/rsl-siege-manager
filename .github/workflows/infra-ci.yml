@@ -143,6 +143,7 @@ jobs:
             --parameters sessionSecret="ci-placeholder-value" \
             --parameters discordClientId="ci-placeholder-value" \
             --parameters discordClientSecret="ci-placeholder-value" \
+            --parameters slackAlertWebhookUrl="https://hooks.slack.com/services/ci/placeholder/value" \
             --parameters discordRedirectUri="https://placeholder.example.com/api/auth/callback"
 
   # ── Gate 4: What-if Change Impact (dev) ──────────────────────────────────
@@ -188,6 +189,7 @@ jobs:
             --parameters sessionSecret="ci-placeholder-value" \
             --parameters discordClientId="ci-placeholder-value" \
             --parameters discordClientSecret="ci-placeholder-value" \
+            --parameters slackAlertWebhookUrl="https://hooks.slack.com/services/ci/placeholder/value" \
             --parameters discordRedirectUri="https://placeholder.example.com/api/auth/callback" \
             --result-format ResourceIdOnly \
             2>&1 | tee /tmp/what-if.txt; exit ${PIPESTATUS[0]}

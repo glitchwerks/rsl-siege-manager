@@ -44,14 +44,31 @@ This proves the guardrail catches non-deterministic property regressions.
 | Application Insights (workspace-based) | `modules/app-insights.bicep` |
 | PostgreSQL Flexible Server | `modules/postgres.bicep` |
 | Azure Key Vault | `modules/keyvault.bicep` |
+| Azure Monitor Action Group + Slack alert Logic App | `modules/monitoring.bicep` |
 | Container Apps Environment | `modules/container-env.bicep` |
 | Container Apps (api, frontend, bot) | `modules/container-apps.bicep` |
 | Key Vault role assignments (Secrets User) | `main.bicep` |
 
-Key Vault role assignments are created directly in `main.bicep` after the
-Container Apps module runs, using their system-assigned managed identity
-principal IDs. This is a single-pass deployment — no manual role assignment
-step is required.
+Key Vault role assignments for Container Apps are created after the apps exist.
+The monitoring module separately grants its Logic App system identity read-only
+access so it can retrieve only secret values at runtime. This is a single-pass
+deployment — no manual role assignment step is required.
+
+## Infrastructure alert routing
+
+Each environment has one shared action group named
+`siege-app-health-{environment}`. Azure Monitor sends the common alert schema to
+`siege-web-alert-slack-{environment}`, which validates and reduces the payload to
+the environment, severity, state, alert name, first affected resource,
+timestamp, and a safe Azure portal investigation link. The Logic App then reads
+`slack-alert-webhook-url` from Key Vault with its managed identity and posts the
+sanitized message. The callback URL and webhook URL are not deployment outputs.
+
+Slack is the primary operational destination. The existing email receiver stays
+enabled as an independent fallback. Configure the incoming webhook as the
+`SLACK_ALERT_WEBHOOK_URL` GitHub Environment secret in both `dev` and `prod`.
+The infrastructure workflows write that value to Key Vault; never put it in a
+parameter file, command output, issue, pull request, or test evidence.
 
 ## ACR naming
 
@@ -132,6 +149,7 @@ az deployment group create \
   --parameters discordBotApiKey="$DISCORD_BOT_API_KEY" \
   --parameters botApiKey="$BOT_API_KEY" \
   --parameters botServiceToken="$BOT_SERVICE_TOKEN" \
+  --parameters slackAlertWebhookUrl="$SLACK_ALERT_WEBHOOK_URL" \
   --parameters discordGuildId="$DISCORD_GUILD_ID"
 ```
 
@@ -175,6 +193,7 @@ az deployment group create \
   --parameters discordBotApiKey="$DISCORD_BOT_API_KEY" \
   --parameters botApiKey="$BOT_API_KEY" \
   --parameters botServiceToken="$BOT_SERVICE_TOKEN" \
+  --parameters slackAlertWebhookUrl="$SLACK_ALERT_WEBHOOK_URL" \
   --parameters discordGuildId="$DISCORD_GUILD_ID"
 ```
 
