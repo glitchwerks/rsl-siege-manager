@@ -78,6 +78,10 @@ resource slackAlertWorkflow 'Microsoft.Logic/workflows@2019-05-01' = {
           type: 'String'
           defaultValue: azureAlertsPortalUrl
         }
+        portalBaseUrl: {
+          type: 'String'
+          defaultValue: az.environment().portal
+        }
       }
       triggers: {
         azure_monitor_common_alert: {
@@ -189,7 +193,7 @@ resource slackAlertWorkflow 'Microsoft.Logic/workflows@2019-05-01' = {
                   'Content-Type': 'application/json'
                 }
                 body: {
-                  text: '''@concat(if(equals(triggerBody()?['data']?['essentials']?['monitorCondition'], 'Resolved'), '✅ RESOLVED', '🚨 FIRED'), ' | ', toUpper(parameters('alertEnvironment')), ' | ', take(string(triggerBody()?['data']?['essentials']?['alertRule']), 200), '\nSeverity: ', take(string(triggerBody()?['data']?['essentials']?['severity']), 20), ' | State: ', triggerBody()?['data']?['essentials']?['monitorCondition'], '\nResource: ', take(string(first(triggerBody()?['data']?['essentials']?['alertTargetIDs'])), 500), '\nTime: ', if(equals(triggerBody()?['data']?['essentials']?['monitorCondition'], 'Resolved'), coalesce(triggerBody()?['data']?['essentials']?['resolvedDateTime'], triggerBody()?['data']?['essentials']?['firedDateTime']), triggerBody()?['data']?['essentials']?['firedDateTime']), '\nInvestigate: ', if(startsWith(coalesce(triggerBody()?['data']?['essentials']?['investigationLink'], ''), 'https://portal.azure.com/'), triggerBody()?['data']?['essentials']?['investigationLink'], parameters('fallbackInvestigationUrl')))'''
+                  text: '''@concat(if(equals(triggerBody()?['data']?['essentials']?['monitorCondition'], 'Resolved'), '✅ RESOLVED', '🚨 FIRED'), ' | ', toUpper(parameters('alertEnvironment')), ' | ', take(string(triggerBody()?['data']?['essentials']?['alertRule']), 200), '\nSeverity: ', take(string(triggerBody()?['data']?['essentials']?['severity']), 20), ' | State: ', triggerBody()?['data']?['essentials']?['monitorCondition'], '\nResource: ', take(string(first(triggerBody()?['data']?['essentials']?['alertTargetIDs'])), 500), '\nTime: ', if(equals(triggerBody()?['data']?['essentials']?['monitorCondition'], 'Resolved'), coalesce(triggerBody()?['data']?['essentials']?['resolvedDateTime'], triggerBody()?['data']?['essentials']?['firedDateTime']), triggerBody()?['data']?['essentials']?['firedDateTime']), '\nInvestigate: ', if(and(startsWith(coalesce(triggerBody()?['data']?['essentials']?['investigationLink'], ''), concat(parameters('portalBaseUrl'), '/')), not(contains(coalesce(triggerBody()?['data']?['essentials']?['investigationLink'], ''), '\n')), not(contains(coalesce(triggerBody()?['data']?['essentials']?['investigationLink'], ''), '\r'))), triggerBody()?['data']?['essentials']?['investigationLink'], parameters('fallbackInvestigationUrl')))'''
                 }
               }
               runtimeConfiguration: {
@@ -213,6 +217,23 @@ resource slackAlertWorkflow 'Microsoft.Logic/workflows@2019-05-01' = {
                 statusCode: 202
                 body: {
                   status: 'forwarded'
+                }
+              }
+            }
+            Respond_delivery_failed: {
+              type: 'Response'
+              kind: 'Http'
+              runAfter: {
+                Post_sanitized_alert_to_slack: [
+                  'Failed'
+                  'Skipped'
+                  'TimedOut'
+                ]
+              }
+              inputs: {
+                statusCode: 502
+                body: {
+                  status: 'delivery_failed'
                 }
               }
             }
@@ -243,9 +264,14 @@ resource slackAlertWorkflow 'Microsoft.Logic/workflows@2019-05-01' = {
 // webhook secret at runtime through its system-assigned identity.
 var kvSecretsUserRoleId = '4633458b-17de-408a-b874-0445c86b69e6'
 
+resource slackWebhookSecret 'Microsoft.KeyVault/vaults/secrets@2024-11-01' existing = {
+  parent: keyVault
+  name: slackWebhookSecretName
+}
+
 resource slackAlertKvRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(keyVault.id, slackAlertWorkflow.name, kvSecretsUserRoleId)
-  scope: keyVault
+  name: guid(slackWebhookSecret.id, slackAlertWorkflow.name, kvSecretsUserRoleId)
+  scope: slackWebhookSecret
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', kvSecretsUserRoleId)
     principalId: slackAlertWorkflow.identity.principalId

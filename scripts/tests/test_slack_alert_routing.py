@@ -36,6 +36,7 @@ def test_workflow_accepts_only_required_common_alert_shape() -> None:
     assert "'Fired'" in template
     assert "'Resolved'" in template
     assert "statusCode: 400" in template
+    assert "statusCode: 502" in template
 
 
 def test_slack_body_is_sanitized_and_distinguishes_state() -> None:
@@ -45,6 +46,9 @@ def test_slack_body_is_sanitized_and_distinguishes_state() -> None:
     assert "'🚨 FIRED'" in template
     assert "parameters('alertEnvironment')" in template
     assert "fallbackInvestigationUrl" in template
+    assert "not(contains(coalesce(" in template
+    assert "'\\n'" in template
+    assert "'\\r'" in template
     assert "alertContext" not in template
     assert "customProperties" not in template
 
@@ -57,7 +61,16 @@ def test_webhook_is_read_from_key_vault_and_secure_in_run_history() -> None:
     assert "@secure()\nparam slackAlertWebhookUrl string" in key_vault
     assert "type: 'ManagedServiceIdentity'" in monitoring
     assert "kvSecretsUserRoleId" in monitoring
+    assert "scope: slackWebhookSecret" in monitoring
     assert monitoring.count("'inputs'\n                    'outputs'") == 2
+
+
+def test_bootstrap_deployment_preserves_slack_webhook_secret() -> None:
+    bootstrap = (ROOT / "scripts" / "bootstrap-images.ps1").read_text(
+        encoding="utf-8"
+    )
+
+    assert "slackAlertWebhookUrl=$env:SLACK_ALERT_WEBHOOK_URL" in bootstrap
 
 
 def test_callback_and_webhook_are_not_module_outputs() -> None:

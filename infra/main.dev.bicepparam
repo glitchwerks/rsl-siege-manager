@@ -16,8 +16,8 @@ using 'main.bicep'
 //     --parameters discordGuildId="$DISCORD_GUILD_ID" \
 //     --parameters sessionSecret="$SESSION_SECRET" \
 //     --parameters discordClientId="$DISCORD_CLIENT_ID" \
-//     --parameters discordClientSecret="$DISCORD_CLIENT_SECRET"
-//     --parameters slackAlertWebhookUrl="$SLACK_ALERT_WEBHOOK_URL"
+//     --parameters discordClientSecret="$DISCORD_CLIENT_SECRET" \
+//     --parameters slackAlertWebhookUrl="$SLACK_ALERT_WEBHOOK_URL" \
 //     --parameters discordRedirectUri="$DISCORD_REDIRECT_URI"
 //
 // NEVER commit real secrets here. All @secure() params must be supplied at
