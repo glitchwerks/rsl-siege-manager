@@ -90,6 +90,7 @@ else {
     Write-Host "        `$env:DISCORD_TOKEN        = '...'" -ForegroundColor Cyan
     Write-Host "        `$env:DISCORD_BOT_API_KEY  = '...'" -ForegroundColor Cyan
     Write-Host "        `$env:BOT_API_KEY          = '...'" -ForegroundColor Cyan
+    Write-Host "        `$env:BOT_SERVICE_TOKEN    = '...'" -ForegroundColor Cyan
     Write-Host "        `$env:DISCORD_GUILD_ID     = '...'" -ForegroundColor Cyan
     Write-Host ""
 }
@@ -103,6 +104,7 @@ Write-Host "            --parameters postgresAdminPassword=`$env:PG_ADMIN_PASSWO
 Write-Host "                         discordToken=`$env:DISCORD_TOKEN ``" -ForegroundColor White
 Write-Host "                         discordBotApiKey=`$env:DISCORD_BOT_API_KEY ``" -ForegroundColor White
 Write-Host "                         botApiKey=`$env:BOT_API_KEY ``" -ForegroundColor White
+Write-Host "                         botServiceToken=`$env:BOT_SERVICE_TOKEN ``" -ForegroundColor White
 Write-Host "                         discordGuildId=`$env:DISCORD_GUILD_ID" -ForegroundColor White
 
 if ($SecretsLoaded) {
@@ -117,6 +119,7 @@ if ($SecretsLoaded) {
         discordToken=$env:DISCORD_TOKEN `
         discordBotApiKey=$env:DISCORD_BOT_API_KEY `
         botApiKey=$env:BOT_API_KEY `
+        botServiceToken=$env:BOT_SERVICE_TOKEN `
         discordGuildId=$env:DISCORD_GUILD_ID
     if ($LASTEXITCODE -ne 0) {
         Write-Host "==> Deployment failed (exit code $LASTEXITCODE)." -ForegroundColor Red

@@ -23,6 +23,8 @@ param discordToken = ''
 param discordBotApiKey = ''
 // Set via: --parameters botApiKey=$BOT_API_KEY
 param botApiKey = ''
+// Set via: --parameters botServiceToken=$BOT_SERVICE_TOKEN
+param botServiceToken = ''
 
 param postgresGeoRedundantBackup = false
 

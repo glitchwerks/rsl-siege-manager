@@ -89,3 +89,17 @@ def test_automatic_deploy_preserves_committed_sidecar_setting() -> None:
     assert 'sidecar_parameters+=(--parameters "useExternalSidecar=${{ inputs.useExternalSidecar }}")' in workflow
     assert '"${sidecar_parameters[@]}"' in workflow
     assert "useExternalSidecar=${{ inputs.useExternalSidecar || false }}" not in workflow
+
+
+def test_deploys_pass_bot_service_token_from_environment_secret() -> None:
+    workflow = _workflow_text()
+
+    parameter = '--parameters botServiceToken="${{ secrets.BOT_SERVICE_TOKEN }}"'
+    assert workflow.count(parameter) == 2
+
+
+def test_idempotency_check_uses_bot_service_token() -> None:
+    workflow_path = Path(__file__).parents[2] / ".github" / "workflows" / "idempotency-check.yml"
+    workflow = workflow_path.read_text(encoding="utf-8")
+
+    assert '--parameters botServiceToken="${{ secrets.BOT_SERVICE_TOKEN }}"' in workflow

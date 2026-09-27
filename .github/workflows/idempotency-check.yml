@@ -83,6 +83,7 @@ jobs:
             --parameters discordToken="${{ secrets.DISCORD_TOKEN }}" \
             --parameters discordBotApiKey="${{ secrets.BOT_API_KEY }}" \
             --parameters botApiKey="${{ secrets.BOT_API_KEY }}" \
+            --parameters botServiceToken="${{ secrets.BOT_SERVICE_TOKEN }}" \
             --parameters discordGuildId="${{ vars.DISCORD_GUILD_ID }}" \
             --parameters sessionSecret="${{ secrets.SESSION_SECRET }}" \
             --parameters discordClientId="${{ secrets.DISCORD_CLIENT_ID }}" \

@@ -19,7 +19,8 @@ name: Infra Deploy
 #
 # New secrets required per environment (add under Settings → Environments):
 #   Secrets  : POSTGRES_ADMIN_PASSWORD, DISCORD_TOKEN, BOT_API_KEY,
-#              SESSION_SECRET, DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET
+#              BOT_SERVICE_TOKEN, SESSION_SECRET, DISCORD_CLIENT_ID,
+#              DISCORD_CLIENT_SECRET
 #   Variables: DISCORD_GUILD_ID, DISCORD_REDIRECT_URI
 #              (redirect URI is a public URL, not a secret — use a variable)
 #
@@ -160,6 +161,7 @@ jobs:
             --parameters discordToken="${{ secrets.DISCORD_TOKEN }}" \
             --parameters discordBotApiKey="${{ secrets.BOT_API_KEY }}" \
             --parameters botApiKey="${{ secrets.BOT_API_KEY }}" \
+            --parameters botServiceToken="${{ secrets.BOT_SERVICE_TOKEN }}" \
             --parameters discordGuildId="${{ vars.DISCORD_GUILD_ID }}" \
             --parameters sessionSecret="${{ secrets.SESSION_SECRET }}" \
             --parameters discordClientId="${{ secrets.DISCORD_CLIENT_ID }}" \
@@ -273,6 +275,7 @@ jobs:
             --parameters discordToken="${{ secrets.DISCORD_TOKEN }}" \
             --parameters discordBotApiKey="${{ secrets.BOT_API_KEY }}" \
             --parameters botApiKey="${{ secrets.BOT_API_KEY }}" \
+            --parameters botServiceToken="${{ secrets.BOT_SERVICE_TOKEN }}" \
             --parameters discordGuildId="${{ vars.DISCORD_GUILD_ID }}" \
             --parameters sessionSecret="${{ secrets.SESSION_SECRET }}" \
             --parameters discordClientId="${{ secrets.DISCORD_CLIENT_ID }}" \
