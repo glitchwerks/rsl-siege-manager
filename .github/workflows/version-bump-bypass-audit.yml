@@ -69,7 +69,7 @@ jobs:
               owner, repo, state: 'all', labels: 'version-bump-bypass', per_page: 100
             });
             const existingIssue = existing.find(issue =>
-              (issue.body || '').split(/\r?\n/).includes(auditKey)
+              (issue.body || '').split(/\r?\n/)[0] === auditKey
             );
             if (existingIssue) {
               await github.rest.issues.update({
