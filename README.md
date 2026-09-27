@@ -119,7 +119,7 @@ cd backend && uv run alembic revision --autogenerate -m "description"
 
 ```bash
 # Backend
-cd backend && python -m pytest --ignore=tests/test_schema.py -v
+cd backend && uv run pytest --ignore=tests/test_schema.py -v
 
 # Frontend unit tests (Vitest)
 cd frontend && npm test
@@ -128,14 +128,17 @@ cd frontend && npm test
 cd frontend && npm run build
 
 # Bot
-cd bot && python -m pytest -v
+cd bot && uv run pytest -v
 ```
 
 ## Linting
 
 ```bash
 # Backend
-cd backend && black . && ruff check .
+cd backend && uv run black . && uv run ruff check .
+
+# Bot
+cd bot && uv run black . && uv run ruff check .
 
 # Frontend
 cd frontend && npm run lint
