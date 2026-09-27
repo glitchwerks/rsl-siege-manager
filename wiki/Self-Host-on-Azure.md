@@ -134,7 +134,8 @@ The Bicep template accepts secrets as parameters at deploy time — they are wri
 | `botServiceToken` | Bot-to-backend bearer token | Supply from `BOT_SERVICE_TOKEN`; store it as an environment-scoped secret in hosted deployments |
 | `discordRequiredRole` | Discord role required to log in (optional) | Defaults to `Clan Deputies` if omitted — set this to whatever officer/manager role your clan uses |
 
-To generate a random secret for `postgresAdminPassword`, `discordBotApiKey`, `botApiKey`, and `sessionSecret`:
+To generate a random secret for `postgresAdminPassword`, `discordBotApiKey`,
+`botApiKey`, `botServiceToken`, and `sessionSecret`:
 
 ```powershell
 [Convert]::ToBase64String((1..32 | ForEach-Object { Get-Random -Maximum 256 }))
@@ -158,6 +159,7 @@ PG_ADMIN_PASSWORD=<generated>
 DISCORD_TOKEN=<from discord developer portal>
 DISCORD_BOT_API_KEY=<generated — same value as BOT_API_KEY>
 BOT_API_KEY=<generated — same value as DISCORD_BOT_API_KEY>
+BOT_SERVICE_TOKEN=<independently generated bot-to-backend bearer token>
 DISCORD_GUILD_ID=<your server id>
 ```
 
@@ -185,6 +187,7 @@ az deployment group create `
     --parameters discordToken="$env:DISCORD_TOKEN" `
     --parameters discordBotApiKey="$env:DISCORD_BOT_API_KEY" `
     --parameters botApiKey="$env:BOT_API_KEY" `
+    --parameters botServiceToken="$env:BOT_SERVICE_TOKEN" `
     --parameters discordGuildId="$env:DISCORD_GUILD_ID" `
     --parameters sessionSecret="$env:SESSION_SECRET" `
     --parameters discordClientId="$env:DISCORD_CLIENT_ID" `
@@ -205,6 +208,7 @@ az deployment group create \
     --parameters discordToken="$DISCORD_TOKEN" \
     --parameters discordBotApiKey="$DISCORD_BOT_API_KEY" \
     --parameters botApiKey="$BOT_API_KEY" \
+    --parameters botServiceToken="$BOT_SERVICE_TOKEN" \
     --parameters discordGuildId="$DISCORD_GUILD_ID" \
     --parameters sessionSecret="$SESSION_SECRET" \
     --parameters discordClientId="$DISCORD_CLIENT_ID" \
