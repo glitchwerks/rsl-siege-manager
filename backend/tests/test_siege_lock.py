@@ -14,6 +14,7 @@ from app.schemas.siege_member import SiegeMemberUpdate
 from app.services.attack_day import apply_attack_day, preview_attack_day
 from app.services.autofill import apply_autofill, preview_autofill
 from app.services.board import bulk_update_positions, update_position
+from app.services.members import _clear_member_from_planning_sieges
 from app.services.post_suggestions import apply_post_suggestions, preview_post_suggestions
 from app.services.posts import set_post_conditions, update_post
 from app.services.siege_lock import lock_all_planning_sieges
@@ -125,3 +126,21 @@ async def test_global_roster_side_effects_lock_planning_sieges_in_stable_order()
     statement = session.execute.await_args.args[0]
     assert statement._for_update_arg is not None
     assert statement._order_by_clauses
+
+
+@pytest.mark.asyncio
+async def test_member_deactivation_rejects_active_siege_assignment_after_locking():
+    planning_result = MagicMock()
+    planning_result.scalars.return_value.all.return_value = []
+    active_result = MagicMock()
+    active_result.scalar_one_or_none.return_value = 17
+    session = AsyncMock()
+    session.execute.side_effect = [planning_result, active_result]
+
+    with pytest.raises(HTTPException) as exc_info:
+        await _clear_member_from_planning_sieges(session, member_id=3)
+
+    assert exc_info.value.status_code == 409
+    assert "active siege 17" in exc_info.value.detail
+    lock_statement = session.execute.await_args_list[0].args[0]
+    assert lock_statement._for_update_arg is not None
