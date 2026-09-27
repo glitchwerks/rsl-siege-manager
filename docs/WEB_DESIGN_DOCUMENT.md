@@ -154,7 +154,7 @@ Represents a single siege event (replaces an Excel workbook file).
 
 **Status lifecycle:** `planning` → `active` → `complete`
 - `planning` — Siege is being configured. Buildings, groups, positions, and assignments can be freely edited. Notifications can be sent (e.g., to give members advance notice of assignments).
-- `active` — Siege is live and locked. Building layout is frozen; only member assignments, post conditions, and SiegeMember data can be edited. Notifications can be sent.
+- `active` — Siege is live and locked. All siege-scoped data is read-only. Notifications and other output actions can still be used.
 - `complete` — Siege is finished. Fully locked and read-only. No notifications can be sent. Historical reference.
 
 ### 3.2 Building
@@ -402,7 +402,7 @@ Building level determines available groups. The `BuildingTypeConfig` reference t
 - **Repair** — Clear `is_broken`. The building returns to its current `level` configuration. The planner must manually re-add groups and reassign members to the restored positions.
 - **Set Level** — Change building level directly. This is equivalent to setting the building's group/slot configuration to match a predefined level template. Used when the planner knows the current in-game state and wants to configure the building to match.
 
-**Active siege lock:** Once a siege transitions to `active`, its building layout is frozen. No buildings, groups, or positions can be added, removed, broken, or repaired. This matches the in-game behavior where siege state is locked once it starts.
+**Active siege lock:** Once a siege transitions to `active`, all siege-scoped data is frozen. Buildings, groups, positions, assignments, post conditions, and SiegeMember data cannot be changed. This matches the in-game behavior where siege state is locked once it starts.
 
 #### Siege Lifecycle
 
@@ -412,7 +412,7 @@ planning → active → complete
     └→ deleted (planning only)
 ```
 
-- **Planning → Active** — Marks siege as the current active siege. Validation is run automatically before activation (warnings allowed, errors block). Only one siege can be `active` at a time. **Once active, the siege is locked:** building layout, group configuration, and position structure cannot be modified. Only member assignments, post conditions, and SiegeMember data (attack day, reserve status) can be edited. Notifications can still be sent.
+- **Planning → Active** — Marks siege as the current active siege. Validation is run automatically before activation (warnings allowed, errors block). Only one siege can be `active` at a time. **Once active, the siege is locked:** siege-scoped data cannot be modified. Notifications and output actions can still be used.
 - **Active → Complete** — Marks the siege as finished. Fully locked and read-only. No further notifications can be sent.
 - **Planning → Deleted** — Permanently removes a planning siege. Only planning-status sieges can be deleted.
 - **View Historical** — Browse and view completed sieges (read-only)
@@ -424,7 +424,7 @@ Multiple planning sieges may exist simultaneously. Only one siege can be active 
 | Status | Send DMs | Post to Channel | Edit Assignments | Edit Buildings |
 |---|---|---|---|---|
 | Planning | Yes | Yes | Yes | Yes |
-| Active | Yes | Yes | Limited (assignments, post conditions, SiegeMember only) | No |
+| Active | Yes | Yes | No | No |
 | Complete | No | No | No | No |
 
 #### Clone Siege

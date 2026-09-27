@@ -13,6 +13,11 @@
 # occur accidentally. See bot/INTERFACE.md for the sidecar HTTP contract.
 
 services:
+  backend:
+    environment:
+      # Override the base stack's bundled-bot hostname with the external sidecar URL from .env.
+      DISCORD_BOT_API_URL: ${DISCORD_BOT_API_URL}
+
   bot:
     profiles:
       - "do-not-start"

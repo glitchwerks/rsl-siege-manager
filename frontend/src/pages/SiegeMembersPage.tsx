@@ -37,7 +37,15 @@ import {
   DialogFooter,
   DialogDescription,
 } from "../components/ui/dialog";
-import { ArrowLeft, Lock, UserPlus, Loader2, UserX, Trash2 } from "lucide-react";
+import {
+  ArrowLeft,
+  Lock,
+  UserPlus,
+  Loader2,
+  UserX,
+  Trash2,
+} from "lucide-react";
+import { isSiegeLocked } from "../lib/siege";
 
 function AttackDaySelect({
   value,
@@ -92,7 +100,11 @@ function SiegeMemberRow({
   return (
     <TableRow>
       <TableCell className="font-medium">
-        <span className={member.member_is_active === false ? "text-slate-500" : undefined}>
+        <span
+          className={
+            member.member_is_active === false ? "text-slate-500" : undefined
+          }
+        >
           {member.member_name}
         </span>
         {member.member_is_active === false && (
@@ -278,6 +290,7 @@ export default function SiegeMembersPage() {
   }
 
   const isPlanning = siege?.status === "planning";
+  const siegeLocked = isSiegeLocked(siege);
 
   // Build a quick name lookup for the preview dialog
   const nameLookup: Record<number, string> = {};
@@ -315,7 +328,7 @@ export default function SiegeMembersPage() {
             variant="outline"
             size="sm"
             onClick={handleAutoAssignReserves}
-            disabled={reserveAssigning || siege?.status === "complete"}
+            disabled={reserveAssigning || siegeLocked}
           >
             {reserveAssigning ? (
               <>
@@ -329,7 +342,7 @@ export default function SiegeMembersPage() {
           <Button
             size="sm"
             onClick={() => previewMutation.mutate()}
-            disabled={previewMutation.isPending || siege?.status === "complete"}
+            disabled={previewMutation.isPending || siegeLocked}
           >
             {previewMutation.isPending
               ? "Loading..."
@@ -378,7 +391,7 @@ export default function SiegeMembersPage() {
                     key={m.member_id}
                     member={m}
                     siegeId={siegeId}
-                    isLocked={siege?.status === "complete"}
+                    isLocked={siegeLocked}
                     isPlanning={isPlanning}
                     onRemove={setRemoveTarget}
                   />

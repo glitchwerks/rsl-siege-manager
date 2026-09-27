@@ -10,7 +10,10 @@ import {
   BookmarkCheck,
 } from "lucide-react";
 import { getPosts } from "../api/posts";
-import { getSiegeMemberPreferences, previewPostSuggestions } from "../api/sieges";
+import {
+  getSiegeMemberPreferences,
+  previewPostSuggestions,
+} from "../api/sieges";
 import { updatePosition } from "../api/board";
 import type {
   BuildingResponse,
@@ -649,6 +652,7 @@ export function PostsTab({
   } = useQuery({
     queryKey: ["post-suggestions-status", siegeId],
     queryFn: () => previewPostSuggestions(siegeId),
+    enabled: !isLocked,
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
@@ -752,25 +756,25 @@ export function PostsTab({
           Suggest Assignments
         </Button>
         {/* Optimal-status chip (issue #364) — label only, not interactive */}
-        {chipStatus === "optimal" && (
-          <span className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset bg-emerald-50 text-emerald-800 ring-emerald-200">
+        {!isLocked && chipStatus === "optimal" && (
+          <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-800 ring-1 ring-inset ring-emerald-200">
             <Check className="h-3 w-3" aria-hidden="true" />
             Optimal
           </span>
         )}
-        {chipStatus === "suggestions" && (
-          <span className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset bg-amber-50 text-amber-800 ring-amber-200">
+        {!isLocked && chipStatus === "suggestions" && (
+          <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800 ring-1 ring-inset ring-amber-200">
             {suggestionCount} suggestion{suggestionCount === 1 ? "" : "s"}
           </span>
         )}
-        {chipStatus === "loading" && (
-          <span className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset bg-slate-50 text-slate-500 ring-slate-200">
+        {!isLocked && chipStatus === "loading" && (
+          <span className="inline-flex items-center gap-1 rounded-md bg-slate-50 px-2 py-1 text-xs font-medium text-slate-500 ring-1 ring-inset ring-slate-200">
             Checking…
           </span>
         )}
-        {chipStatus === "errored" && (
+        {!isLocked && chipStatus === "errored" && (
           <span
-            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset bg-slate-50 text-slate-500 ring-slate-200"
+            className="inline-flex items-center gap-1 rounded-md bg-slate-50 px-2 py-1 text-xs font-medium text-slate-500 ring-1 ring-inset ring-slate-200"
             title="Couldn't compute (click Suggest to check)"
           >
             ?

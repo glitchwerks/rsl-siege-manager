@@ -5,13 +5,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.building import Building
 from app.models.building_group import BuildingGroup
 from app.models.building_type_config import BuildingTypeConfig
-from app.models.enums import BuildingType, SiegeStatus
+from app.models.enums import BuildingType
 from app.models.position import Position
 from app.models.post import Post
 from app.models.post_priority_config import PostPriorityConfig
 from app.schemas.building import BuildingCreate, BuildingUpdate, GroupCreate
 from app.services.building_capacity import get_team_count
-from app.services.sieges import get_siege
+from app.services.siege_lock import lock_planning_siege
 
 
 async def _rebuild_groups_for_level(
@@ -138,15 +138,6 @@ async def _get_building(session: AsyncSession, siege_id: int, building_id: int) 
     return building
 
 
-async def _require_planning_or_not_locked(siege: object, allow_planning_only: bool = True) -> None:
-    """Raise 400 if the siege is locked for layout changes."""
-    if allow_planning_only and siege.status != SiegeStatus.planning:
-        raise HTTPException(
-            status_code=400,
-            detail="Building layout is locked — siege must be in planning status",
-        )
-
-
 async def _create_groups_and_positions(
     session: AsyncSession,
     building_id: int,
@@ -179,12 +170,11 @@ async def list_buildings(session: AsyncSession, siege_id: int) -> list[Building]
 
 
 async def add_building(session: AsyncSession, siege_id: int, data: BuildingCreate) -> Building:
-    siege = await get_siege(session, siege_id)
-    if siege.status != SiegeStatus.planning:
-        raise HTTPException(
-            status_code=400,
-            detail="Buildings can only be added to planning sieges",
-        )
+    await lock_planning_siege(
+        session,
+        siege_id,
+        detail="Buildings can only be added to planning sieges",
+    )
 
     config = await _get_building_type_config(session, data.building_type)
 
@@ -270,17 +260,15 @@ async def add_building(session: AsyncSession, siege_id: int, data: BuildingCreat
 async def update_building(
     session: AsyncSession, siege_id: int, building_id: int, data: BuildingUpdate
 ) -> Building:
-    siege = await get_siege(session, siege_id)
+    await lock_planning_siege(
+        session,
+        siege_id,
+        detail="Building layout is locked — siege is active or complete",
+    )
     # This gate is the stability invariant for compute_scroll_count in sieges.py:
     # by rejecting all building mutations (level changes, breaking, unbreaking) once
     # a siege is active or complete, we guarantee the scroll count cannot shift
     # under an in-progress siege.
-    if siege.status in (SiegeStatus.active, SiegeStatus.complete):
-        raise HTTPException(
-            status_code=400,
-            detail="Building layout is locked — siege is active or complete",
-        )
-
     building = await _get_building(session, siege_id, building_id)
 
     if data.is_broken is not None:
@@ -332,12 +320,11 @@ async def update_building(
 
 
 async def delete_building(session: AsyncSession, siege_id: int, building_id: int) -> None:
-    siege = await get_siege(session, siege_id)
-    if siege.status in (SiegeStatus.active, SiegeStatus.complete):
-        raise HTTPException(
-            status_code=400,
-            detail="Building layout is locked — siege is active or complete",
-        )
+    await lock_planning_siege(
+        session,
+        siege_id,
+        detail="Building layout is locked — siege is active or complete",
+    )
     building = await _get_building(session, siege_id, building_id)
     await session.delete(building)
     await session.commit()
@@ -346,12 +333,11 @@ async def delete_building(session: AsyncSession, siege_id: int, building_id: int
 async def add_group(
     session: AsyncSession, siege_id: int, building_id: int, data: GroupCreate
 ) -> BuildingGroup:
-    siege = await get_siege(session, siege_id)
-    if siege.status in (SiegeStatus.active, SiegeStatus.complete):
-        raise HTTPException(
-            status_code=400,
-            detail="Building layout is locked — siege is active or complete",
-        )
+    await lock_planning_siege(
+        session,
+        siege_id,
+        detail="Building layout is locked — siege is active or complete",
+    )
 
     building = await _get_building(session, siege_id, building_id)
 
@@ -397,12 +383,11 @@ async def add_group(
 async def delete_group(
     session: AsyncSession, siege_id: int, building_id: int, group_id: int
 ) -> None:
-    siege = await get_siege(session, siege_id)
-    if siege.status in (SiegeStatus.active, SiegeStatus.complete):
-        raise HTTPException(
-            status_code=400,
-            detail="Building layout is locked — siege is active or complete",
-        )
+    await lock_planning_siege(
+        session,
+        siege_id,
+        detail="Building layout is locked — siege is active or complete",
+    )
 
     await _get_building(session, siege_id, building_id)
 

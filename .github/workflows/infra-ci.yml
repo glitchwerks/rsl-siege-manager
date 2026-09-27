@@ -2,7 +2,9 @@ name: Infra CI
 
 # ── Gate structure ─────────────────────────────────────────────────────────────
 #
-# Four sequential gates protect the infra/ directory on every PR to main:
+# Four sequential gates protect the infra/ directory on PRs to main. Gates 1
+# and 2 run for every PR; Azure-authenticated gates 3 and 4 skip fork and
+# Dependabot PRs because GitHub does not expose repository secrets to them.
 #
 #   Gate 1 — infra-lint (no Azure auth)
 #             az bicep lint on main.bicep and all modules/*.bicep.
@@ -51,8 +53,7 @@ concurrency:
   cancel-in-progress: true
 
 # Least-privilege permissions. pull-requests: write is required for the
-# on-failure comment steps and the what-if results comment that tag @claude
-# on failing PRs.
+# what-if results comment.
 permissions:
   contents: read
   pull-requests: write
@@ -67,16 +68,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Mint GitHub App token
-        id: app-token
-        if: github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork
-        uses: actions/create-github-app-token@v3
-        with:
-          app-id: ${{ secrets.APP_ID }}
-          private-key: ${{ secrets.APP_PRIVATE_KEY }}
-
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Install Bicep
         run: az bicep install
@@ -91,20 +84,6 @@ jobs:
             az bicep lint --file "$f"
           done
 
-      - name: Post failure comment
-        if: failure() && github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork
-        uses: actions/github-script@v9
-        with:
-          # Use App token on PRs (enables @claude triggering); fall back to GITHUB_TOKEN on other events
-          github-token: ${{ steps.app-token.outputs.token || github.token }}
-          script: |
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-              body: `## ❌ Bicep Lint failed\n\n[View full logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})\n\n@claude please investigate the infra CI failure and push a fix.`
-            })
-
   # ── Gate 2: Bicep Build ───────────────────────────────────────────────────
   #
   # Compiles main.bicep to ARM JSON. This catches cross-module type errors and
@@ -116,35 +95,14 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Mint GitHub App token
-        id: app-token
-        if: github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork
-        uses: actions/create-github-app-token@v3
-        with:
-          app-id: ${{ secrets.APP_ID }}
-          private-key: ${{ secrets.APP_PRIVATE_KEY }}
-
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Install Bicep
         run: az bicep install
 
       - name: Build main.bicep → ARM JSON
         run: az bicep build --file infra/main.bicep --outfile /tmp/main.json
-
-      - name: Post failure comment
-        if: failure() && github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork
-        uses: actions/github-script@v9
-        with:
-          github-token: ${{ steps.app-token.outputs.token || github.token }}
-          script: |
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-              body: `## ❌ Bicep Build failed\n\n[View full logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})\n\n@claude please investigate the infra CI failure and push a fix.`
-            })
 
   # ── Gate 3: ARM Preflight Validation (dev) ────────────────────────────────
   #
@@ -153,27 +111,20 @@ jobs:
   # version availability against real ARM — but creates NO resources. Secrets
   # that are required by the param file but must not be stored in the repo are
   # overridden here with placeholder values; ARM validates the shape (type,
-  # length, allowed characters) but does not use them.
+  # length, allowed characters) but does not use them. Dependabot PRs stop at
+  # Gate 2 because their workflow runs cannot access AZURE_CREDENTIALS.
   infra-validate-dev:
     name: ARM Preflight Validation (dev)
     needs: infra-build
-    if: github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork
+    if: github.event_name != 'pull_request' || (!github.event.pull_request.head.repo.fork && github.event.pull_request.user.login != 'dependabot[bot]')
     runs-on: ubuntu-latest
 
     steps:
-      - name: Mint GitHub App token
-        id: app-token
-        if: github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork
-        uses: actions/create-github-app-token@v3
-        with:
-          app-id: ${{ secrets.APP_ID }}
-          private-key: ${{ secrets.APP_PRIVATE_KEY }}
-
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Log in to Azure
-        uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43 # v3
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
@@ -193,19 +144,6 @@ jobs:
             --parameters discordClientSecret="ci-placeholder-value" \
             --parameters discordRedirectUri="https://placeholder.example.com/api/auth/callback"
 
-      - name: Post failure comment
-        if: failure() && github.event_name == 'pull_request'
-        uses: actions/github-script@v9
-        with:
-          github-token: ${{ steps.app-token.outputs.token || github.token }}
-          script: |
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-              body: `## ❌ ARM Preflight Validation (dev) failed\n\n[View full logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})\n\n@claude please investigate the infra CI failure and push a fix.`
-            })
-
   # ── Gate 4: What-if Change Impact (dev) ──────────────────────────────────
   #
   # Computes the exact set of Azure resource changes this deployment would make
@@ -222,23 +160,15 @@ jobs:
   infra-what-if-dev:
     name: What-if Change Impact (dev)
     needs: infra-validate-dev
-    if: github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork
+    if: github.event_name != 'pull_request' || (!github.event.pull_request.head.repo.fork && github.event.pull_request.user.login != 'dependabot[bot]')
     runs-on: ubuntu-latest
 
     steps:
-      - name: Mint GitHub App token
-        id: app-token
-        if: github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork
-        uses: actions/create-github-app-token@v3
-        with:
-          app-id: ${{ secrets.APP_ID }}
-          private-key: ${{ secrets.APP_PRIVATE_KEY }}
-
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Log in to Azure
-        uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43 # v3
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
@@ -264,7 +194,7 @@ jobs:
         if: always() && github.event_name == 'pull_request'
         uses: actions/github-script@v9
         with:
-          github-token: ${{ steps.app-token.outputs.token || github.token }}
+          github-token: ${{ github.token }}
           script: |
             const fs = require('fs');
             const output = fs.readFileSync('/tmp/what-if.txt', 'utf8');
@@ -274,17 +204,4 @@ jobs:
               repo: context.repo.repo,
               issue_number: context.issue.number,
               body: `## 🔍 Infra What-if (dev)\n\n\`\`\`\n${truncated}\n\`\`\``
-            })
-
-      - name: Post failure comment
-        if: failure() && github.event_name == 'pull_request'
-        uses: actions/github-script@v9
-        with:
-          github-token: ${{ steps.app-token.outputs.token || github.token }}
-          script: |
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-              body: `## ❌ What-if Change Impact (dev) failed\n\n[View full logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})\n\n@claude please investigate the infra CI failure and push a fix.`
             })
