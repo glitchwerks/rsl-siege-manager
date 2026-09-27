@@ -219,6 +219,7 @@ describe("SiegeMembersPage — locked editing", () => {
       );
       renderPage();
 
+      await screen.findByText("Alpha");
       await waitFor(() =>
         expect(
           screen.getByRole("button", { name: /auto-assign attack days/i })
