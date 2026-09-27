@@ -26,6 +26,9 @@ param botApiKey = ''
 // Set via: --parameters botServiceToken=$BOT_SERVICE_TOKEN
 param botServiceToken = ''
 
+// Set via: --parameters slackAlertWebhookUrl=$SLACK_ALERT_WEBHOOK_URL
+param slackAlertWebhookUrl = ''
+
 param postgresGeoRedundantBackup = false
 
 // ── External sidecar ──────────────────────────────────────────────────────────

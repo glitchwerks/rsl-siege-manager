@@ -92,6 +92,7 @@ else {
     Write-Host "        `$env:BOT_API_KEY          = '...'" -ForegroundColor Cyan
     Write-Host "        `$env:BOT_SERVICE_TOKEN    = '...'" -ForegroundColor Cyan
     Write-Host "        `$env:DISCORD_GUILD_ID     = '...'" -ForegroundColor Cyan
+    Write-Host "        `$env:SLACK_ALERT_WEBHOOK_URL = '...'" -ForegroundColor Cyan
     Write-Host ""
 }
 Write-Host "    Deploy:" -ForegroundColor Yellow
@@ -105,9 +106,14 @@ Write-Host "                         discordToken=`$env:DISCORD_TOKEN ``" -Foreg
 Write-Host "                         discordBotApiKey=`$env:DISCORD_BOT_API_KEY ``" -ForegroundColor White
 Write-Host "                         botApiKey=`$env:BOT_API_KEY ``" -ForegroundColor White
 Write-Host "                         botServiceToken=`$env:BOT_SERVICE_TOKEN ``" -ForegroundColor White
-Write-Host "                         discordGuildId=`$env:DISCORD_GUILD_ID" -ForegroundColor White
+Write-Host "                         discordGuildId=`$env:DISCORD_GUILD_ID ``" -ForegroundColor White
+Write-Host "                         slackAlertWebhookUrl=`$env:SLACK_ALERT_WEBHOOK_URL" -ForegroundColor White
 
 if ($SecretsLoaded) {
+    if ([string]::IsNullOrWhiteSpace($env:SLACK_ALERT_WEBHOOK_URL)) {
+        Write-Error "SLACK_ALERT_WEBHOOK_URL is required for deployment. Add it to $EnvFile or the current environment."
+        exit 1
+    }
     Write-Host ""
     Write-Host "==> Deploying Bicep template..." -ForegroundColor Cyan
     az deployment group create `
@@ -120,7 +126,8 @@ if ($SecretsLoaded) {
         discordBotApiKey=$env:DISCORD_BOT_API_KEY `
         botApiKey=$env:BOT_API_KEY `
         botServiceToken=$env:BOT_SERVICE_TOKEN `
-        discordGuildId=$env:DISCORD_GUILD_ID
+        discordGuildId=$env:DISCORD_GUILD_ID `
+        slackAlertWebhookUrl=$env:SLACK_ALERT_WEBHOOK_URL
     if ($LASTEXITCODE -ne 0) {
         Write-Host "==> Deployment failed (exit code $LASTEXITCODE)." -ForegroundColor Red
         exit 1

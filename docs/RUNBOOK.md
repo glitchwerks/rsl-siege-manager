@@ -253,6 +253,7 @@ curl https://{FRONTEND_URL}/api/health
 | `discord-guild-id` | `siege-api`, `siege-bot` | Targets the correct Discord server |
 | `discord-bot-api-key` | `siege-api` | Auth header sent from backend → bot HTTP sidecar |
 | `bot-api-key` | `siege-bot` | Validates inbound requests on the bot HTTP API |
+| `slack-alert-webhook-url` | alert-routing Logic App | Posts sanitized Azure Monitor notifications to the infrastructure Slack channel |
 
 Note: `discord-bot-api-key` (the key the backend uses to call the bot) and `bot-api-key`
 (the key the bot validates against) must always match. Rotate them together.
@@ -507,7 +508,64 @@ The 4-week post-launch evaluation window (tracked in #263) will produce real fir
 
 ### 6D. Action Group
 
-Email-only at v1. A single recipient (`cmb_dev@outlook.com`) receives alert emails. Discord channel routing is deferred as future work (no specific issue yet).
+Slack is the primary infrastructure-alert destination. The shared Action Group
+uses Azure Monitor's common alert schema and sends every notification to the
+`siege-web-alert-slack-{environment}` Logic App. The Logic App accepts only the
+expected common-schema shape and posts these fields to the infrastructure
+channel: environment, severity, Fired/Resolved state, alert name, first affected
+resource, timestamp, and an Azure portal investigation link. It never forwards
+alert query results, exception bodies, credentials, member data, or Discord
+identifiers.
+
+Email remains enabled as an independent fallback receiver. The current fallback
+recipient is `cmb_dev@outlook.com`; do not remove it when diagnosing Slack.
+
+**Ownership:** the infrastructure operator owns the Slack incoming webhook, the
+Logic App, the Action Group, and the fallback mailbox. Application developers
+own the individual alert rule signal and threshold.
+
+**Dev delivery test:** after an infrastructure deploy, open Azure Monitor →
+Alerts → Action groups → `siege-app-health-dev` → Test, choose a static metric
+alert sample, and send the test. Confirm one Slack message and one fallback email
+arrive. The Slack message must identify `DEV`, show a severity and Fired/Resolved
+state, name the sample alert and resource, include a timestamp, and link only to
+the Azure portal. Record pass/fail and timestamps only; do not capture callback
+URLs, webhook URLs, or message content in evidence.
+
+The equivalent CLI entry point is:
+
+```bash
+az monitor action-group test-notifications create \
+  --resource-group siege-web-dev \
+  --action-group siege-app-health-dev \
+  --alert-type metricstaticthreshold
+```
+
+**Failure diagnosis:**
+
+1. If email also fails, inspect the Action Group configuration and Azure Monitor
+   delivery status first.
+2. If email arrives but Slack does not, inspect the Logic App run history. A
+   rejected trigger means the payload did not match the common schema; a failed
+   Key Vault action means the managed identity or secret is unavailable; a
+   failed Slack action normally means the webhook was revoked or the channel no
+   longer permits it.
+3. Confirm the Logic App identity has `Key Vault Secrets User` on the environment
+   vault and that `slack-alert-webhook-url` has an enabled current version.
+4. Do not reveal secure action inputs or outputs while collecting evidence.
+
+**Webhook rotation:** create a replacement incoming webhook for the same
+infrastructure channel, update the `SLACK_ALERT_WEBHOOK_URL` secret in the
+matching GitHub Environment, and manually run **Infra Deploy** for that
+environment. Re-run the Action Group test and confirm both Slack and email before
+revoking the old webhook. The Logic App reads Key Vault on every run, so no Logic
+App restart is required.
+
+**Rollback:** keep email enabled, remove the Logic App receiver from the Action
+Group (or revert the infrastructure PR), deploy dev, and verify email delivery.
+Do not delete the Key Vault secret or workflow until the fallback path is
+confirmed. Production promotion is manual and is allowed only after the dev
+Slack/email test passes.
 
 If the action group email confirmation email from Azure never arrived, the action group is registered but no emails will be delivered. Re-confirm by navigating to Azure Monitor → Alerts → Action groups → select the group → Test.
 

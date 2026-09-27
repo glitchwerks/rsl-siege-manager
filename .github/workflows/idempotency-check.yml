@@ -88,6 +88,7 @@ jobs:
             --parameters sessionSecret="${{ secrets.SESSION_SECRET }}" \
             --parameters discordClientId="${{ secrets.DISCORD_CLIENT_ID }}" \
             --parameters discordClientSecret="${{ secrets.DISCORD_CLIENT_SECRET }}" \
+            --parameters slackAlertWebhookUrl="${{ secrets.SLACK_ALERT_WEBHOOK_URL }}" \
             --parameters discordRedirectUri="${{ vars.DISCORD_REDIRECT_URI }}" \
             --parameters imageTag="${{ env.IMAGE_TAG }}" \
             --parameters useExternalSidecar=false \

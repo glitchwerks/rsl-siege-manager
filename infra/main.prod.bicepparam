@@ -16,7 +16,8 @@ using 'main.bicep'
 //     --parameters discordGuildId="$DISCORD_GUILD_ID" \
 //     --parameters sessionSecret="$SESSION_SECRET" \
 //     --parameters discordClientId="$DISCORD_CLIENT_ID" \
-//     --parameters discordClientSecret="$DISCORD_CLIENT_SECRET"
+//     --parameters discordClientSecret="$DISCORD_CLIENT_SECRET" \
+//     --parameters slackAlertWebhookUrl="$SLACK_ALERT_WEBHOOK_URL" \
 //     --parameters discordRedirectUri="$DISCORD_REDIRECT_URI"
 //
 // NEVER commit real secrets here. All @secure() params must be supplied at
@@ -146,9 +147,11 @@ param apiMinReplicas = 1
 param frontendMinReplicas = 0
 
 // ── Monitoring ────────────────────────────────────────────────────────────────
-// Alert email recipient for action group. Same address for dev and prod in v1.
+// Fallback alert email recipient. Slack is the primary infrastructure-alert route.
 // Confirmed by user: cmb_dev@outlook.com (2026-04-29, Issue #246).
 param alertEmail = 'cmb_dev@outlook.com'
+// Supplied by Infra Deploy from the prod GitHub Environment secret.
+param slackAlertWebhookUrl = ''
 
 // ── External sidecar ──────────────────────────────────────────────────────────
 // Default false: bundled bot Container App is provisioned as normal.

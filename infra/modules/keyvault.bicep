@@ -42,6 +42,10 @@ param discordClientId string
 @secure()
 param discordClientSecret string
 
+@description('Slack incoming-webhook URL used only by the infrastructure alert router')
+@secure()
+param slackAlertWebhookUrl string
+
 // Soft-delete retention: minimum is 7 days; Azure default (and recommended for
 // prod) is 90 days. This means a deleted vault or secret can be recovered for
 // up to retentionDays before it is permanently purged. Use 7 for dev (fast
@@ -127,6 +131,12 @@ resource secretDiscordClientSecret 'Microsoft.KeyVault/vaults/secrets@2024-11-01
   parent: keyVault
   name: 'discord-client-secret'
   properties: { value: discordClientSecret }
+}
+
+resource secretSlackAlertWebhook 'Microsoft.KeyVault/vaults/secrets@2024-11-01' = {
+  parent: keyVault
+  name: 'slack-alert-webhook-url'
+  properties: { value: slackAlertWebhookUrl }
 }
 
 output vaultId string = keyVault.id

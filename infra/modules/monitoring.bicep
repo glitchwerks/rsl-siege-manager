@@ -1,4 +1,4 @@
-// monitoring.bicep — Alert action group + scheduled query rules for siege-api and siege-bot.
+// monitoring.bicep — Slack/email action group, alert router, and scheduled query rules.
 //
 // API versions confirmed stable GA as of 2026-04-29:
 //   Microsoft.Insights/actionGroups         → 2023-01-01
@@ -27,6 +27,12 @@ param appInsightsName string
 @description('Email address that receives alert notifications')
 param alertEmail string
 
+@description('Name of the Key Vault that stores the Slack incoming-webhook URL')
+param keyVaultName string
+
+@description('Key Vault data-plane URI, including the trailing slash')
+param keyVaultUri string
+
 @description('Resource tags to apply to all monitoring resources')
 param tags object = {
   project: appPrefix
@@ -35,9 +41,245 @@ param tags object = {
 
 // ── Action Group ─────────────────────────────────────────────────────────────
 //
-// One email-only action group per environment. `groupShortName` is capped at
-// 12 characters by the Azure API — "siege-dev" (9) and "siege-prod" (10) are
-// within limit.
+// Slack is the primary operational destination. Email remains enabled as an
+// independent fallback receiver. The Logic App callback URI and Slack webhook
+// are both secret-bearing values and are never emitted as deployment outputs.
+
+var slackWebhookSecretName = 'slack-alert-webhook-url'
+var azureAlertsPortalUrl = '${az.environment().portal}/#view/Microsoft_Azure_Monitoring/AzureMonitoringBrowseBlade/~/alerts'
+var keyVaultAudience = 'https://${substring(az.environment().suffixes.keyvaultDns, 1)}'
+
+resource keyVault 'Microsoft.KeyVault/vaults@2024-11-01' existing = {
+  name: keyVaultName
+}
+
+resource slackAlertWorkflow 'Microsoft.Logic/workflows@2019-05-01' = {
+  name: '${appPrefix}-alert-slack-${environment}'
+  location: location
+  tags: tags
+  identity: {
+    type: 'SystemAssigned'
+  }
+  properties: {
+    state: 'Enabled'
+    definition: {
+      '$schema': 'https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#'
+      contentVersion: '1.0.0.0'
+      parameters: {
+        alertEnvironment: {
+          type: 'String'
+          defaultValue: environment
+        }
+        keyVaultSecretUri: {
+          type: 'String'
+          defaultValue: '${keyVaultUri}secrets/${slackWebhookSecretName}?api-version=7.4'
+        }
+        fallbackInvestigationUrl: {
+          type: 'String'
+          defaultValue: azureAlertsPortalUrl
+        }
+        portalBaseUrl: {
+          type: 'String'
+          defaultValue: az.environment().portal
+        }
+      }
+      triggers: {
+        azure_monitor_common_alert: {
+          type: 'Request'
+          kind: 'Http'
+          inputs: {
+            method: 'POST'
+            schema: {
+              type: 'object'
+              required: [
+                'schemaId'
+                'data'
+              ]
+              properties: {
+                schemaId: {
+                  type: 'string'
+                }
+                data: {
+                  type: 'object'
+                  required: [
+                    'essentials'
+                  ]
+                  properties: {
+                    essentials: {
+                      type: 'object'
+                      required: [
+                        'alertRule'
+                        'severity'
+                        'monitorCondition'
+                        'alertTargetIDs'
+                        'firedDateTime'
+                      ]
+                      properties: {
+                        alertRule: {
+                          type: 'string'
+                        }
+                        severity: {
+                          type: 'string'
+                        }
+                        monitorCondition: {
+                          type: 'string'
+                        }
+                        alertTargetIDs: {
+                          type: 'array'
+                          minItems: 1
+                          items: {
+                            type: 'string'
+                          }
+                        }
+                        firedDateTime: {
+                          type: 'string'
+                        }
+                        resolvedDateTime: {
+                          type: [
+                            'string'
+                            'null'
+                          ]
+                        }
+                        investigationLink: {
+                          type: [
+                            'string'
+                            'null'
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+      actions: {
+        Validate_common_alert: {
+          type: 'If'
+          expression: '''@and(equals(triggerBody()?['schemaId'], 'azureMonitorCommonAlertSchema'), or(equals(triggerBody()?['data']?['essentials']?['monitorCondition'], 'Fired'), equals(triggerBody()?['data']?['essentials']?['monitorCondition'], 'Resolved')), not(empty(triggerBody()?['data']?['essentials']?['alertRule'])), not(empty(triggerBody()?['data']?['essentials']?['severity'])), not(empty(triggerBody()?['data']?['essentials']?['alertTargetIDs'])), not(empty(triggerBody()?['data']?['essentials']?['firedDateTime'])))'''
+          actions: {
+            Get_slack_webhook: {
+              type: 'Http'
+              inputs: {
+                method: 'GET'
+                uri: '''@parameters('keyVaultSecretUri')'''
+                authentication: {
+                  type: 'ManagedServiceIdentity'
+                  audience: keyVaultAudience
+                }
+              }
+              runtimeConfiguration: {
+                secureData: {
+                  properties: [
+                    'inputs'
+                    'outputs'
+                  ]
+                }
+              }
+            }
+            Post_sanitized_alert_to_slack: {
+              type: 'Http'
+              runAfter: {
+                Get_slack_webhook: [
+                  'Succeeded'
+                ]
+              }
+              inputs: {
+                method: 'POST'
+                uri: '''@body('Get_slack_webhook')?['value']'''
+                headers: {
+                  'Content-Type': 'application/json'
+                }
+                body: {
+                  text: '''@concat(if(equals(triggerBody()?['data']?['essentials']?['monitorCondition'], 'Resolved'), '✅ RESOLVED', '🚨 FIRED'), ' | ', toUpper(parameters('alertEnvironment')), ' | ', take(string(triggerBody()?['data']?['essentials']?['alertRule']), 200), decodeUriComponent('%0A'), 'Severity: ', take(string(triggerBody()?['data']?['essentials']?['severity']), 20), ' | State: ', triggerBody()?['data']?['essentials']?['monitorCondition'], decodeUriComponent('%0A'), 'Resource: ', take(string(first(triggerBody()?['data']?['essentials']?['alertTargetIDs'])), 500), decodeUriComponent('%0A'), 'Time: ', if(equals(triggerBody()?['data']?['essentials']?['monitorCondition'], 'Resolved'), coalesce(triggerBody()?['data']?['essentials']?['resolvedDateTime'], triggerBody()?['data']?['essentials']?['firedDateTime']), triggerBody()?['data']?['essentials']?['firedDateTime']), decodeUriComponent('%0A'), 'Investigate: ', if(and(startsWith(coalesce(triggerBody()?['data']?['essentials']?['investigationLink'], ''), concat(parameters('portalBaseUrl'), '/')), not(contains(coalesce(triggerBody()?['data']?['essentials']?['investigationLink'], ''), decodeUriComponent('%0A'))), not(contains(coalesce(triggerBody()?['data']?['essentials']?['investigationLink'], ''), decodeUriComponent('%0D')))), triggerBody()?['data']?['essentials']?['investigationLink'], parameters('fallbackInvestigationUrl')))'''
+                }
+              }
+              runtimeConfiguration: {
+                secureData: {
+                  properties: [
+                    'inputs'
+                    'outputs'
+                  ]
+                }
+              }
+            }
+            Respond_accepted: {
+              type: 'Response'
+              kind: 'Http'
+              runAfter: {
+                Post_sanitized_alert_to_slack: [
+                  'Succeeded'
+                ]
+              }
+              inputs: {
+                statusCode: 202
+                body: {
+                  status: 'forwarded'
+                }
+              }
+            }
+            Respond_delivery_failed: {
+              type: 'Response'
+              kind: 'Http'
+              runAfter: {
+                Post_sanitized_alert_to_slack: [
+                  'Failed'
+                  'Skipped'
+                  'TimedOut'
+                ]
+              }
+              inputs: {
+                statusCode: 502
+                body: {
+                  status: 'delivery_failed'
+                }
+              }
+            }
+          }
+          else: {
+            actions: {
+              Respond_bad_request: {
+                type: 'Response'
+                kind: 'Http'
+                inputs: {
+                  statusCode: 400
+                  body: {
+                    status: 'rejected'
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+      outputs: {}
+    }
+    parameters: {}
+  }
+}
+
+// Built-in Key Vault Secrets User role. The Logic App reads only the named
+// webhook secret at runtime through its system-assigned identity.
+var kvSecretsUserRoleId = '4633458b-17de-408a-b874-0445c86b69e6'
+
+resource slackWebhookSecret 'Microsoft.KeyVault/vaults/secrets@2024-11-01' existing = {
+  parent: keyVault
+  name: slackWebhookSecretName
+}
+
+resource slackAlertKvRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(slackWebhookSecret.id, slackAlertWorkflow.name, kvSecretsUserRoleId)
+  scope: slackWebhookSecret
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', kvSecretsUserRoleId)
+    principalId: slackAlertWorkflow.identity.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+var slackAlertCallbackUrl = listCallbackUrl('${slackAlertWorkflow.id}/triggers/azure_monitor_common_alert', '2019-05-01').value
 
 resource actionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = {
   name: 'siege-app-health-${environment}'
@@ -58,7 +300,14 @@ resource actionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = {
     azureFunctionReceivers: []
     eventHubReceivers: []
     itsmReceivers: []
-    logicAppReceivers: []
+    logicAppReceivers: [
+      {
+        name: 'Slack Infrastructure Alerts'
+        resourceId: slackAlertWorkflow.id
+        callbackUrl: slackAlertCallbackUrl
+        useCommonAlertSchema: true
+      }
+    ]
     smsReceivers: []
     voiceReceivers: []
     webhookReceivers: []

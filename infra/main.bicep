@@ -200,8 +200,16 @@ assert externalBotApiUrlIsHttps = !useExternalSidecar || environment == 'dev' ||
 
 // ── Monitoring ────────────────────────────────────────────────────────────────
 
-@description('Email address that receives alert notifications from the monitoring action group (dev and prod use the same address in v1).')
+@description('Fallback email address for the monitoring action group')
 param alertEmail string
+
+@description('Slack incoming-webhook URL for infrastructure alerts. Stored in Key Vault and never embedded in the Logic App definition.')
+@secure()
+param slackAlertWebhookUrl string
+
+// Every deployment path must supply the webhook. This prevents an omitted
+// override from replacing the working Key Vault value with an empty secret.
+assert slackAlertWebhookUrlProvided = !empty(trim(slackAlertWebhookUrl))
 
 // ── Modules ──────────────────────────────────────────────────────────────────
 
@@ -260,6 +268,7 @@ module keyVault 'modules/keyvault.bicep' = {
     sessionSecret: sessionSecret
     discordClientId: discordClientId
     discordClientSecret: discordClientSecret
+    slackAlertWebhookUrl: slackAlertWebhookUrl
     softDeleteRetentionDays: kvSoftDeleteRetentionDays
   }
 }
@@ -290,6 +299,8 @@ module monitoring 'modules/monitoring.bicep' = {
     appInsightsId: appInsights.outputs.appInsightsId
     appInsightsName: appInsights.outputs.appInsightsName
     alertEmail: alertEmail
+    keyVaultName: keyVault.outputs.vaultName
+    keyVaultUri: keyVault.outputs.vaultUri
     tags: {
       project: appPrefix
       environment: environment
