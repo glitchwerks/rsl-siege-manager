@@ -66,10 +66,11 @@ def validate(
     return errors
 
 
-def _get_json(url: str) -> dict[str, object]:
+def _get_json(url: str, *, github_auth: bool = False) -> dict[str, object]:
     headers = {"Accept": "application/json", "User-Agent": "siege-version-verifier"}
-    if token := os.getenv("GITHUB_TOKEN"):
-        headers["Authorization"] = f"Bearer {token}"
+    if github_auth:
+        if token := os.getenv("GITHUB_TOKEN"):
+            headers["Authorization"] = f"Bearer {token}"
     request = urllib.request.Request(url, headers=headers)  # noqa: S310
     with urllib.request.urlopen(request, timeout=10) as response:  # noqa: S310
         return json.load(response)
@@ -79,10 +80,35 @@ def superseding_sha(latest_sha_url: str | None, expected_sha: str) -> str | None
     """Return the newer selected SHA, or None when this run is still current."""
     if not latest_sha_url:
         return None
-    selected_sha = _get_json(latest_sha_url).get("sha")
+    selected_sha = _get_json(latest_sha_url, github_auth=True).get("sha")
     if selected_sha == expected_sha:
         return None
     return str(selected_sha)
+
+
+def deployment_matches_sha(
+    health: dict[str, object],
+    version: dict[str, object],
+    frontend_marker: dict[str, object],
+    expected_sha: str,
+) -> bool:
+    """Return true when both public artifacts have converged on a healthy SHA."""
+    short_sha = expected_sha[:7]
+    component_keys = ("backend_version", "bot_version", "frontend_version")
+    return (
+        health.get("status") == "healthy"
+        and version.get("git_sha") == expected_sha
+        and frontend_marker.get("git_sha") == expected_sha
+        and all(
+            re.fullmatch(rf"[^+]+\+\d+\.{re.escape(short_sha)}", str(version.get(key) or ""))
+            for key in component_keys
+        )
+        and re.fullmatch(
+            rf"[^+]+\+\d+\.{re.escape(short_sha)}",
+            str(frontend_marker.get("frontend_version") or ""),
+        )
+        is not None
+    )
 
 
 def main() -> int:
@@ -114,12 +140,7 @@ def main() -> int:
     last_errors = ["deployment has not been queried"]
     for attempt in range(1, args.attempts + 1):
         try:
-            if selected_sha := superseding_sha(args.latest_sha_url, args.expected_sha):
-                print(
-                    f"Deployment {args.expected_sha} was superseded by {selected_sha}; "
-                    "skipping stale verification."
-                )
-                return 0
+            selected_sha = superseding_sha(args.latest_sha_url, args.expected_sha)
             health = _get_json(f"{base_url}/api/health")
             version = _get_json(f"{base_url}/api/version")
             frontend_marker = (
@@ -127,6 +148,16 @@ def main() -> int:
                 if args.legacy_without_frontend_marker
                 else _get_json(f"{base_url}/version.json")
             )
+            if (
+                selected_sha
+                and frontend_marker is not None
+                and deployment_matches_sha(health, version, frontend_marker, selected_sha)
+            ):
+                print(
+                    f"Deployment {args.expected_sha} was superseded by healthy "
+                    f"revision {selected_sha}; skipping stale verification."
+                )
+                return 0
             last_errors = validate(
                 health,
                 version,

@@ -93,10 +93,34 @@ def test_stale_frontend_artifact_fails(tmp_path, monkeypatch) -> None:
 
 
 def test_newer_selected_sha_supersedes_verification(monkeypatch) -> None:
-    monkeypatch.setattr(module, "_get_json", lambda _url: {"sha": "newer-sha"})
+    monkeypatch.setattr(
+        module, "_get_json", lambda _url, **_kwargs: {"sha": "newer-sha"}
+    )
 
     assert module.superseding_sha("https://example.test/main", "older-sha") == "newer-sha"
     assert module.superseding_sha(None, "older-sha") is None
+
+
+def test_supersession_requires_healthy_api_and_frontend_convergence() -> None:
+    sha = "abcdef0123456789"
+    version = {
+        "backend_version": "1.4.2+42.abcdef0",
+        "bot_version": "1.4.2+42.abcdef0",
+        "frontend_version": "1.5.0+42.abcdef0",
+        "git_sha": sha,
+    }
+    marker = {"frontend_version": "1.5.0+42.abcdef0", "git_sha": sha}
+
+    assert module.deployment_matches_sha({"status": "healthy"}, version, marker, sha)
+    assert not module.deployment_matches_sha(
+        {"status": "unhealthy"}, version, marker, sha
+    )
+    assert not module.deployment_matches_sha(
+        {"status": "healthy"},
+        version,
+        {**marker, "git_sha": "stale"},
+        sha,
+    )
 
 
 def test_legacy_rollback_allows_missing_frontend_metadata(tmp_path, monkeypatch) -> None:
