@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.2] - 2026-09-27
+
+Correctness and maintenance patch: active sieges are now immutable, external-sidecar local development works as documented, and Azure logging no longer depends on the retired Data Collector API.
+
+### Changed
+
+- **Siege data locks after planning** — activating a siege now makes its roster, assignments, buildings, posts, attack-day data, and suggestion/autofill mutations read-only. Backend row locks serialize activation with concurrent edits, and the frontend consistently disables editing for active and complete sieges. (#242, #531)
+
+### Fixed
+
+- **External-sidecar Compose routing** — `docker-compose.sidecar-external.yml` now overrides the backend's bundled-bot hostname with `DISCORD_BOT_API_URL` from `.env`, allowing the documented external-sidecar topology to connect successfully. (#524, #525)
+- **Notification wording** — removed the obsolete work-in-progress disclaimer from member assignment DMs. (#511)
+
+### Infrastructure
+
+- **Azure Monitor diagnostic settings** replace the retired Container Apps Data Collector API integration, preserving platform logging on the supported path. (#521, #522)
+- **CI and dependency maintenance** — adopted phased `prek` lint hooks, removed obsolete Claude PR-review automation, skipped Azure credential gates for Dependabot PRs, refreshed pinned GitHub Actions dependencies, removed a duplicate import requirement, and expanded Carousel rendering coverage. (#501, #503, #505, #506, #509, #513, #514, #516, #517, #519, #523, #526, #527, #528, #529, #530)
+
 ## [1.4.1] - 2026-06-13
 
 Patch release: markdown rendering in the changelog dropdown, a validation fix for level-6 strongholds, and repairs to the Discord release-announcement workflow.
