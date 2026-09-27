@@ -16,6 +16,7 @@ from app.services.autofill import apply_autofill, preview_autofill
 from app.services.board import bulk_update_positions, update_position
 from app.services.post_suggestions import apply_post_suggestions, preview_post_suggestions
 from app.services.posts import set_post_conditions, update_post
+from app.services.siege_lock import lock_all_planning_sieges
 from app.services.siege_members import remove_siege_member, update_siege_member
 
 
@@ -110,3 +111,17 @@ async def test_siege_mutations_reject_non_planning_status(mutation, status):
     lock_statement = session.execute.await_args_list[0].args[0]
     assert lock_statement._for_update_arg is not None
     session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_global_roster_side_effects_lock_planning_sieges_in_stable_order():
+    result = MagicMock()
+    result.scalars.return_value.all.return_value = []
+    session = AsyncMock()
+    session.execute.return_value = result
+
+    await lock_all_planning_sieges(session)
+
+    statement = session.execute.await_args.args[0]
+    assert statement._for_update_arg is not None
+    assert statement._order_by_clauses

@@ -5,14 +5,13 @@ from sqlalchemy.orm import selectinload
 
 from app.models.building import Building
 from app.models.building_group import BuildingGroup
-from app.models.enums import SiegeStatus
 from app.models.member import Member
 from app.models.member_post_preference import member_post_preference
 from app.models.position import Position
 from app.models.post_condition import PostCondition
-from app.models.siege import Siege
 from app.models.siege_member import SiegeMember
 from app.schemas.member import MemberCreate, MemberPreferencesUpdate, MemberUpdate
+from app.services.siege_lock import lock_all_planning_sieges
 
 
 async def list_members(session: AsyncSession, is_active: bool | None) -> list[Member]:
@@ -48,10 +47,8 @@ async def create_member(session: AsyncSession, data: MemberCreate) -> Member:
     session.add(member)
     await session.flush()
 
-    planning_sieges = await session.execute(
-        select(Siege).where(Siege.status == SiegeStatus.planning)
-    )
-    for siege in planning_sieges.scalars().all():
+    planning_sieges = await lock_all_planning_sieges(session)
+    for siege in planning_sieges:
         session.add(SiegeMember(siege_id=siege.id, member_id=member.id))
 
     await session.commit()
@@ -74,14 +71,22 @@ async def _clear_member_from_planning_sieges(session: AsyncSession, member_id: i
         session: The active async database session.
         member_id: Primary key of the member to remove from planning sieges.
     """
-    # Clear position assignments in planning sieges.
+    # Lock the affected sieges before reading or writing their roster state.
+    # Activation takes the same row lock, so either cleanup commits first and
+    # activation validates the cleaned state, or activation commits first and
+    # the updated row no longer qualifies as planning here.
+    planning_sieges = await lock_all_planning_sieges(session)
+    planning_siege_ids = [siege.id for siege in planning_sieges]
+    if not planning_siege_ids:
+        return
+
+    # Clear position assignments in the locked planning sieges.
     stmt = (
         select(Position)
         .join(BuildingGroup, Position.building_group_id == BuildingGroup.id)
         .join(Building, BuildingGroup.building_id == Building.id)
-        .join(Siege, Building.siege_id == Siege.id)
         .where(Position.member_id == member_id)
-        .where(Siege.status == SiegeStatus.planning)
+        .where(Building.siege_id.in_(planning_siege_ids))
     )
     result = await session.execute(stmt)
     positions = result.scalars().all()
@@ -92,9 +97,7 @@ async def _clear_member_from_planning_sieges(session: AsyncSession, member_id: i
     await session.execute(
         delete(SiegeMember)
         .where(SiegeMember.member_id == member_id)
-        .where(
-            SiegeMember.siege_id.in_(select(Siege.id).where(Siege.status == SiegeStatus.planning))
-        )
+        .where(SiegeMember.siege_id.in_(planning_siege_ids))
     )
 
 

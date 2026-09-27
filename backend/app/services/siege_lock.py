@@ -44,3 +44,14 @@ async def lock_planning_siege(
         raise HTTPException(status_code=404, detail="Siege not found")
     require_planning_siege(siege, detail=detail)
     return siege
+
+
+async def lock_all_planning_sieges(session: AsyncSession) -> list[Siege]:
+    """Lock every planning siege in a stable order for global roster writes."""
+    result = await session.execute(
+        select(Siege)
+        .where(Siege.status == SiegeStatus.planning)
+        .order_by(Siege.id)
+        .with_for_update()
+    )
+    return list(result.scalars().all())
