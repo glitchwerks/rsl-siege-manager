@@ -10,6 +10,10 @@ permissions:
   issues: write
   pull-requests: read
 
+concurrency:
+  group: version-bump-bypass-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
 jobs:
   audit-bypass:
     name: Audit version bump bypass
@@ -27,7 +31,9 @@ jobs:
               /^## Version bump bypass[ \t]*\r?\n([\s\S]*?)(?=^## |(?![\s\S]))/m
             );
             const reason = (match?.[1] || '').replace(/<!--[\s\S]*?-->/g, '').trim();
-            if (!reason || ['n/a', 'na', 'none', 'not applicable'].includes(reason.toLowerCase())) {
+            const plainReason = reason.replace(/[^A-Za-z0-9]+/g, ' ').trim();
+            if (!/[A-Za-z0-9]{3}/.test(plainReason) ||
+                ['n/a', 'na', 'none', 'not applicable'].includes(reason.toLowerCase())) {
               core.setFailed("Add a concrete reason under the 'Version bump bypass' PR heading.");
               return;
             }
@@ -40,6 +46,7 @@ jobs:
               filename.startsWith('backend/app/schemas/') ||
               filename.startsWith('backend/app/auth/') ||
               filename === 'backend/app/main.py' ||
+              filename === 'backend/app/rate_limit.py' ||
               ['bot/app/http_api.py', 'bot/app/discord_client.py', 'bot/app/__init__.py'].includes(filename) ||
               filename === 'frontend/src/App.tsx' ||
               filename.startsWith('frontend/src/pages/') ||
@@ -47,11 +54,28 @@ jobs:
             ).map(({filename}) => filename);
 
             const auditKey = `Audit key: ${owner}/${repo}#${pr.number}`;
+            const auditBody = [
+              auditKey,
+              '',
+              `Pull request: #${pr.number}`,
+              '',
+              'Flagged surface paths:',
+              ...(flagged.length ? flagged.map(path => `- \`${path}\``) : ['- (none found)']),
+              '',
+              'Why bypass?',
+              reason,
+            ].join('\n');
             const existing = await github.paginate(github.rest.issues.listForRepo, {
               owner, repo, state: 'all', labels: 'version-bump-bypass', per_page: 100
             });
-            if (existing.some(issue => (issue.body || '').includes(auditKey))) {
-              core.info('Bypass use is already recorded.');
+            const existingIssue = existing.find(issue =>
+              (issue.body || '').split(/\r?\n/).includes(auditKey)
+            );
+            if (existingIssue) {
+              await github.rest.issues.update({
+                owner, repo, issue_number: existingIssue.number, body: auditBody
+              });
+              core.info('Updated the existing bypass audit.');
               return;
             }
 
@@ -69,17 +93,7 @@ jobs:
               owner,
               repo,
               title: `[version-bump bypass] PR #${pr.number}`,
-              body: [
-                auditKey,
-                '',
-                `Pull request: #${pr.number}`,
-                '',
-                'Flagged surface paths:',
-                ...(flagged.length ? flagged.map(path => `- \`${path}\``) : ['- VITE_* contract change']),
-                '',
-                'Why bypass?',
-                reason,
-              ].join('\n'),
+              body: auditBody,
               labels: ['version-bump-bypass'],
               assignees: ['cbeaulieu-gt'],
             });

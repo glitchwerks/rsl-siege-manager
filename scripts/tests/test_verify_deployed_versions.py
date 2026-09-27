@@ -90,3 +90,10 @@ def test_stale_frontend_artifact_fails(tmp_path, monkeypatch) -> None:
 
     assert any("frontend marker frontend_version mismatch" in error for error in errors)
     assert any("frontend marker git_sha mismatch" in error for error in errors)
+
+
+def test_newer_selected_sha_supersedes_verification(monkeypatch) -> None:
+    monkeypatch.setattr(module, "_get_json", lambda _url: {"sha": "newer-sha"})
+
+    assert module.superseding_sha("https://example.test/main", "older-sha") == "newer-sha"
+    assert module.superseding_sha(None, "older-sha") is None

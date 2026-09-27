@@ -7,7 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Components changed: none.
+Components changed: siege-api.
+
+### siege-api 1.4.3
+
+- Fixed `/api/version` so local Compose reports the canonical frontend version and deployed environments report the exact frontend build version. (#311)
 
 ### Infrastructure / repo
 

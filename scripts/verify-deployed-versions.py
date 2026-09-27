@@ -60,14 +60,32 @@ def validate(
 
 
 def _get_json(url: str) -> dict[str, object]:
-    with urllib.request.urlopen(url, timeout=10) as response:  # noqa: S310
+    headers = {"Accept": "application/json", "User-Agent": "siege-version-verifier"}
+    if token := os.getenv("GITHUB_TOKEN"):
+        headers["Authorization"] = f"Bearer {token}"
+    request = urllib.request.Request(url, headers=headers)  # noqa: S310
+    with urllib.request.urlopen(request, timeout=10) as response:  # noqa: S310
         return json.load(response)
+
+
+def superseding_sha(latest_sha_url: str | None, expected_sha: str) -> str | None:
+    """Return the newer selected SHA, or None when this run is still current."""
+    if not latest_sha_url:
+        return None
+    selected_sha = _get_json(latest_sha_url).get("sha")
+    if selected_sha == expected_sha:
+        return None
+    return str(selected_sha)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--url", required=True)
     parser.add_argument("--expected-sha", required=True)
+    parser.add_argument(
+        "--latest-sha-url",
+        help="skip successfully if this endpoint reports a newer selected SHA",
+    )
     parser.add_argument(
         "--attempts", type=int, default=int(os.getenv("VERSION_VERIFY_ATTEMPTS", "30"))
     )
@@ -84,6 +102,12 @@ def main() -> int:
     last_errors = ["deployment has not been queried"]
     for attempt in range(1, args.attempts + 1):
         try:
+            if selected_sha := superseding_sha(args.latest_sha_url, args.expected_sha):
+                print(
+                    f"Deployment {args.expected_sha} was superseded by {selected_sha}; "
+                    "skipping stale verification."
+                )
+                return 0
             health = _get_json(f"{base_url}/api/health")
             version = _get_json(f"{base_url}/api/version")
             frontend_marker = _get_json(f"{base_url}/version.json")

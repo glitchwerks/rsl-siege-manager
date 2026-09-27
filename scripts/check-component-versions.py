@@ -56,6 +56,32 @@ def _semver(version: str) -> tuple[int, int, int]:
     return tuple(int(part) for part in match.groups())
 
 
+def _vite_names_in_base(base: str) -> set[str]:
+    try:
+        output = _git(
+            "grep", "-h", "-o", "-E", r"VITE_[A-Z0-9_]+", base, "--", "frontend"
+        )
+    except subprocess.CalledProcessError as exc:
+        if exc.returncode == 1:
+            return set()
+        raise
+    return set(output.splitlines())
+
+
+def _vite_names_in_worktree() -> set[str]:
+    names: set[str] = set()
+    excluded = {"node_modules", "dist", ".git"}
+    for path in Path("frontend").rglob("*"):
+        if not path.is_file() or excluded.intersection(path.parts):
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        names.update(re.findall(r"VITE_[A-Z0-9_]+", text))
+    return names
+
+
 def affected_components(base: str) -> dict[str, list[str]]:
     paths = [p for p in _git("diff", "--name-only", f"{base}...HEAD").splitlines() if p]
     affected: dict[str, list[str]] = {name: [] for name in COMPONENTS}
@@ -63,20 +89,14 @@ def affected_components(base: str) -> dict[str, list[str]]:
     for path in paths:
         if path.startswith(
             ("backend/app/api/", "backend/app/schemas/", "backend/app/auth/")
-        ) or path == "backend/app/main.py":
+        ) or path in {"backend/app/main.py", "backend/app/rate_limit.py"}:
             affected["siege-api"].append(path)
         if path in {"bot/app/http_api.py", "bot/app/discord_client.py", "bot/app/__init__.py"}:
             affected["siege-bot"].append(path)
         if path == "frontend/src/App.tsx" or path.startswith("frontend/src/pages/"):
             affected["siege-frontend"].append(path)
 
-    frontend_patch = _git("diff", "--unified=0", f"{base}...HEAD", "--", "frontend")
-    if any(
-        re.search(r"VITE_[A-Z0-9_]+", line)
-        for line in frontend_patch.splitlines()
-        if (line.startswith("+") and not line.startswith("+++"))
-        or (line.startswith("-") and not line.startswith("---"))
-    ):
+    if _vite_names_in_base(base) != _vite_names_in_worktree():
         affected["siege-frontend"].append("VITE_* environment contract")
 
     return {name: sorted(set(items)) for name, items in affected.items() if items}
@@ -91,7 +111,11 @@ def bypass_reason(body: str) -> str | None:
     if not match:
         return None
     reason = re.sub(r"<!--.*?-->", "", match.group(1), flags=re.DOTALL).strip()
-    if reason.lower() in {"", "n/a", "na", "none", "not applicable"}:
+    plain_reason = re.sub(r"[^A-Za-z0-9]+", " ", reason).strip()
+    if (
+        not re.search(r"[A-Za-z0-9]{3}", plain_reason)
+        or reason.lower() in {"", "n/a", "na", "none", "not applicable"}
+    ):
         return None
     return reason
 

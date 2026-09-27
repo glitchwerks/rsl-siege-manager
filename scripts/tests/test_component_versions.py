@@ -83,6 +83,7 @@ def test_bypass_requires_auditable_reason(monkeypatch) -> None:
     )
 
     assert module.check("base", allow_bypass=True, pr_body="## Version bump bypass\nN/A")
+    assert module.check("base", allow_bypass=True, pr_body="## Version bump bypass\n- [ ]")
     assert (
         module.check(
             "base",
@@ -98,13 +99,29 @@ def test_bypass_requires_auditable_reason(monkeypatch) -> None:
 
 
 def test_vite_contract_change_flags_frontend(monkeypatch) -> None:
-    def fake_git(*args: str) -> str:
-        if "--name-only" in args:
-            return "frontend/vite.config.ts\n"
-        return "+const value = import.meta.env.VITE_NEW_CONTRACT;\n"
-
-    monkeypatch.setattr(module, "_git", fake_git)
+    monkeypatch.setattr(module, "_git", lambda *_args: "frontend/vite.config.ts\n")
+    monkeypatch.setattr(module, "_vite_names_in_base", lambda _base: {"VITE_API_URL"})
+    monkeypatch.setattr(
+        module,
+        "_vite_names_in_worktree",
+        lambda: {"VITE_API_URL", "VITE_NEW_CONTRACT"},
+    )
 
     assert module.affected_components("base") == {
         "siege-frontend": ["VITE_* environment contract"]
+    }
+
+
+def test_rate_limit_change_flags_api(monkeypatch) -> None:
+    def fake_git(*args: str) -> str:
+        if "--name-only" in args:
+            return "backend/app/rate_limit.py\n"
+        return ""
+
+    monkeypatch.setattr(module, "_git", fake_git)
+    monkeypatch.setattr(module, "_vite_names_in_base", lambda _base: set())
+    monkeypatch.setattr(module, "_vite_names_in_worktree", lambda: set())
+
+    assert module.affected_components("base") == {
+        "siege-api": ["backend/app/rate_limit.py"]
     }

@@ -149,7 +149,9 @@ jobs:
           echo "✅ All required variables present"
 
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       - name: Log in to Azure
         uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3
@@ -343,10 +345,12 @@ jobs:
         env:
           PUBLIC_URL: ${{ vars.VITE_PUBLIC_URL }}
           EXPECTED_SHA: ${{ github.sha }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           python scripts/verify-deployed-versions.py \
             --url "$PUBLIC_URL" \
-            --expected-sha "$EXPECTED_SHA"
+            --expected-sha "$EXPECTED_SHA" \
+            --latest-sha-url "https://api.github.com/repos/$GITHUB_REPOSITORY/commits/main"
 
 # ── Verify production images ──────────────────────────────────────────────────
 #
@@ -494,9 +498,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ inputs.image_tag || github.sha }}
+          persist-credentials: false
 
       - name: Verify health and component versions
         env:
