@@ -26,6 +26,10 @@ param discordBotApiKey string
 @secure()
 param botApiKey string
 
+@description('Bearer token used by the bot for authenticated calls to the backend')
+@secure()
+param botServiceToken string
+
 @description('Secret key for signing JWT session cookies')
 @secure()
 param sessionSecret string
@@ -101,6 +105,12 @@ resource secretBotApiKey 'Microsoft.KeyVault/vaults/secrets@2024-11-01' = {
   properties: { value: botApiKey }
 }
 
+resource secretBotServiceToken 'Microsoft.KeyVault/vaults/secrets@2024-11-01' = {
+  parent: keyVault
+  name: 'bot-service-token'
+  properties: { value: botServiceToken }
+}
+
 resource secretSessionSecret 'Microsoft.KeyVault/vaults/secrets@2024-11-01' = {
   parent: keyVault
   name: 'session-secret'
@@ -126,3 +136,4 @@ output secretDatabaseUrlUri string = secretDatabaseUrl.properties.secretUri
 output secretDiscordTokenUri string = secretDiscordToken.properties.secretUri
 output secretDiscordBotApiKeyUri string = secretDiscordBotApiKey.properties.secretUri
 output secretBotApiKeyUri string = secretBotApiKey.properties.secretUri
+output secretBotServiceTokenUri string = secretBotServiceToken.properties.secretUri

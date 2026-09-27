@@ -131,6 +131,7 @@ The Bicep template accepts secrets as parameters at deploy time — they are wri
 | `discordClientId` | Discord OAuth2 app client ID | Discord Developer Portal → your app → OAuth2 |
 | `discordClientSecret` | Discord OAuth2 app client secret | Discord Developer Portal → your app → OAuth2 |
 | `discordRedirectUri` | Full OAuth2 callback URL | `https://<frontend-fqdn>/api/auth/callback` — use a placeholder on first deploy, update after you have the FQDN |
+| `botServiceToken` | Bot-to-backend bearer token | Supply from `BOT_SERVICE_TOKEN`; store it as an environment-scoped secret in hosted deployments |
 | `discordRequiredRole` | Discord role required to log in (optional) | Defaults to `Clan Deputies` if omitted — set this to whatever officer/manager role your clan uses |
 
 To generate a random secret for `postgresAdminPassword`, `discordBotApiKey`, `botApiKey`, and `sessionSecret`:

@@ -12,6 +12,7 @@ using 'main.bicep'
 //     --parameters discordToken="$DISCORD_TOKEN" \
 //     --parameters discordBotApiKey="$DISCORD_BOT_API_KEY" \
 //     --parameters botApiKey="$BOT_API_KEY" \
+//     --parameters botServiceToken="$BOT_SERVICE_TOKEN" \
 //     --parameters discordGuildId="$DISCORD_GUILD_ID" \
 //     --parameters sessionSecret="$SESSION_SECRET" \
 //     --parameters discordClientId="$DISCORD_CLIENT_ID" \
@@ -64,6 +65,7 @@ param discordGuildId = '' // Your Discord server ID (non-secret; ok to fill in)
 param discordToken = ''
 param discordBotApiKey = ''
 param botApiKey = ''
+param botServiceToken = ''
 
 // ── OAuth2 secrets ────────────────────────────────────────────────────────────
 // Supply at deploy time:

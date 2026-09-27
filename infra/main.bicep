@@ -46,6 +46,10 @@ param discordBotApiKey string
 @secure()
 param botApiKey string
 
+@description('Bearer token used by the bot for authenticated calls to the backend')
+@secure()
+param botServiceToken string
+
 @description('Secret key for signing JWT session cookies')
 @secure()
 param sessionSecret string
@@ -252,6 +256,7 @@ module keyVault 'modules/keyvault.bicep' = {
     discordGuildId: discordGuildId
     discordBotApiKey: discordBotApiKey
     botApiKey: botApiKey
+    botServiceToken: botServiceToken
     sessionSecret: sessionSecret
     discordClientId: discordClientId
     discordClientSecret: discordClientSecret

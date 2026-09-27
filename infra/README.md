@@ -131,6 +131,7 @@ az deployment group create \
   --parameters discordToken="$DISCORD_TOKEN" \
   --parameters discordBotApiKey="$DISCORD_BOT_API_KEY" \
   --parameters botApiKey="$BOT_API_KEY" \
+  --parameters botServiceToken="$BOT_SERVICE_TOKEN" \
   --parameters discordGuildId="$DISCORD_GUILD_ID"
 ```
 
@@ -173,6 +174,7 @@ az deployment group create \
   --parameters discordToken="$DISCORD_TOKEN" \
   --parameters discordBotApiKey="$DISCORD_BOT_API_KEY" \
   --parameters botApiKey="$BOT_API_KEY" \
+  --parameters botServiceToken="$BOT_SERVICE_TOKEN" \
   --parameters discordGuildId="$DISCORD_GUILD_ID"
 ```
 
@@ -229,7 +231,33 @@ exceptions
 | order by timestamp desc
 ```
 
-## Update a secret in Key Vault
+## Key Vault secret provenance
+
+Application secrets are declared in `modules/keyvault.bicep`. Their source
+values live in the matching GitHub `dev` or `prod` environment and are supplied
+by `infra-deploy.yml`; do not update a Bicep-managed secret directly in Key
+Vault because the next infrastructure deployment will restore the GitHub value.
+
+Two exceptions are intentional:
+
+- `cloudflare-origin-cert` is certificate material uploaded during the gated
+  custom-domain procedure. Bicep consumes its URI but does not create its value.
+- `discord-redirect-uri` is not a secret and the application receives it from
+  the `DISCORD_REDIRECT_URI` GitHub environment variable. A legacy dev-only Key
+  Vault copy is unused and should be removed during the #482 migration; do not
+  recreate it.
+
+## Rotate a Bicep-managed secret
+
+Update the environment-scoped GitHub secret, run **Infra Deploy** for that same
+environment, and verify the affected application. Promote dev and production
+separately. For `BOT_SERVICE_TOKEN`, verify an authenticated bot-to-backend call
+after the deployment; Key Vault references are versionless, so create a new API
+and bot revision if the running revisions do not pick up the new value promptly.
+
+Do not print secret values in workflow output or migration evidence.
+
+For emergency direct Key Vault recovery only:
 
 ```bash
 # Example: rotate the Discord bot token
@@ -254,6 +282,10 @@ Secrets and their consumers:
 | `discord-guild-id` | siege-api, siege-bot (as plain env var) |
 | `discord-bot-api-key` | siege-api → siege-bot HTTP auth |
 | `bot-api-key` | siege-bot inbound auth validation |
+| `bot-service-token` | siege-api validates siege-bot → backend calls |
+| `session-secret` | siege-api session-cookie signing |
+| `discord-client-id` | siege-api Discord OAuth client identification |
+| `discord-client-secret` | siege-api Discord OAuth client authentication |
 
 > `discord-bot-api-key` and `bot-api-key` must always be rotated together and
 > set to the same value. See below for details.

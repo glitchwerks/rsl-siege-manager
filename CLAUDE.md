@@ -140,7 +140,7 @@ Registry image retention is automated via a scheduled ACR Task (`weekly-purge`) 
 Two deployment workflows exist and are fully operational:
 
 - **`.github/workflows/deploy.yml`** — triggered automatically on push to `main` (deploys to dev) and on `v*` tag push (deploys to prod). Builds Docker images, pushes to ACR, then updates Container App revisions with the new image tag.
-- **`.github/workflows/infra-deploy.yml`** — manual-only (`workflow_dispatch`). Runs `az deployment group create` with the Bicep templates in `infra/`. Use this for any infrastructure change (new resource, config update, cert binding). Requires secrets configured under GitHub Settings → Environments (dev / prod).
+- **`.github/workflows/infra-deploy.yml`** — automatically deploys merged `infra/**` changes to dev and supports manually gated dev/prod runs. Runs `az deployment group create` with the Bicep templates in `infra/`. Production remains manual. Requires secrets configured under GitHub Settings → Environments (dev / prod).
 
 ## Environment Variables
 
@@ -159,7 +159,7 @@ Copy `.env.example` to `.env`. Required:
 | `AUTH_DISABLED` | backend (dev-only login bypass; startup guard blocks `true` outside development) |
 | `SESSION_SECRET` | backend (HS256 JWT signing key; required when auth is enabled) |
 | `DISCORD_REQUIRED_ROLE` | backend (Discord role name required to log in; default `Clan Deputies`; exact, case-sensitive match) |
-| `BOT_SERVICE_TOKEN` | backend (Bearer token for bot→backend calls; startup guard rejects empty string outside development) |
+| `BOT_SERVICE_TOKEN` | backend (Bearer token for bot→backend calls; startup guard rejects empty string outside development). For Azure deployments, store this as an environment-scoped GitHub secret; Bicep writes it to Key Vault as `bot-service-token`. |
 | `ALLOWED_ORIGINS` | backend (comma-separated CORS allowlist; required for non-localhost deployments) |
 | `VITE_PUBLIC_URL` | frontend (canonical URL used in `<link rel="canonical">` and `og:url` meta tags) |
 | `APPLICATIONINSIGHTS_CONNECTION_STRING` | backend, bot (optional; telemetry no-op when unset) |
