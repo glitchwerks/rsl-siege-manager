@@ -73,8 +73,8 @@ Changelog entries use component sections such as `### siege-api 1.5.0`, plus `##
 
 ```bash
 cd backend
-pip install -r requirements-dev.txt
-pytest --ignore=tests/test_schema.py -v
+uv sync --frozen --dev
+uv run pytest --ignore=tests/test_schema.py -v
 ```
 
 `test_schema.py` requires a live database and is excluded from the standard run.
@@ -93,8 +93,8 @@ There is currently no separate `npm test` command — the build serves as the in
 
 ```bash
 cd bot
-pip install -r requirements-dev.txt
-pytest
+uv sync --frozen --dev
+uv run pytest
 ```
 
 ---
@@ -105,9 +105,9 @@ pytest
 
 ```bash
 cd backend
-black .
-ruff check .
-ruff check . --fix   # auto-fix where possible
+uv run black .
+uv run ruff check .
+uv run ruff check . --fix   # auto-fix where possible
 ```
 
 ### Frontend

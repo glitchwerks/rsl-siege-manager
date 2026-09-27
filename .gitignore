@@ -50,6 +50,8 @@ coverage.xml
 
 # Docker
 .dockerignore
+!backend/.dockerignore
+!bot/.dockerignore
 
 # Azure
 .azure/

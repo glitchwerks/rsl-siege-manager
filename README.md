@@ -57,7 +57,8 @@ To stop and wipe data: `docker-compose down -v`
 
 ## Dev Mode (hot reload)
 
-Runs PostgreSQL in Docker; backend and frontend run natively for fast iteration.
+Runs PostgreSQL in Docker; backend and frontend run natively for fast iteration. Install
+[uv](https://docs.astral.sh/uv/getting-started/installation/) plus Node.js 20 first.
 
 ```bash
 # 1. Start PostgreSQL only
@@ -65,10 +66,10 @@ docker-compose up postgres
 
 # 2. Backend (new terminal)
 cd backend
-pip install -r requirements-dev.txt
-alembic upgrade head
-python scripts/seed_demo.py   # populate demo data
-uvicorn app.main:app --reload
+uv sync --frozen --dev
+uv run alembic upgrade head
+uv run python scripts/seed_demo.py   # populate demo data
+uv run uvicorn app.main:app --reload
 
 # 3. Frontend (new terminal)
 cd frontend
@@ -102,16 +103,16 @@ Migrations and seeds only need to run once per fresh volume. Data persists acros
 
 ```bash
 # Run migrations
-cd backend && alembic upgrade head
+cd backend && uv run alembic upgrade head
 
 # Seed reference + demo data
-cd backend && python scripts/seed_demo.py
+cd backend && uv run python scripts/seed_demo.py
 
 # Reference data only (no demo members/siege)
-cd backend && python scripts/seed.py
+cd backend && uv run python scripts/seed.py
 
 # Create a new migration after model changes
-cd backend && alembic revision --autogenerate -m "description"
+cd backend && uv run alembic revision --autogenerate -m "description"
 ```
 
 ## Tests
