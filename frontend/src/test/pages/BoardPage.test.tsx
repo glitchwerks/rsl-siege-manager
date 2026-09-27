@@ -574,6 +574,40 @@ describe("BoardPage — MemberBucket", () => {
       "data-member-highlighted",
       "true"
     );
+
+    await user.keyboard(" ");
+
+    expect(aethonRow).toHaveAttribute("aria-pressed", "false");
+    expect(aethonPositionOne).toHaveAttribute(
+      "data-member-highlighted",
+      "false"
+    );
+  });
+
+  it("keeps member selection accessible when assignment editing is locked", async () => {
+    const positions = [
+      makePosition({
+        id: 1,
+        member_id: 1,
+        member_name: "Aethon",
+      }),
+    ];
+    setupDefaultHandlers(
+      makeBoard(positions),
+      makeSiege({ status: "active" }),
+      members
+    );
+    renderBoard();
+    await waitFor(() =>
+      expect(screen.queryByText(/loading board/i)).not.toBeInTheDocument()
+    );
+
+    const aethonRow = screen
+      .getAllByText("Aethon")
+      .map((element) => element.closest('[aria-pressed="false"]'))
+      .find((element) => element != null) as HTMLElement;
+
+    expect(aethonRow).toHaveAttribute("aria-disabled", "false");
   });
 });
 

@@ -311,10 +311,11 @@ function DraggableMemberRow({
       }`}
       {...listeners}
       {...attributes}
+      aria-disabled={false}
       aria-pressed={isSelected}
       onClick={onSelect}
       onKeyDown={(event) => {
-        if (event.key === "Enter") {
+        if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
           onSelect();
           return;
