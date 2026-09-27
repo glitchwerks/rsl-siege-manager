@@ -1,0 +1,95 @@
+name: Version Bump Bypass Audit
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, synchronize, reopened, labeled, unlabeled, edited]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+jobs:
+  audit-bypass:
+    name: Audit version bump bypass
+    if: contains(github.event.pull_request.labels.*.name, 'skip-version-bump')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Record bypass use
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const pr = context.payload.pull_request;
+            const match = (pr.body || '').match(
+              /^## Version bump bypass[ \t]*\r?\n([\s\S]*?)(?=^## |(?![\s\S]))/m
+            );
+            const reason = (match?.[1] || '').replace(/<!--[\s\S]*?-->/g, '').trim();
+            if (!reason || ['n/a', 'na', 'none', 'not applicable'].includes(reason.toLowerCase())) {
+              core.setFailed("Add a concrete reason under the 'Version bump bypass' PR heading.");
+              return;
+            }
+
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner, repo, pull_number: pr.number, per_page: 100
+            });
+            const flagged = files.filter(({filename, patch = ''}) =>
+              filename.startsWith('backend/app/api/') ||
+              filename.startsWith('backend/app/schemas/') ||
+              filename.startsWith('backend/app/auth/') ||
+              filename === 'backend/app/main.py' ||
+              ['bot/app/http_api.py', 'bot/app/discord_client.py', 'bot/app/__init__.py'].includes(filename) ||
+              filename === 'frontend/src/App.tsx' ||
+              filename.startsWith('frontend/src/pages/') ||
+              (/^[+-].*VITE_[A-Z0-9_]+/m.test(patch))
+            ).map(({filename}) => filename);
+
+            const auditKey = `Audit key: ${owner}/${repo}#${pr.number}`;
+            const existing = await github.paginate(github.rest.issues.listForRepo, {
+              owner, repo, state: 'all', labels: 'version-bump-bypass', per_page: 100
+            });
+            if (existing.some(issue => (issue.body || '').includes(auditKey))) {
+              core.info('Bypass use is already recorded.');
+              return;
+            }
+
+            try {
+              await github.rest.issues.getLabel({owner, repo, name: 'version-bump-bypass'});
+            } catch (error) {
+              if (error.status !== 404) throw error;
+              await github.rest.issues.createLabel({
+                owner, repo, name: 'version-bump-bypass', color: 'FBCA04',
+                description: 'Audit record for an approved component-version bypass'
+              });
+            }
+
+            const created = await github.rest.issues.create({
+              owner,
+              repo,
+              title: `[version-bump bypass] PR #${pr.number}`,
+              body: [
+                auditKey,
+                '',
+                `Pull request: #${pr.number}`,
+                '',
+                'Flagged surface paths:',
+                ...(flagged.length ? flagged.map(path => `- \`${path}\``) : ['- VITE_* contract change']),
+                '',
+                'Why bypass?',
+                reason,
+              ].join('\n'),
+              labels: ['version-bump-bypass'],
+              assignees: ['cbeaulieu-gt'],
+            });
+
+            const open = await github.paginate(github.rest.issues.listForRepo, {
+              owner, repo, state: 'open', labels: 'version-bump-bypass', per_page: 100
+            });
+            if (open.length % 5 === 0) {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: created.data.number,
+                body: '@cbeaulieu-gt review needed: the open version-bump bypass queue reached a multiple of five.'
+              });
+            }

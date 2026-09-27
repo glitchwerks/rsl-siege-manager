@@ -1,0 +1,30 @@
+name: Component Version Check
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, labeled, unlabeled, edited]
+
+permissions:
+  contents: read
+
+jobs:
+  component-version-discipline:
+    name: Component version discipline
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout pull request
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Check required component bumps
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          HAS_BYPASS: ${{ contains(github.event.pull_request.labels.*.name, 'skip-version-bump') }}
+        run: |
+          args=(--base "${{ github.event.pull_request.base.sha }}")
+          if [[ "$HAS_BYPASS" == "true" ]]; then
+            args+=(--allow-bypass)
+          fi
+          python scripts/check-component-versions.py "${args[@]}"

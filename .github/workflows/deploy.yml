@@ -174,14 +174,15 @@ jobs:
           IMAGE=${{ vars.ACR_LOGIN_SERVER }}/${{ matrix.service }}
           BUILD_NUM=${{ github.run_number }}
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          FRONTEND_BASE_VER=$(node -p "require('./frontend/package.json').version")
+          FRONTEND_VERSION="${FRONTEND_BASE_VER}+${BUILD_NUM}.${SHORT_SHA}"
 
           # The frontend bakes VITE_APP_VERSION into the JS bundle at build time
           # (Vite replaces import.meta.env.VITE_APP_VERSION statically).
-          # Other services receive it as an unused build-arg so the same docker
-          # build command works across all matrix legs without branching.
+          # The API receives the same value as FRONTEND_VERSION so /api/version
+          # can report the exact frontend artifact built from this commit.
           if [ "${{ matrix.service }}" = "siege-frontend" ]; then
-            BASE_VER=$(node -p "require('./frontend/package.json').version")
-            VITE_APP_VERSION="${BASE_VER}+${BUILD_NUM}.${SHORT_SHA}"
+            VITE_APP_VERSION="$FRONTEND_VERSION"
           else
             VITE_APP_VERSION="unused"
           fi
@@ -189,6 +190,7 @@ jobs:
           docker build \
             --build-arg GIT_SHA=${{ github.sha }} \
             --build-arg BUILD_NUMBER=${BUILD_NUM} \
+            --build-arg FRONTEND_VERSION=${FRONTEND_VERSION} \
             --build-arg VITE_APP_VERSION=${VITE_APP_VERSION} \
             -t "${IMAGE}:${{ github.sha }}" \
             ${{ matrix.context }}
@@ -321,6 +323,30 @@ jobs:
           resourceGroup: ${{ vars.RESOURCE_GROUP }}
           containerAppName: siege-web-bot-dev
           imageToDeploy: ${{ vars.ACR_LOGIN_SERVER }}/siege-bot:${{ github.sha }}
+
+  verify-dev-deployment:
+    name: Verify dev deployment versions
+    needs:
+      - deploy-frontend-dev
+      - deploy-bot-dev
+    runs-on: ubuntu-latest
+    if: |
+      needs.deploy-frontend-dev.result == 'success' &&
+      needs.deploy-bot-dev.result == 'success'
+    environment: dev
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Verify health and component versions
+        env:
+          PUBLIC_URL: ${{ vars.VITE_PUBLIC_URL }}
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          python scripts/verify-deployed-versions.py \
+            --url "$PUBLIC_URL" \
+            --expected-sha "$EXPECTED_SHA"
 
 # ── Verify production images ──────────────────────────────────────────────────
 #
@@ -467,32 +493,16 @@ jobs:
     environment: prod
 
     steps:
-      - name: Verify health and release SHA
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.image_tag || github.sha }}
+
+      - name: Verify health and component versions
         env:
           PUBLIC_URL: ${{ vars.VITE_PUBLIC_URL }}
           EXPECTED_SHA: ${{ inputs.image_tag || github.sha }}
         run: |
-          if [[ -z "$PUBLIC_URL" ]]; then
-            echo "❌ Missing VITE_PUBLIC_URL in the prod environment"
-            exit 1
-          fi
-
-          for attempt in {1..30}; do
-            health=$(curl --fail --silent --show-error "$PUBLIC_URL/api/health" || true)
-            version=$(curl --fail --silent --show-error "$PUBLIC_URL/api/version" || true)
-
-            if jq -e '.status == "healthy"' <<<"$health" >/dev/null 2>&1 &&
-               jq -e --arg sha "$EXPECTED_SHA" '.git_sha == $sha' <<<"$version" >/dev/null 2>&1; then
-              echo "✅ Production is healthy on release SHA $EXPECTED_SHA"
-              jq '{backend_version, bot_version, frontend_version, git_sha}' <<<"$version"
-              exit 0
-            fi
-
-            echo "Attempt ${attempt}/30: production has not converged on $EXPECTED_SHA"
-            sleep 10
-          done
-
-          echo "❌ Production did not converge on release SHA $EXPECTED_SHA"
-          echo "Last health response: $health"
-          echo "Last version response: $version"
-          exit 1
+          python scripts/verify-deployed-versions.py \
+            --url "$PUBLIC_URL" \
+            --expected-sha "$EXPECTED_SHA"
