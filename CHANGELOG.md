@@ -7,11 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Components changed: siege-api.
+Components changed: siege-api, siege-frontend.
 
 ### siege-api 1.4.3
 
 - Fixed `/api/version` so local Compose reports the canonical frontend version and deployed environments report the exact frontend build version. (#311)
+
+### siege-frontend 1.5.0
+
+- Added selected-member assignment highlighting: selecting a member in the Board sidebar highlights every matching building-grid position; selecting the same member again clears the highlight. (#532)
 
 ### Infrastructure / repo
 
