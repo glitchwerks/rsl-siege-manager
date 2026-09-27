@@ -122,6 +122,8 @@ param frontendMinReplicas = 0
 // Fallback alert email recipient. Slack is the primary infrastructure-alert route.
 // Confirmed by user: cmb_dev@outlook.com (2026-04-29, Issue #246).
 param alertEmail = 'cmb_dev@outlook.com'
+// Supplied by Infra Deploy from the dev GitHub Environment secret.
+param slackAlertWebhookUrl = ''
 
 // ── External sidecar ──────────────────────────────────────────────────────────
 // Default false: bundled bot Container App is provisioned as normal.
