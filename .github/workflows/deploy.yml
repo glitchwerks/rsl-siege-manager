@@ -40,8 +40,9 @@ on:
 
 # ── Concurrency ────────────────────────────────────────────────────────────────
 #
-# Main-push runs share the group `deploy-main-pipeline`; a fast second commit
-# cancels the in-progress run so the newer code takes over immediately.
+# Main-push runs share the group `deploy-main-pipeline` and run in order. Every
+# merged commit must publish its immutable images because an automatic infra
+# deployment may be waiting for that exact SHA before applying Bicep.
 #
 # Tag-triggered runs get a unique group per tag (`deploy-tag-refs/tags/v1.2.3`)
 # so two different tags never cancel each other — each prod deploy completes
@@ -76,7 +77,7 @@ concurrency:
       github.event_name == 'workflow_dispatch' && github.run_id ||
       'deploy-main-pipeline'
     }}
-  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+  cancel-in-progress: false
 
 jobs:
 

@@ -119,6 +119,8 @@ jobs:
       - name: Resolve image tag (dev)
         env:
           ACR_NAME: ${{ vars.ACR_NAME }}
+          # Allow queued main deploys enough time to publish this commit's images.
+          ACR_WAIT_ATTEMPTS: 80
         run: |
           if [[ "${{ github.event_name }}" == "push" ]]; then
             # deploy.yml builds this same commit concurrently. Wait for its exact

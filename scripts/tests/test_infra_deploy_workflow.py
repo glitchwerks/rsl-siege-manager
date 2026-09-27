@@ -3,6 +3,7 @@
 from pathlib import Path
 
 WORKFLOW_PATH = Path(__file__).parents[2] / ".github" / "workflows" / "infra-deploy.yml"
+APP_DEPLOY_WORKFLOW_PATH = Path(__file__).parents[2] / ".github" / "workflows" / "deploy.yml"
 
 
 def _workflow_text() -> str:
@@ -53,6 +54,14 @@ def test_automatic_deploy_waits_for_exact_commit_images() -> None:
     assert 'IMAGE_TAG="$GITHUB_SHA"' in workflow
     assert "./scripts/wait-for-acr-images.sh" in workflow
     assert "siege-api siege-frontend siege-bot" in workflow
+    assert "ACR_WAIT_ATTEMPTS: 80" in workflow
+
+
+def test_main_image_builds_cannot_be_cancelled_while_infra_waits() -> None:
+    workflow = APP_DEPLOY_WORKFLOW_PATH.read_text(encoding="utf-8")
+
+    assert "'deploy-main-pipeline'" in workflow
+    assert "cancel-in-progress: false" in workflow
 
 
 def test_automatic_deploy_preserves_committed_sidecar_setting() -> None:
