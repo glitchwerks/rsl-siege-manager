@@ -717,6 +717,11 @@ function BuildingsTab({
 // Renders children inside a DndContext when active=true, or unwrapped otherwise.
 // This ensures DnD sensors and event listeners are only active on the buildings tab.
 
+const memberScreenReaderInstructions = {
+  draggable:
+    "Press Enter or Space to select this member and highlight their assignments. Press the same key again to clear the selection.",
+};
+
 function ConditionalDndContext({
   sensors,
   onDragStart,
@@ -737,6 +742,9 @@ function ConditionalDndContext({
   return (
     <DndContext
       sensors={sensors}
+      accessibility={{
+        screenReaderInstructions: memberScreenReaderInstructions,
+      }}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
       onDragCancel={onDragCancel}

@@ -532,6 +532,11 @@ describe("BoardPage — MemberBucket", () => {
     await waitFor(() =>
       expect(screen.queryByText(/loading board/i)).not.toBeInTheDocument()
     );
+    expect(
+      screen.getByText(
+        /press enter or space to select this member and highlight their assignments/i
+      )
+    ).toBeInTheDocument();
 
     const aethonRow = screen
       .getAllByText("Aethon")
@@ -552,6 +557,13 @@ describe("BoardPage — MemberBucket", () => {
       "data-member-highlighted",
       "true"
     );
+    expect(aethonPositionOne).toHaveClass(
+      "bg-violet-50",
+      "border-violet-500",
+      "ring-2",
+      "ring-inset",
+      "ring-violet-500"
+    );
     expect(aethonPositionTwo).toHaveAttribute(
       "data-member-highlighted",
       "true"
@@ -566,11 +578,23 @@ describe("BoardPage — MemberBucket", () => {
       "data-member-highlighted",
       "false"
     );
+    expect(aethonPositionOne).not.toHaveClass(
+      "bg-violet-50",
+      "border-violet-500",
+      "ring-violet-500"
+    );
     expect(aethonPositionTwo).toHaveAttribute(
       "data-member-highlighted",
       "false"
     );
     expect(brintPosition).toHaveAttribute("data-member-highlighted", "true");
+    expect(brintPosition).toHaveClass(
+      "bg-violet-50",
+      "border-violet-500",
+      "ring-2",
+      "ring-inset",
+      "ring-violet-500"
+    );
 
     await user.click(brintRow);
 
@@ -582,6 +606,11 @@ describe("BoardPage — MemberBucket", () => {
     expect(aethonPositionTwo).toHaveAttribute(
       "data-member-highlighted",
       "false"
+    );
+    expect(brintPosition).not.toHaveClass(
+      "bg-violet-50",
+      "border-violet-500",
+      "ring-violet-500"
     );
 
     aethonRow.focus();
