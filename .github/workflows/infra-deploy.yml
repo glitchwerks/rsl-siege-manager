@@ -2,11 +2,10 @@ name: Infra Deploy
 
 # ── Purpose ────────────────────────────────────────────────────────────────────
 #
-# Manual-only workflow for deploying infrastructure changes via Bicep.
+# Hybrid workflow for deploying infrastructure changes via Bicep.
 #
-# workflow_dispatch only — infra changes are intentional, never automatic.
-# Automatic deploys on push are deliberately excluded; infra changes require
-# a human to pick a target environment and initiate the run.
+# Pushes to main that touch infra/** deploy automatically to dev. Production
+# remains workflow_dispatch-only so it always retains an explicit human gate.
 #
 # Infra CI gates run first before any deployment (lint → build → validate →
 # what-if). The deploy job will not start until all four gates pass.
@@ -27,6 +26,11 @@ name: Infra Deploy
 # ──────────────────────────────────────────────────────────────────────────────
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'infra/**'
   workflow_dispatch:
     inputs:
       environment:
@@ -49,7 +53,7 @@ on:
 # queue and wait.
 
 concurrency:
-  group: infra-deploy-${{ inputs.environment }}
+  group: infra-deploy-${{ github.event_name == 'push' && 'dev' || inputs.environment }}
   cancel-in-progress: false
 
 # ── Permissions ──────────────────────────────────────────────────────────────
@@ -76,14 +80,14 @@ jobs:
 
 # ── Deploy (dev) ─────────────────────────────────────────────────────────────
 #
-# Deploys infra to the dev environment. The `environment: dev` block is the
-# GitHub Environment approval gate — configure Required Reviewers in Settings
-# → Environments → dev to enforce manual sign-off before deployment begins.
+# Deploys infra to dev automatically after an infra/** change reaches main, or
+# manually when workflow_dispatch selects dev. The dev environment permits main
+# and intentionally has no required-reviewer gate.
 
   deploy-dev:
     name: Deploy Infra (dev)
     needs: infra-gates
-    if: inputs.environment == 'dev'
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.environment == 'dev')
     runs-on: ubuntu-latest
     environment: dev
 
@@ -95,7 +99,7 @@ jobs:
         uses: ./.github/actions/validate-external-sidecar
         with:
           param-file: infra/main.dev.bicepparam
-          use-external-sidecar: ${{ inputs.useExternalSidecar }}
+          use-external-sidecar: ${{ inputs.useExternalSidecar || false }}
 
       - name: Log in to Azure
         uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3
@@ -134,7 +138,7 @@ jobs:
             --parameters discordClientSecret="${{ secrets.DISCORD_CLIENT_SECRET }}" \
             --parameters discordRedirectUri="${{ vars.DISCORD_REDIRECT_URI }}" \
             --parameters imageTag="${{ env.IMAGE_TAG }}" \
-            --parameters useExternalSidecar=${{ inputs.useExternalSidecar }}
+            --parameters useExternalSidecar=${{ inputs.useExternalSidecar || false }}
 
 # ── Deploy (prod) ────────────────────────────────────────────────────────────
 #
@@ -145,7 +149,7 @@ jobs:
   deploy-prod:
     name: Deploy Infra (prod)
     needs: infra-gates
-    if: inputs.environment == 'prod'
+    if: github.event_name == 'workflow_dispatch' && inputs.environment == 'prod'
     runs-on: ubuntu-latest
     environment: prod
 
