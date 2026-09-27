@@ -819,7 +819,7 @@ Two deployment workflows exist:
 | `deploy.yml` | Automatic — `push` to `main`; `v*` tag for prod | Application code (Docker images → Container Apps) |
 | `infra-deploy.yml` | Automatic to dev on `infra/**` pushes to `main`; manual to dev/prod | Bicep templates → Azure resource group |
 
-**Bicep changes deploy automatically to dev after merge.** Production remains an explicit promotion: manually run `infra-deploy.yml` with `environment=prod` after the dev deployment and validation succeed.
+**Bicep changes deploy automatically to dev after merge.** The workflow waits for the same commit's immutable application images before applying Bicep, so a change that touches both application and infrastructure files cannot race the normal application deployment or restore stale images. Automatic runs use the committed `useExternalSidecar` value from `main.dev.bicepparam`; manual runs may override it. Production remains an explicit promotion: manually run `infra-deploy.yml` with `environment=prod` after the dev deployment and validation succeed.
 
 ### What the What-if check does (and does not) do
 

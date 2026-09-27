@@ -95,35 +95,61 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
 
-      - name: Validate external sidecar configuration
+      - name: Validate external sidecar configuration (automatic)
+        if: github.event_name == 'push'
+        run: |
+          if grep -Eq '^param useExternalSidecar = true([[:space:]]|$)' infra/main.dev.bicepparam; then
+            ./scripts/validate-external-sidecar.sh infra/main.dev.bicepparam
+          else
+            echo "useExternalSidecar=false in the committed dev parameters; skipping external sidecar validation"
+          fi
+
+      - name: Validate external sidecar configuration (manual)
+        if: github.event_name == 'workflow_dispatch'
         uses: ./.github/actions/validate-external-sidecar
         with:
           param-file: infra/main.dev.bicepparam
-          use-external-sidecar: ${{ inputs.useExternalSidecar || false }}
+          use-external-sidecar: ${{ inputs.useExternalSidecar }}
 
       - name: Log in to Azure
         uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Get current image tag (dev)
+      - name: Resolve image tag (dev)
+        env:
+          ACR_NAME: ${{ vars.ACR_NAME }}
         run: |
-          # Preserve the currently-running image tag to prevent silent rollback to :latest.
-          # Falls back to 'latest' if the container app doesn't exist (e.g., first deployment).
-          IMAGE_TAG=$(az containerapp show \
-            --name siege-web-api-dev \
-            --resource-group ${{ vars.RESOURCE_GROUP }} \
-            --query "properties.template.containers[0].image" \
-            --output tsv 2>/dev/null | awk -F: '{print $NF}') || IMAGE_TAG="latest"
-          if [ -z "$IMAGE_TAG" ]; then
-            echo "⚠️  Could not determine current image tag, defaulting to 'latest'"
-            IMAGE_TAG="latest"
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            # deploy.yml builds this same commit concurrently. Wait for its exact
+            # images so both workflows converge on one deterministic revision.
+            IMAGE_TAG="$GITHUB_SHA"
+            ./scripts/wait-for-acr-images.sh \
+              "$ACR_NAME" \
+              "$IMAGE_TAG" \
+              siege-api siege-frontend siege-bot
+          else
+            # Manual infra recovery preserves the currently-running application.
+            IMAGE_TAG=$(az containerapp show \
+              --name siege-web-api-dev \
+              --resource-group ${{ vars.RESOURCE_GROUP }} \
+              --query "properties.template.containers[0].image" \
+              --output tsv 2>/dev/null | awk -F: '{print $NF}') || IMAGE_TAG="latest"
+            if [[ -z "$IMAGE_TAG" ]]; then
+              echo "⚠️  Could not determine current image tag, defaulting to 'latest'"
+              IMAGE_TAG="latest"
+            fi
           fi
           echo "Using image tag: ${IMAGE_TAG}"
-          echo "IMAGE_TAG=${IMAGE_TAG}" >> $GITHUB_ENV
+          echo "IMAGE_TAG=${IMAGE_TAG}" >> "$GITHUB_ENV"
 
       - name: Deploy infra (dev)
         run: |
+          sidecar_parameters=()
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            sidecar_parameters+=(--parameters "useExternalSidecar=${{ inputs.useExternalSidecar }}")
+          fi
+
           az deployment group create \
             --resource-group ${{ vars.RESOURCE_GROUP }} \
             --template-file infra/main.bicep \
@@ -138,7 +164,7 @@ jobs:
             --parameters discordClientSecret="${{ secrets.DISCORD_CLIENT_SECRET }}" \
             --parameters discordRedirectUri="${{ vars.DISCORD_REDIRECT_URI }}" \
             --parameters imageTag="${{ env.IMAGE_TAG }}" \
-            --parameters useExternalSidecar=${{ inputs.useExternalSidecar || false }}
+            "${sidecar_parameters[@]}"
 
 # ── Deploy (prod) ────────────────────────────────────────────────────────────
 #

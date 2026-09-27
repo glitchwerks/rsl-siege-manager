@@ -45,3 +45,20 @@ def test_push_runs_share_the_dev_concurrency_group() -> None:
         "group: infra-deploy-${{ github.event_name == 'push' && 'dev' || "
         "inputs.environment }}"
     ) in workflow
+
+
+def test_automatic_deploy_waits_for_exact_commit_images() -> None:
+    workflow = _workflow_text()
+
+    assert 'IMAGE_TAG="$GITHUB_SHA"' in workflow
+    assert "./scripts/wait-for-acr-images.sh" in workflow
+    assert "siege-api siege-frontend siege-bot" in workflow
+
+
+def test_automatic_deploy_preserves_committed_sidecar_setting() -> None:
+    workflow = _workflow_text()
+
+    assert "if [[ \"${{ github.event_name }}\" == \"workflow_dispatch\" ]]; then" in workflow
+    assert 'sidecar_parameters+=(--parameters "useExternalSidecar=${{ inputs.useExternalSidecar }}")' in workflow
+    assert '"${sidecar_parameters[@]}"' in workflow
+    assert "useExternalSidecar=${{ inputs.useExternalSidecar || false }}" not in workflow
