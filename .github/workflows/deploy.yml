@@ -4,13 +4,12 @@ name: Deploy
 #
 # push to main          → CI tests + build images + deploy to dev only.
 #
-# push a v* tag         → deploy to prod only (no rebuild). The images were
-#                         already built and pushed when the tagged commit was
-#                         merged to main. github.sha on a tag-triggered run
-#                         equals the commit the tag points at, so
-#                         `siege-api:<sha>` resolves to the exact image that
-#                         was validated in dev. Tag creation IS the human
-#                         approval step — no GitHub environment gate needed.
+# push a v* tag         → wait for all matching SHA-tagged images, then deploy
+#                         them to prod. The images are built when the tagged
+#                         commit is merged to main, but that independent run
+#                         may still be publishing when the release tag arrives.
+#                         Tag creation IS the human approval step — no GitHub
+#                         environment gate is needed.
 #
 # workflow_dispatch     → manual escape hatch. Choose dev or prod and,
 #                         optionally, supply an explicit SHA tag to deploy.
@@ -280,11 +279,44 @@ jobs:
           containerAppName: siege-web-bot-dev
           imageToDeploy: ${{ vars.ACR_LOGIN_SERVER }}/siege-bot:${{ github.sha }}
 
+# ── Verify production images ──────────────────────────────────────────────────
+#
+# A release tag can be pushed before the independent main-branch workflow has
+# finished publishing all three images. Wait for the exact SHA tag in prod ACR
+# so a green deployment can never silently retain a stale image.
+
+  verify-prod-images:
+    name: Verify production images
+    runs-on: ubuntu-latest
+    if: |
+      (github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v')) ||
+      (github.event_name == 'workflow_dispatch' && inputs.environment == 'prod')
+    environment: prod
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Log in to Azure
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Wait for exact release images
+        env:
+          ACR_NAME: ${{ vars.ACR_NAME }}
+          IMAGE_TAG: ${{ inputs.image_tag || github.sha }}
+        run: |
+          ./scripts/wait-for-acr-images.sh \
+            "$ACR_NAME" \
+            "$IMAGE_TAG" \
+            siege-api siege-frontend siege-bot
+
 # ── Deploy API (prod) ──────────────────────────────────────────────────────────
 #
 # Triggered by a v* tag push or a manual workflow_dispatch targeting prod.
-# There is no dependency on any dev job — prod deploys run directly from the
-# trigger without waiting for (or requiring) a preceding dev run.
+# Production does not depend on a dev deployment, but it does require the image
+# availability gate above to prove that the exact release artifacts exist.
 #
 # The image SHA is resolved as:
 #   tag push          → github.sha   (the commit the tag points at; built
@@ -296,9 +328,10 @@ jobs:
 
   deploy-api-prod:
     name: Deploy API (prod)
+    needs: verify-prod-images
     runs-on: ubuntu-latest
     if: |
-      always() && (
+      needs.verify-prod-images.result == 'success' && (
         (github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v')) ||
         (github.event_name == 'workflow_dispatch' && inputs.environment == 'prod')
       )
@@ -369,3 +402,54 @@ jobs:
           resourceGroup: ${{ vars.RESOURCE_GROUP }}
           containerAppName: siege-web-bot-prod
           imageToDeploy: ${{ vars.ACR_LOGIN_SERVER }}/siege-bot:${{ inputs.image_tag || github.sha }}
+
+# ── Verify production deployment ──────────────────────────────────────────────
+#
+# Container Apps can finish updating shortly after the deploy action returns.
+# Poll the public endpoint and fail unless it becomes healthy on the exact
+# release SHA. Component-version completeness is tracked separately in #311.
+
+  verify-prod-deployment:
+    name: Verify production deployment
+    needs:
+      - deploy-frontend-prod
+      - deploy-bot-prod
+    runs-on: ubuntu-latest
+    if: |
+      needs.deploy-frontend-prod.result == 'success' &&
+      needs.deploy-bot-prod.result == 'success' && (
+        (github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v')) ||
+        (github.event_name == 'workflow_dispatch' && inputs.environment == 'prod')
+      )
+    environment: prod
+
+    steps:
+      - name: Verify health and release SHA
+        env:
+          PUBLIC_URL: ${{ vars.VITE_PUBLIC_URL }}
+          EXPECTED_SHA: ${{ inputs.image_tag || github.sha }}
+        run: |
+          if [[ -z "$PUBLIC_URL" ]]; then
+            echo "❌ Missing VITE_PUBLIC_URL in the prod environment"
+            exit 1
+          fi
+
+          for attempt in {1..30}; do
+            health=$(curl --fail --silent --show-error "$PUBLIC_URL/api/health" || true)
+            version=$(curl --fail --silent --show-error "$PUBLIC_URL/api/version" || true)
+
+            if jq -e '.status == "healthy"' <<<"$health" >/dev/null 2>&1 &&
+               jq -e --arg sha "$EXPECTED_SHA" '.git_sha == $sha' <<<"$version" >/dev/null 2>&1; then
+              echo "✅ Production is healthy on release SHA $EXPECTED_SHA"
+              jq '{backend_version, bot_version, frontend_version, git_sha}' <<<"$version"
+              exit 0
+            fi
+
+            echo "Attempt ${attempt}/30: production has not converged on $EXPECTED_SHA"
+            sleep 10
+          done
+
+          echo "❌ Production did not converge on release SHA $EXPECTED_SHA"
+          echo "Last health response: $health"
+          echo "Last version response: $version"
+          exit 1
