@@ -75,12 +75,37 @@ def test_direct_version_regression_fails_without_surface_change(monkeypatch) -> 
     assert "must not move backward" in errors[0]
 
 
+def test_bypass_does_not_allow_version_regression(monkeypatch) -> None:
+    monkeypatch.setattr(
+        module,
+        "affected_components",
+        lambda _base: {"siege-api": ["backend/app/api/version.py"]},
+    )
+
+    def version_at(component, revision=None):
+        if component.name == "siege-api":
+            return "1.4.2" if revision else "1.4.1"
+        return "1.4.2"
+
+    monkeypatch.setattr(module, "_version_at", version_at)
+
+    errors = module.check(
+        "base",
+        allow_bypass=True,
+        pr_body="## Version bump bypass\nRefactor preserves the public contract.",
+    )
+
+    assert len(errors) == 1
+    assert "must not move backward" in errors[0]
+
+
 def test_bypass_requires_auditable_reason(monkeypatch) -> None:
     monkeypatch.setattr(
         module,
         "affected_components",
         lambda _base: {"siege-api": ["backend/app/api/version.py"]},
     )
+    monkeypatch.setattr(module, "_version_at", lambda _component, revision=None: "1.4.2")
 
     assert module.check("base", allow_bypass=True, pr_body="## Version bump bypass\nN/A")
     assert module.check("base", allow_bypass=True, pr_body="## Version bump bypass\n- [ ]")

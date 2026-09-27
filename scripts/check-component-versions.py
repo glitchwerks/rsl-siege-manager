@@ -129,7 +129,6 @@ def check(base: str, allow_bypass: bool = False, pr_body: str = "") -> list[str]
                 "'Version bump bypass' PR heading"
             ]
         print("Version bump bypass accepted; the audit workflow will record its use.")
-        return []
 
     errors: list[str] = []
     versions: dict[str, tuple[tuple[int, int, int], tuple[int, int, int], str, str]] = {}
@@ -149,6 +148,8 @@ def check(base: str, allow_bypass: bool = False, pr_body: str = "") -> list[str]
             )
 
     for name, paths in affected.items():
+        if allow_bypass:
+            continue
         if name not in versions:
             continue
         component = COMPONENTS[name]

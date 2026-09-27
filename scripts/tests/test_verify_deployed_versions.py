@@ -97,3 +97,25 @@ def test_newer_selected_sha_supersedes_verification(monkeypatch) -> None:
 
     assert module.superseding_sha("https://example.test/main", "older-sha") == "newer-sha"
     assert module.superseding_sha(None, "older-sha") is None
+
+
+def test_legacy_rollback_allows_missing_frontend_metadata(tmp_path, monkeypatch) -> None:
+    _version_files(tmp_path, monkeypatch)
+    sha = "abcdef0123456789"
+    version = {
+        "backend_version": "1.4.2+42.abcdef0",
+        "bot_version": "1.4.3+42.abcdef0",
+        "frontend_version": None,
+        "git_sha": sha,
+    }
+
+    assert (
+        module.validate(
+            {"status": "healthy"},
+            version,
+            None,
+            sha,
+            verify_frontend=False,
+        )
+        == []
+    )

@@ -497,17 +497,31 @@ jobs:
     environment: prod
 
     steps:
-      - name: Checkout code
+      - name: Checkout verification tooling
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          path: verifier
+          persist-credentials: false
+
+      - name: Checkout deployed revision metadata
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ inputs.image_tag || github.sha }}
+          path: target
           persist-credentials: false
 
       - name: Verify health and component versions
+        working-directory: target
         env:
           PUBLIC_URL: ${{ vars.VITE_PUBLIC_URL }}
           EXPECTED_SHA: ${{ inputs.image_tag || github.sha }}
         run: |
-          python scripts/verify-deployed-versions.py \
+          legacy=()
+          if ! grep -q 'dist/version.json' frontend/Dockerfile; then
+            echo "Legacy rollback target has no frontend marker; using the documented reduced check."
+            legacy+=(--legacy-without-frontend-marker)
+          fi
+          python ../verifier/scripts/verify-deployed-versions.py \
             --url "$PUBLIC_URL" \
-            --expected-sha "$EXPECTED_SHA"
+            --expected-sha "$EXPECTED_SHA" \
+            "${legacy[@]}"

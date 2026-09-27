@@ -37,8 +37,9 @@ def expected_versions(version: dict[str, object], expected_sha: str) -> dict[str
 def validate(
     health: dict[str, object],
     version: dict[str, object],
-    frontend_marker: dict[str, object],
+    frontend_marker: dict[str, object] | None,
     expected_sha: str,
+    verify_frontend: bool = True,
 ) -> list[str]:
     errors: list[str] = []
     if health.get("status") != "healthy":
@@ -48,14 +49,20 @@ def validate(
     except (ValueError, KeyError, json.JSONDecodeError) as exc:
         return [str(exc)]
     for key, value in expected.items():
+        if not verify_frontend and key == "frontend_version":
+            continue
         if version.get(key) != value:
             errors.append(f"{key} mismatch: expected {value!r}, got {version.get(key)!r}")
-    for key in ("frontend_version", "git_sha"):
-        if frontend_marker.get(key) != expected[key]:
-            errors.append(
-                f"frontend marker {key} mismatch: expected {expected[key]!r}, "
-                f"got {frontend_marker.get(key)!r}"
-            )
+    if verify_frontend:
+        if frontend_marker is None:
+            errors.append("frontend marker is missing")
+        else:
+            for key in ("frontend_version", "git_sha"):
+                if frontend_marker.get(key) != expected[key]:
+                    errors.append(
+                        f"frontend marker {key} mismatch: expected {expected[key]!r}, "
+                        f"got {frontend_marker.get(key)!r}"
+                    )
     return errors
 
 
@@ -87,6 +94,11 @@ def main() -> int:
         help="skip successfully if this endpoint reports a newer selected SHA",
     )
     parser.add_argument(
+        "--legacy-without-frontend-marker",
+        action="store_true",
+        help="for rollback only: verify health, API, bot, and SHA without frontend metadata",
+    )
+    parser.add_argument(
         "--attempts", type=int, default=int(os.getenv("VERSION_VERIFY_ATTEMPTS", "30"))
     )
     parser.add_argument(
@@ -110,8 +122,18 @@ def main() -> int:
                 return 0
             health = _get_json(f"{base_url}/api/health")
             version = _get_json(f"{base_url}/api/version")
-            frontend_marker = _get_json(f"{base_url}/version.json")
-            last_errors = validate(health, version, frontend_marker, args.expected_sha)
+            frontend_marker = (
+                None
+                if args.legacy_without_frontend_marker
+                else _get_json(f"{base_url}/version.json")
+            )
+            last_errors = validate(
+                health,
+                version,
+                frontend_marker,
+                args.expected_sha,
+                verify_frontend=not args.legacy_without_frontend_marker,
+            )
             if not last_errors:
                 print(json.dumps(version, sort_keys=True))
                 print(f"Deployment is healthy with exact versions for {args.expected_sha}.")
