@@ -1,4 +1,5 @@
-FROM mcr.microsoft.com/playwright/python:v1.49.0-noble
+# Keep the preinstalled browsers aligned with the Playwright version in uv.lock.
+FROM mcr.microsoft.com/playwright/python:v1.63.0-noble
 
 COPY --from=ghcr.io/astral-sh/uv:0.11.28 /uv /uvx /bin/
 
