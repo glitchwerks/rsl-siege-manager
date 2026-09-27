@@ -1,0 +1,46 @@
+name: Component Version Check
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, labeled, unlabeled, edited]
+
+permissions:
+  contents: read
+
+jobs:
+  component-version-discipline:
+    name: Component version discipline
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout trusted checker
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: trusted
+          persist-credentials: false
+
+      - name: Checkout pull request
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          path: pr
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check required component bumps
+        working-directory: pr
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          HAS_BYPASS: ${{ contains(github.event.pull_request.labels.*.name, 'skip-version-bump') }}
+        run: |
+          args=(--base "${{ github.event.pull_request.base.sha }}")
+          if [[ "$HAS_BYPASS" == "true" ]]; then
+            args+=(--allow-bypass)
+          fi
+          checker=../trusted/scripts/check-component-versions.py
+          # Bootstrap only: the base of the PR that first adds this gate has no
+          # trusted copy yet. Every later PR must execute the base copy.
+          if [[ ! -f "$checker" ]]; then
+            checker=scripts/check-component-versions.py
+          fi
+          python "$checker" "${args[@]}"

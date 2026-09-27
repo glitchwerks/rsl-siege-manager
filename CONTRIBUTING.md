@@ -40,6 +40,33 @@ refactor(scope): short description
 
 ---
 
+## Component versioning
+
+The repository ships one lockstep `v*` release tag, but each deployable component has its own canonical semantic version:
+
+| Component | Canonical version | External surface |
+| --- | --- | --- |
+| `siege-api` | `backend/VERSION` | `/api/*` routes, request/response schemas, and authentication contracts |
+| `siege-frontend` | `frontend/package.json#version` | top-level/bookmarkable routes and `VITE_*` environment contracts |
+| `siege-bot` | `bot/VERSION` | HTTP sidecar endpoints and Discord slash commands |
+
+Use this decision table in every pull request:
+
+| Change | Required bump |
+| --- | --- |
+| Remove/rename a route, endpoint, command, response field, or consumed environment variable; make a schema or auth contract incompatible | **MAJOR** for the affected component |
+| Add a route, endpoint, command, page, or backward-compatible optional field | **MINOR** for the affected component |
+| Fix externally observable behavior without adding or breaking the contract | **PATCH** for the affected component |
+| Change only implementation, tests, documentation, scripts, infrastructure, or an internal migration | **No bump** |
+
+Bump the component in the pull request that exposes the change. Multi-PR features keep preparatory work behind a feature flag and bump only when the user-visible surface is enabled. Versions only move forward and must remain stable `MAJOR.MINOR.PATCH` values; pre-release suffixes are not currently supported. Component versions are intentionally independent and must not be aligned ceremonially.
+
+The blocking **Component version discipline** check uses paths as an early warning. It cannot detect every contract change—for example, a service-layer change can alter a response without touching a route module—so reviewers must still evaluate external behavior. If a flagged path does not actually change a contract, a maintainer may apply `skip-version-bump` after the PR author replaces `N/A` under **Version bump bypass** with a concrete explanation. Each use creates an assigned `version-bump-bypass` audit issue; every fifth open audit pings the owner for review.
+
+Changelog entries use component sections such as `### siege-api 1.5.0`, plus `### Infrastructure / repo` for non-component work. At release time, the hand-authored `Components changed:` line must list exactly the components represented by component sections; omit unchanged component sections.
+
+---
+
 ## Running tests
 
 ### Backend

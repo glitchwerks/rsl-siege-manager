@@ -1,6 +1,7 @@
 """Tests for GET /api/version endpoint and _read_backend_version helper."""
 
 import importlib
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -101,6 +102,31 @@ def test_read_backend_version_build_info_with_missing_file(monkeypatch, tmp_path
         assert result == "unknown+7.deadbee"
     finally:
         mod._VERSION_FILE = original
+
+
+def test_read_frontend_version_prefers_injected_build(monkeypatch):
+    """The deployed build version wins over local package metadata."""
+    monkeypatch.setenv("FRONTEND_VERSION", "1.5.0+42.abcdef0")
+
+    import app.api.version as mod
+
+    assert mod._read_frontend_version() == "1.5.0+42.abcdef0"
+
+
+def test_read_frontend_version_falls_back_to_local_package(monkeypatch, tmp_path):
+    """Compose builds read the canonical frontend package version."""
+    monkeypatch.delenv("FRONTEND_VERSION", raising=False)
+    package_file = tmp_path / "package.json"
+    package_file.write_text(json.dumps({"version": "1.4.2"}), encoding="utf-8")
+
+    import app.api.version as mod
+
+    original = mod._FRONTEND_PACKAGE_FILE
+    mod._FRONTEND_PACKAGE_FILE = package_file
+    try:
+        assert mod._read_frontend_version() == "1.4.2"
+    finally:
+        mod._FRONTEND_PACKAGE_FILE = original
 
 
 # ---------------------------------------------------------------------------

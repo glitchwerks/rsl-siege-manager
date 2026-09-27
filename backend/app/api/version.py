@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 from pathlib import Path
@@ -14,6 +15,7 @@ router = APIRouter()
 
 # VERSION file sits two levels above this file: backend/VERSION
 _VERSION_FILE = Path(__file__).parent.parent.parent / "VERSION"
+_FRONTEND_PACKAGE_FILE = Path("/component-metadata/frontend-package.json")
 
 
 def _read_backend_version() -> str:
@@ -52,12 +54,25 @@ async def _fetch_bot_version() -> str | None:
         return None
 
 
+def _read_frontend_version() -> str | None:
+    """Return the injected build version or the local Compose package version."""
+    injected = os.environ.get("FRONTEND_VERSION")
+    if injected and injected != "unknown":
+        return injected
+    try:
+        package = json.loads(_FRONTEND_PACKAGE_FILE.read_text(encoding="utf-8"))
+        return str(package["version"])
+    except (OSError, KeyError, TypeError, json.JSONDecodeError):
+        logger.warning("Frontend version metadata is unavailable")
+        return None
+
+
 @router.get("/version", response_model=VersionResponse)
 async def get_version() -> VersionResponse:
     """Return version information for all components."""
     backend_version = _read_backend_version()
     bot_version = await _fetch_bot_version()
-    frontend_version = os.environ.get("FRONTEND_VERSION") or None
+    frontend_version = _read_frontend_version()
     git_sha = os.environ.get("GIT_SHA") or None
 
     return VersionResponse(

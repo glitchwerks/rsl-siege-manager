@@ -7,6 +7,7 @@ FROM node:20-alpine AS build
 # Defaults to "unknown" for local builds that don't pass --build-arg.
 ARG VITE_APP_VERSION=unknown
 ENV VITE_APP_VERSION=$VITE_APP_VERSION
+ARG GIT_SHA=unknown
 
 WORKDIR /app
 
@@ -18,6 +19,8 @@ RUN npm ci
 # build context" step in .github/workflows/deploy.yml (see frontend/src/build/changelog-plugin.ts).
 COPY . .
 RUN npm run build
+RUN printf '{"frontend_version":"%s","git_sha":"%s"}\n' \
+    "$VITE_APP_VERSION" "$GIT_SHA" > dist/version.json
 
 # Serve stage
 FROM nginx:alpine

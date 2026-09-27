@@ -26,6 +26,8 @@ services:
       DISCORD_BOT_API_URL: http://bot:8001
     ports:
       - "8000:8000"
+    volumes:
+      - ./frontend/package.json:/component-metadata/frontend-package.json:ro
     depends_on:
       postgres:
         condition: service_healthy

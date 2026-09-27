@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Components changed: siege-api.
+
+### siege-api 1.4.3
+
+- Fixed `/api/version` so local Compose reports the canonical frontend version and deployed environments report the exact frontend build version. (#311)
+
+### Infrastructure / repo
+
+- Added per-component semantic-version guidance, pull-request prompts, blocking CI enforcement with an audited bypass, and exact deployed-version verification. (#311)
+
 ## [1.4.2] - 2026-09-27
 
 Correctness and maintenance patch: active sieges are now immutable, external-sidecar local development works as documented, and Azure logging no longer depends on the retired Data Collector API.

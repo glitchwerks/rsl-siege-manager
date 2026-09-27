@@ -106,6 +106,10 @@ pytest
 
 ## Key Conventions
 
+### Component versioning
+
+Before changing an external surface, follow the decision table in `CONTRIBUTING.md`. Canonical versions are `backend/VERSION`, `frontend/package.json#version`, and `bot/VERSION`. Bump only affected components in the PR that exposes the change; do not align versions ceremonially. The component-version CI check is blocking. A maintainer-applied `skip-version-bump` label requires a concrete reason under the PR template's **Version bump bypass** heading and creates an audit issue.
+
 ### Backend
 - All siege-scoped mutations require `siege.status == planning`. Lifecycle
   transitions are the only exception.
