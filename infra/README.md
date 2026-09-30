@@ -45,6 +45,7 @@ This proves the guardrail catches non-deterministic property regressions.
 | PostgreSQL Flexible Server | `modules/postgres.bicep` |
 | Azure Key Vault | `modules/keyvault.bicep` |
 | Azure Monitor Action Group + Slack alert Logic App | `modules/monitoring.bicep` |
+| Capacity, replica, PostgreSQL and Azure health alerts | `modules/capacity-health-alerts.bicep` |
 | Container Apps Environment | `modules/container-env.bicep` |
 | Container Apps (api, frontend, bot) | `modules/container-apps.bicep` |
 | Key Vault role assignments (Secrets User) | `main.bicep` |
@@ -69,6 +70,12 @@ enabled as an independent fallback. Configure the incoming webhook as the
 `SLACK_ALERT_WEBHOOK_URL` GitHub Environment secret in both `dev` and `prod`.
 The infrastructure workflows write that value to Key Vault; never put it in a
 parameter file, command output, issue, pull request, or test evidence.
+
+Capacity and platform-health rules use the same action group. Dev's API can
+legitimately scale to zero, so its zero-replica rule is omitted; prod's API and
+both bundled bots retain the rule. Service Health is subscription-wide and is
+deployed only once through prod. See `docs/RUNBOOK.md` for the rule inventory
+and non-disruptive validation procedure.
 
 ## ACR naming
 
