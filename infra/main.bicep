@@ -83,6 +83,10 @@ param postgresSkuTier string = 'Burstable'
 @description('PostgreSQL storage size in GB')
 param postgresStorageGB int = 32
 
+@description('Configured PostgreSQL max_connections; keep in sync with the live server when changing SKU/configuration')
+@minValue(1)
+param postgresMaxConnections int = 50
+
 @description('PostgreSQL backup retention in days (7–35)')
 @minValue(7)
 @maxValue(35)
@@ -371,6 +375,26 @@ module containerApps 'modules/container-apps.bicep' = {
     externalBotApiUrl: externalBotApiUrl
     discordDay1RoleId: discordDay1RoleId
     discordDay2RoleId: discordDay2RoleId
+  }
+}
+
+// Capacity and platform-health alerts reuse the existing Slack/email Action
+// Group. Depend on the apps so metric validation sees the deployed resources.
+module capacityHealthAlerts 'modules/capacity-health-alerts.bicep' = {
+  name: 'capacityHealthAlerts'
+  dependsOn: [containerApps]
+  params: {
+    location: location
+    environment: environment
+    appPrefix: appPrefix
+    actionGroupId: monitoring.outputs.actionGroupId
+    registryId: registry.outputs.registryId
+    acrSku: acrSku
+    postgresServerId: postgres.outputs.serverId
+    postgresMaxConnections: postgresMaxConnections
+    workspaceId: logAnalytics.outputs.workspaceId
+    apiMinReplicas: apiMinReplicas
+    useExternalSidecar: useExternalSidecar
   }
 }
 

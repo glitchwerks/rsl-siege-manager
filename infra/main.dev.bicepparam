@@ -52,6 +52,7 @@ param imageTag = 'latest'
 param postgresSku = 'Standard_B1ms'
 param postgresSkuTier = 'Burstable'
 param postgresStorageGB = 32
+param postgresMaxConnections = 50
 param postgresBackupRetentionDays = 7
 param postgresGeoRedundantBackup = false
 param postgresHighAvailability = 'Disabled'
