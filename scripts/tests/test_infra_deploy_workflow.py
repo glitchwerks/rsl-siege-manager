@@ -105,23 +105,24 @@ def test_idempotency_check_uses_bot_service_token() -> None:
     assert '--parameters botServiceToken="${{ secrets.BOT_SERVICE_TOKEN }}"' in workflow
 
 
-def test_deploys_pass_slack_webhook_from_environment_secret() -> None:
+def test_deploys_use_shared_organization_slack_secret() -> None:
     workflow = _workflow_text()
 
-    parameter = (
-        '--parameters slackAlertWebhookUrl="${{ secrets.SLACK_ALERT_WEBHOOK_URL }}"'
-    )
+    assert workflow.count("SLACK_ALERT_BOT_WEBHOOK: ${{ secrets.SLACK_ALERT_BOT_WEBHOOK }}") == 4
+    assert workflow.count('if [[ -z "$SLACK_ALERT_BOT_WEBHOOK" ]]; then') == 2
+    parameter = '--parameters slackAlertWebhookUrl="$SLACK_ALERT_BOT_WEBHOOK"'
     assert workflow.count(parameter) == 2
+    assert "secrets.SLACK_ALERT_WEBHOOK_URL" not in workflow
 
 
 def test_idempotency_check_uses_slack_webhook_secret() -> None:
     workflow_path = Path(__file__).parents[2] / ".github" / "workflows" / "idempotency-check.yml"
     workflow = workflow_path.read_text(encoding="utf-8")
 
-    assert (
-        '--parameters slackAlertWebhookUrl="${{ secrets.SLACK_ALERT_WEBHOOK_URL }}"'
-        in workflow
-    )
+    assert workflow.count("SLACK_ALERT_BOT_WEBHOOK: ${{ secrets.SLACK_ALERT_BOT_WEBHOOK }}") == 2
+    assert 'if [[ -z "$SLACK_ALERT_BOT_WEBHOOK" ]]; then' in workflow
+    assert '--parameters slackAlertWebhookUrl="$SLACK_ALERT_BOT_WEBHOOK"' in workflow
+    assert "secrets.SLACK_ALERT_WEBHOOK_URL" not in workflow
 
 
 def test_infra_ci_uses_only_a_placeholder_slack_webhook() -> None:
@@ -133,3 +134,4 @@ def test_infra_ci_uses_only_a_placeholder_slack_webhook() -> None:
     )
     assert workflow.count(placeholder) == 2
     assert "secrets.SLACK_ALERT_WEBHOOK_URL" not in workflow
+    assert "secrets.SLACK_ALERT_BOT_WEBHOOK" not in workflow
