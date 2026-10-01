@@ -65,10 +65,14 @@ timestamp, and a safe Azure portal investigation link. The Logic App then reads
 sanitized message. The callback URL and webhook URL are not deployment outputs.
 
 Slack is the primary operational destination. The existing email receiver stays
-enabled as an independent fallback. Configure the incoming webhook as the
-`SLACK_ALERT_WEBHOOK_URL` GitHub Environment secret in both `dev` and `prod`.
-The infrastructure workflows write that value to Key Vault; never put it in a
-parameter file, command output, issue, pull request, or test evidence.
+enabled as an independent fallback. Configure one organization Actions secret
+named `SLACK_ALERT_BOT_WEBHOOK` and grant this repository access to it. Both
+`dev` and `prod` infrastructure workflows read that same secret and write the
+value to their respective Key Vaults. The workflows fail before deployment if
+the secret is unavailable. Never put its value in a parameter file, command
+output, issue, pull request, or test evidence. Local manual deployment examples
+below use a shell variable named `SLACK_ALERT_WEBHOOK_URL`; that variable is not
+a separate GitHub secret.
 
 ## ACR naming
 

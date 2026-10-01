@@ -20,7 +20,8 @@ name: Infra Deploy
 # New secrets required per environment (add under Settings → Environments):
 #   Secrets  : POSTGRES_ADMIN_PASSWORD, DISCORD_TOKEN, BOT_API_KEY,
 #              BOT_SERVICE_TOKEN, SESSION_SECRET, DISCORD_CLIENT_ID,
-#              DISCORD_CLIENT_SECRET, SLACK_ALERT_WEBHOOK_URL
+#              DISCORD_CLIENT_SECRET
+#   Org secret: SLACK_ALERT_BOT_WEBHOOK (grant this repository access)
 #   Variables: DISCORD_GUILD_ID, DISCORD_REDIRECT_URI
 #              (redirect URI is a public URL, not a secret — use a variable)
 #
@@ -96,6 +97,15 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
 
+      - name: Confirm shared Slack webhook is available
+        env:
+          SLACK_ALERT_BOT_WEBHOOK: ${{ secrets.SLACK_ALERT_BOT_WEBHOOK }}
+        run: |
+          if [[ -z "$SLACK_ALERT_BOT_WEBHOOK" ]]; then
+            echo "SLACK_ALERT_BOT_WEBHOOK is unavailable to this repository. Check organization secret access."
+            exit 1
+          fi
+
       - name: Validate external sidecar configuration (automatic)
         if: github.event_name == 'push'
         run: |
@@ -147,6 +157,8 @@ jobs:
           echo "IMAGE_TAG=${IMAGE_TAG}" >> "$GITHUB_ENV"
 
       - name: Deploy infra (dev)
+        env:
+          SLACK_ALERT_BOT_WEBHOOK: ${{ secrets.SLACK_ALERT_BOT_WEBHOOK }}
         run: |
           sidecar_parameters=()
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
@@ -166,7 +178,7 @@ jobs:
             --parameters sessionSecret="${{ secrets.SESSION_SECRET }}" \
             --parameters discordClientId="${{ secrets.DISCORD_CLIENT_ID }}" \
             --parameters discordClientSecret="${{ secrets.DISCORD_CLIENT_SECRET }}" \
-            --parameters slackAlertWebhookUrl="${{ secrets.SLACK_ALERT_WEBHOOK_URL }}" \
+            --parameters slackAlertWebhookUrl="$SLACK_ALERT_BOT_WEBHOOK" \
             --parameters discordRedirectUri="${{ vars.DISCORD_REDIRECT_URI }}" \
             --parameters imageTag="${{ env.IMAGE_TAG }}" \
             "${sidecar_parameters[@]}"
@@ -239,6 +251,15 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
 
+      - name: Confirm shared Slack webhook is available
+        env:
+          SLACK_ALERT_BOT_WEBHOOK: ${{ secrets.SLACK_ALERT_BOT_WEBHOOK }}
+        run: |
+          if [[ -z "$SLACK_ALERT_BOT_WEBHOOK" ]]; then
+            echo "SLACK_ALERT_BOT_WEBHOOK is unavailable to this repository. Check organization secret access."
+            exit 1
+          fi
+
       - name: Validate external sidecar configuration
         uses: ./.github/actions/validate-external-sidecar
         with:
@@ -267,6 +288,8 @@ jobs:
           echo "IMAGE_TAG=${IMAGE_TAG}" >> $GITHUB_ENV
 
       - name: Deploy infra (prod)
+        env:
+          SLACK_ALERT_BOT_WEBHOOK: ${{ secrets.SLACK_ALERT_BOT_WEBHOOK }}
         run: |
           az deployment group create \
             --resource-group ${{ vars.RESOURCE_GROUP }} \
@@ -281,7 +304,7 @@ jobs:
             --parameters sessionSecret="${{ secrets.SESSION_SECRET }}" \
             --parameters discordClientId="${{ secrets.DISCORD_CLIENT_ID }}" \
             --parameters discordClientSecret="${{ secrets.DISCORD_CLIENT_SECRET }}" \
-            --parameters slackAlertWebhookUrl="${{ secrets.SLACK_ALERT_WEBHOOK_URL }}" \
+            --parameters slackAlertWebhookUrl="$SLACK_ALERT_BOT_WEBHOOK" \
             --parameters discordRedirectUri="${{ vars.DISCORD_REDIRECT_URI }}" \
             --parameters imageTag="${{ env.IMAGE_TAG }}" \
             --parameters useExternalSidecar=${{ inputs.useExternalSidecar }}

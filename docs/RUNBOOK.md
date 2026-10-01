@@ -555,11 +555,13 @@ az monitor action-group test-notifications create \
 4. Do not reveal secure action inputs or outputs while collecting evidence.
 
 **Webhook rotation:** create a replacement incoming webhook for the same
-infrastructure channel, update the `SLACK_ALERT_WEBHOOK_URL` secret in the
-matching GitHub Environment, and manually run **Infra Deploy** for that
-environment. Re-run the Action Group test and confirm both Slack and email before
-revoking the old webhook. The Logic App reads Key Vault on every run, so no Logic
-App restart is required.
+infrastructure channel and update the organization Actions secret
+`SLACK_ALERT_BOT_WEBHOOK` (with access granted to this repository). Deploy to
+dev, test its Action Group, then separately authorize and deploy to prod and
+test its Action Group. Confirm Slack and fallback email in both environments
+before revoking the old webhook. The Logic Apps read their respective Key Vaults
+on every run, so no restart is required. Do not put either webhook value in
+logs or evidence.
 
 **Rollback:** keep email enabled, remove the Logic App receiver from the Action
 Group (or revert the infrastructure PR), deploy dev, and verify email delivery.
