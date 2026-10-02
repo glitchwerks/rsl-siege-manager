@@ -596,6 +596,44 @@ Slack/email test passes.
 
 If the action group email confirmation email from Azure never arrived, the action group is registered but no emails will be delivered. Re-confirm by navigating to Azure Monitor → Alerts → Action groups → select the group → Test.
 
+### 6E. Cost anomaly email exception
+
+The `siege-cost-anomaly` Azure Cost Management rule is an `InsightAlert`, not
+an Azure Monitor Action Group rule. It covers the **entire subscription**,
+including non-Siege resources. Azure delivers anomaly notifications directly
+to the email in `alertEmail`; there is no Slack copy under the current plan.
+No email is sent on days without a detected anomaly. Detection runs after
+daily cost data has settled, so this is not an immediate spend threshold.
+
+The rule is gated to `environment == 'prod'` in `infra/main.bicep`. A merge to
+main and the automatic dev infrastructure deployment do **not** create it.
+Do not manually dispatch the production workflow just to activate this alert;
+include it in the coordinated v1.5.0 production deployment. Before that
+deployment, verify the subscription, `alertEmail` recipient, schedule dates,
+and the absence of an existing equivalent anomaly rule (Azure limits the
+number per subscription). Open a Cost Analysis smart view for that subscription
+to confirm anomaly detection is onboarded. The deploy identity needs
+`Microsoft.CostManagement/scheduledActions/write`; it also needs continuing
+read access for Azure to send the emails. The schedule currently ends
+2027-09-30T00:00:00Z. Renew its dates in a reviewed infrastructure change
+before expiry; the rule otherwise stops sending.
+
+After the coordinated deployment, use Cost Management → Cost alerts → Alert
+rules at the **subscription** scope to confirm the rule is Enabled and its
+recipient and end date are correct. This is a configuration check, not a
+delivery test; do not create synthetic spending to force an anomaly. When a
+real email arrives, open its Azure Cost Analysis link, identify the resource
+group and service driving the change, compare against planned ACR, PostgreSQL,
+and Container Apps activity, and investigate unplanned resources or SKU
+changes. Record the alert timestamp and findings without copying billing
+details into public evidence.
+
+If expected emails do not arrive, check the rule's Enabled/Expired state,
+recipient, mailbox filtering for `microsoft-noreply@microsoft.com`, and the
+original deploying identity's current Cost Management read permissions.
+Rollback is to disable the scheduled action at the subscription scope; do not
+remove the independent Azure Monitor Slack/email Action Group.
+
 ### Health endpoints
 
 **Backend health** (public via frontend proxy):

@@ -207,6 +207,15 @@ assert externalBotApiUrlIsHttps = !useExternalSidecar || environment == 'dev' ||
 @description('Fallback email address for the monitoring action group')
 param alertEmail string
 
+// Cost Management anomaly detection is subscription-wide. Only the coordinated
+// production infrastructure deployment may create/update this email-only rule;
+// automatic dev deployments must leave subscription billing alerts untouched.
+@description('Start of the subscription cost anomaly alert schedule (UTC)')
+param costAnomalyStartDate string = '2026-10-01T00:00:00Z'
+
+@description('End of the subscription cost anomaly alert schedule (UTC); renew before expiry')
+param costAnomalyEndDate string = '2027-09-30T00:00:00Z'
+
 @description('Slack incoming-webhook URL for infrastructure alerts. Stored in Key Vault and never embedded in the Logic App definition.')
 @secure()
 param slackAlertWebhookUrl string
@@ -395,6 +404,17 @@ module capacityHealthAlerts 'modules/capacity-health-alerts.bicep' = {
     workspaceId: logAnalytics.outputs.workspaceId
     apiMinReplicas: apiMinReplicas
     useExternalSidecar: useExternalSidecar
+  }
+}
+
+module costAnomalyAlert 'modules/cost-anomaly-alert.bicep' = if (environment == 'prod') {
+  name: 'costAnomalyAlert'
+  scope: subscription()
+  params: {
+    appPrefix: appPrefix
+    alertEmail: alertEmail
+    startDate: costAnomalyStartDate
+    endDate: costAnomalyEndDate
   }
 }
 
