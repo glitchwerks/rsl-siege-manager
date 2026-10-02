@@ -320,8 +320,9 @@ resource actionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = {
 // Common settings:
 //   - evaluationFrequency PT1M — check every minute
 //   - severity 2 (warning) or 3 (informational)
-//   - autoMitigate false — required when muteActionsDuration is set (Azure rejects the combination)
-//   - muteActionsDuration PT15M — suppresses repeat emails during an incident
+//   - Most rules remain stateless (autoMitigate false) with a 15-minute action
+//     mute. The latency rule is stateful and has no mute duration; Azure rejects
+//     autoMitigate true combined with muteActionsDuration.
 //
 // All KQL queries are written to return zero rows in the steady state and ≥1
 // row when the condition is breached, so `operator: GreaterThan, threshold: 0`
@@ -380,6 +381,10 @@ requests
 // ── Alert 2: API request latency p95 > 3s ────────────────────────────────────
 // Severity 3 — warning; latency is degraded but requests are still succeeding.
 // Min-traffic floor (sampleCount >= 20) avoids false alarms from a single slow call.
+// #263 review (2026-10-02): 10 prod instances formed two short episodes in
+// the last 30 days, none acknowledged. Both returned to normal in the next
+// 5-minute bucket. Resolve the condition automatically and notify once per
+// episode; human acknowledgement remains an independent workflow state.
 
 resource alertLatencyP95 'Microsoft.Insights/scheduledQueryRules@2026-03-01' = {
   name: '${appPrefix}-alert-latency-p95-${environment}'
@@ -393,8 +398,7 @@ resource alertLatencyP95 'Microsoft.Insights/scheduledQueryRules@2026-03-01' = {
     evaluationFrequency: 'PT1M'
     windowSize: 'PT5M'
     scopes: [appInsightsId]
-    autoMitigate: false
-    muteActionsDuration: 'PT15M'
+    autoMitigate: true
     criteria: {
       allOf: [
         {

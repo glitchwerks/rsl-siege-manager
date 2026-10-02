@@ -519,17 +519,36 @@ only rule IDs, deployment status, timestamps, and pass/fail in evidence.
 
 ### 6C. Acknowledgement Policy
 
-The five application log rules and the new crash-loop log rules have
-`autoMitigate: false` — they stay in the **Fired** state until manually
-acknowledged in the Azure portal (Azure Monitor → Alerts → select the fired
-alert → Change state to Acknowledged or Closed). Capacity metric rules
-auto-resolve when their measurements return to normal.
+An alert's **monitor condition** (Fired/Resolved) and its **operator state**
+(New/Acknowledged/Closed) are separate. Acknowledging an alert does not clear
+its monitor condition, and automatic resolution does not mean a human reviewed
+the incident. Operators should acknowledge actionable alerts in Azure Monitor
+→ Alerts and record their investigation, including when a condition later
+resolves by itself.
 
-`muteActionsDuration: PT15M` is set on the log rules. This 15-minute mute
-window suppresses repeat notifications during an ongoing incident, but does
-**not** auto-resolve the alert — manual acknowledgement is still required.
+The #263 review on 2026-10-02 used the available 30-day production alert
+history and aggregate telemetry. Azure retains alert instances for 30 days,
+so the original post-launch observation window from spring 2026 cannot be
+reconstructed from this API. No production alert in this sample had been
+acknowledged, so mean time to acknowledgement is **not measurable**.
 
-The 4-week post-launch evaluation window (tracked in #263) will produce real fire-pattern data. Per-alert auto-mitigation policy will be revisited after that window closes.
+| Application rule | Last-30-day production evidence | Policy |
+|---|---|---|
+| API 5xx rate | 0 alert instances | Keep stateless with 15-minute action mute; no fire-pattern evidence to justify a change. Investigate every sustained 5xx incident. |
+| API p95 latency | 10 instances in two brief episodes; both returned to baseline in the next 5-minute bucket; 0 acknowledged | Make stateful (`autoMitigate: true`) and remove the action mute. Azure sends one Fired notification per episode and resolves after the condition stays clear for its 1-minute-frequency resolution interval. Acknowledgement is still an operator action. |
+| Bot restart | 6 instances for 3 observed startup traces; 0 acknowledged | Keep stateless with 15-minute action mute. Each restart merits inspection; the separate crash-loop rule covers repeated starts. |
+| DB connection error | 11 instances in two short clusters with 4 failed dependency spans; 0 acknowledged | Keep stateless with 15-minute action mute. A cleared query alone is insufficient proof of DB recovery; inspect dependency success and service health. |
+| Image generation slow | 0 alert instances; 2 image-generation requests and none over 10 seconds | Keep stateless with 15-minute action mute until there is enough usage to evaluate alert fatigue. |
+
+The stateless rules may create multiple alert instances while the condition is
+met. Their 15-minute `muteActionsDuration` suppresses repeat **actions**, not
+alert-instance creation or condition state. The stateful latency rule must not
+set `muteActionsDuration` because Azure rejected that combination during the
+earlier deployment. [Azure's alert-state documentation](https://learn.microsoft.com/en-us/azure/azure-monitor/alerts/alerts-overview)
+describes stateful resolution; at a 1-minute evaluation frequency, the
+condition must remain clear for 10 minutes. Capacity metric rules keep their
+own automatic resolution policy. The newer crash-loop rules retain their
+existing stateless policy pending a separate observation window.
 
 ### 6D. Action Group
 
