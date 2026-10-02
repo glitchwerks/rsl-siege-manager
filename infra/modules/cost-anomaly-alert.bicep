@@ -20,7 +20,7 @@ resource costAnomalyAlert 'Microsoft.CostManagement/scheduledActions@2023-09-01'
   scope: subscription()
   kind: 'InsightAlert'
   properties: {
-    displayName: 'Siege subscription cost anomaly'
+    displayName: 'Siege cost anomaly'
     notification: {
       subject: 'Azure subscription cost anomaly detected'
       to: [alertEmail]

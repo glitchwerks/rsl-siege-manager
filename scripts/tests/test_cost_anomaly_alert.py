@@ -25,8 +25,20 @@ def test_anomaly_uses_native_email_not_action_group() -> None:
     assert "frequency: 'Daily'" in module
     assert "to: [alertEmail]" in module
     assert "notificationEmail: alertEmail" in module
-    assert "ms:DailyAnomalyByResourceGroup" in module
+    assert (
+        "viewId: '${subscription().id}/providers/Microsoft.CostManagement/"
+        "views/ms:DailyAnomalyByResourceGroup'"
+    ) in module
     assert "actionGroup" not in module
+
+
+def test_anomaly_display_name_fits_azure_limit() -> None:
+    module = (ROOT / "infra" / "modules" / "cost-anomaly-alert.bicep").read_text(
+        encoding="utf-8"
+    )
+
+    assert "displayName: 'Siege cost anomaly'" in module
+    assert len("Siege cost anomaly") <= 25
 
 
 def test_schedule_has_explicit_renewal_date() -> None:
