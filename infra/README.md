@@ -46,6 +46,7 @@ This proves the guardrail catches non-deterministic property regressions.
 | Azure Key Vault | `modules/keyvault.bicep` |
 | Azure Monitor Action Group + Slack alert Logic App | `modules/monitoring.bicep` |
 | Capacity, replica, PostgreSQL and Azure health alerts | `modules/capacity-health-alerts.bicep` |
+| Production-only subscription cost anomaly email alert | `modules/cost-anomaly-alert.bicep` |
 | Container Apps Environment | `modules/container-env.bicep` |
 | Container Apps (api, frontend, bot) | `modules/container-apps.bicep` |
 | Key Vault role assignments (Secrets User) | `main.bicep` |
@@ -80,6 +81,13 @@ legitimately scale to zero, so its zero-replica rule is omitted; prod's API and
 both bundled bots retain the rule. Service Health is subscription-wide and is
 deployed only once through prod. See `docs/RUNBOOK.md` for the rule inventory
 and non-disruptive validation procedure.
+
+Cost anomalies are an intentional exception: Azure Cost Management sends its
+subscription-wide anomaly alert directly by email, not through this Action
+Group or Slack. The rule is deployed only by the manually gated production
+infrastructure workflow; automatic dev deployments do not create it. Its
+one-year schedule ends 2027-09-30 and must be renewed before expiry. See the
+runbook for release checks, permissions, and triage.
 
 ## ACR naming
 
