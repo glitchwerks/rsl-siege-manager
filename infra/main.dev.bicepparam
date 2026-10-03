@@ -123,6 +123,9 @@ param frontendMinReplicas = 0
 // Fallback alert email recipient. Slack is the primary infrastructure-alert route.
 // Confirmed by user: cmb_dev@outlook.com (2026-04-29, Issue #246).
 param alertEmail = 'cmb_dev@outlook.com'
+
+// Keep the five-minute query window; reduce only advisory check frequency.
+param advisoryAlertEvaluationFrequency = 'PT5M'
 // Supplied by Infra Deploy from the dev GitHub Environment secret.
 param slackAlertWebhookUrl = ''
 

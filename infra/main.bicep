@@ -207,6 +207,10 @@ assert externalBotApiUrlIsHttps = !useExternalSidecar || environment == 'dev' ||
 @description('Fallback email address for the monitoring action group')
 param alertEmail string
 
+@description('Evaluation frequency for latency and slow-image warnings only. Query windows remain five minutes; operational error alerts keep one-minute checks.')
+@allowed(['PT1M', 'PT5M'])
+param advisoryAlertEvaluationFrequency string = 'PT1M'
+
 // Cost Management anomaly detection is subscription-wide. Only the coordinated
 // production infrastructure deployment may create/update this email-only rule;
 // automatic dev deployments must leave subscription billing alerts untouched.
@@ -312,6 +316,7 @@ module monitoring 'modules/monitoring.bicep' = {
     appInsightsId: appInsights.outputs.appInsightsId
     appInsightsName: appInsights.outputs.appInsightsName
     alertEmail: alertEmail
+    advisoryAlertEvaluationFrequency: advisoryAlertEvaluationFrequency
     keyVaultName: keyVault.outputs.vaultName
     keyVaultUri: keyVault.outputs.vaultUri
     tags: {

@@ -27,6 +27,10 @@ param appInsightsName string
 @description('Email address that receives alert notifications')
 param alertEmail string
 
+@description('Latency and slow-image warning frequency. Must not exceed the five-minute query window.')
+@allowed(['PT1M', 'PT5M'])
+param advisoryAlertEvaluationFrequency string = 'PT1M'
+
 @description('Name of the Key Vault that stores the Slack incoming-webhook URL')
 param keyVaultName string
 
@@ -318,7 +322,8 @@ resource actionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = {
 //
 // Each alert is a log-search alert scoped to the App Insights resource.
 // Common settings:
-//   - evaluationFrequency PT1M — check every minute
+//   - evaluationFrequency PT1M for error/restart alerts; configurable for
+//     latency and slow-image warnings (PT1M or PT5M)
 //   - severity 2 (warning) or 3 (informational)
 //   - Most rules remain stateless (autoMitigate false) with a 15-minute action
 //     mute. The latency rule is stateful and has no mute duration; Azure rejects
@@ -395,7 +400,7 @@ resource alertLatencyP95 'Microsoft.Insights/scheduledQueryRules@2026-03-01' = {
     description: 'Fires when the 95th-percentile request duration exceeds 3000ms over a 5-minute window. Floor: ≥20 requests.'
     enabled: true
     severity: 3
-    evaluationFrequency: 'PT1M'
+    evaluationFrequency: advisoryAlertEvaluationFrequency
     windowSize: 'PT5M'
     scopes: [appInsightsId]
     autoMitigate: true
@@ -548,7 +553,7 @@ resource alertImageGenSlow 'Microsoft.Insights/scheduledQueryRules@2026-03-01' =
     description: 'Fires when any request to the generate-images route takes longer than 10 seconds in a 5-minute window. Route confirmed at backend/app/api/images.py:28; predicate verified against dev telemetry 2026-04-29.'
     enabled: true
     severity: 3
-    evaluationFrequency: 'PT1M'
+    evaluationFrequency: advisoryAlertEvaluationFrequency
     windowSize: 'PT5M'
     scopes: [appInsightsId]
     autoMitigate: false

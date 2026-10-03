@@ -33,9 +33,10 @@ param appPrefix = 'siege-web'
 param location = 'westus'
 
 // ── Container Registry ────────────────────────────────────────────────────────
-// Standard SKU enables geo-replication, content trust, and higher throughput
-// pull limits compared to Basic. Required for production workloads.
-param acrSku = 'Standard'
+// Basic retains image push/pull and authentication for this small deployment.
+// Storage above its 10 GiB allowance is billed separately; keep release images.
+// Restore Standard if measured pull throughput requires it.
+param acrSku = 'Basic'
 
 // Prod ACR is already deployed as siegeacrprod — override keeps the existing
 // registry rather than creating a new hyphenated name.
@@ -151,6 +152,10 @@ param frontendMinReplicas = 0
 // Fallback alert email recipient. Slack is the primary infrastructure-alert route.
 // Confirmed by user: cmb_dev@outlook.com (2026-04-29, Issue #246).
 param alertEmail = 'cmb_dev@outlook.com'
+
+// Latency and slow-image warnings tolerate five-minute evaluation. Error,
+// database, and bot-restart alerts retain their one-minute checks.
+param advisoryAlertEvaluationFrequency = 'PT5M'
 // Supplied by Infra Deploy from the prod GitHub Environment secret.
 param slackAlertWebhookUrl = ''
 
