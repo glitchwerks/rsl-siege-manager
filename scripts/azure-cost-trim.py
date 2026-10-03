@@ -56,7 +56,10 @@ def current_value(target, resource):
 def invariant(target, resource):
     """Hash configuration we are not authorized to change."""
     if target["kind"] == "registry":
-        return digest({k: resource.get(k) for k in ("id", "location", "tags", "properties")})
+        properties = dict(resource.get("properties", {}))
+        properties.pop("provisioningState", None)
+        return digest({"id": resource.get("id"), "location": resource.get("location"),
+                       "tags": resource.get("tags"), "properties": properties})
     properties = dict(resource["properties"])
     properties.pop("evaluationFrequency", None)
     # Azure may update these service-generated fields after a PATCH.
@@ -77,7 +80,7 @@ def targets(subscription):
     root = f"/subscriptions/{subscription}/resourceGroups"
     result = [{"id": f"{root}/siege-web-prod/providers/Microsoft.ContainerRegistry/registries/siegeacrprod",
                "kind": "registry", "api": REGISTRY_API, "desired": "Basic"}]
-    for environment in ("dev", "prod"):
+    for environment in ("prod",):
         for name in ("latency-p95", "image-gen-slow"):
             result.append({"id": f"{root}/siege-web-{environment}/providers/Microsoft.Insights/scheduledQueryRules/siege-web-alert-{name}-{environment}",
                            "kind": "alert", "api": ALERT_API, "desired": "PT5M"})
@@ -118,7 +121,7 @@ def service_baseline(subscription):
                     # Use the installed curl client, as for the operator's smoke
                     # check. Some public proxies reject Python's default client.
                     response = subprocess.run(
-                        ["curl", "--silent", "--show-error", "--max-time", "20",
+                        ["curl", "--ipv4", "--silent", "--show-error", "--connect-timeout", "5", "--max-time", "20",
                          "--write-out", "\n%{http_code}", f"https://{hostname}/api/health"],
                         capture_output=True, text=True, timeout=25,
                     )

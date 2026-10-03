@@ -10,8 +10,8 @@ and a future return from portable hosting.
 | Target | Change | Recovery |
 | --- | --- | --- |
 | Production registry `siegeacrprod` | Standard to Basic | Restore the previous SKU |
-| Latency warning in dev and prod | Evaluate every five minutes instead of every minute | Restore the recorded frequency |
-| Slow image warning in dev and prod | Evaluate every five minutes instead of every minute | Restore the recorded frequency |
+| Production latency warning | Evaluate every five minutes instead of every minute | Restore the recorded frequency |
+| Production slow image warning | Evaluate every five minutes instead of every minute | Restore the recorded frequency |
 
 The advisory queries and lookback windows remain five minutes. Enabled state,
 thresholds, notification destinations, and the latency alert's automatic
@@ -48,7 +48,8 @@ Use existing Python 3, Azure CLI, and curl installations, the existing Azure
 login, and the intended subscription. The script refuses
 a different active subscription and a preflight older than one hour.
 
-All phases run the same fixed allowlist of one registry and four alerts.
+All phases run the same fixed production-only allowlist of one registry and
+two alerts. Development settings are observed but never modified.
 Before mutation, the script checks service health, current app images/revisions,
 registry tag inventory, alert windows, and unchanged target configuration.
 After mutation, it checks those again. HTTP probes use existing production and
@@ -103,6 +104,6 @@ There is no resource deletion, data migration, cleanup of images, or host restar
 Keep the report until the configuration and billing change are verified.
 
 For infrastructure-as-code recovery, restore `acrSku = 'Standard'` in production
-and `advisoryAlertEvaluationFrequency = 'PT1M'` in both environment files through
+and `advisoryAlertEvaluationFrequency = 'PT1M'` in the production file through
 a PR. The new parameter defaults to `PT1M` for existing callers that do not opt
 into the lower-frequency configuration.

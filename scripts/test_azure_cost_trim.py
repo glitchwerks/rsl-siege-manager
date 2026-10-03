@@ -23,9 +23,10 @@ class CostTrimTests(unittest.TestCase):
                        "baseline": {}, "registry": {"tag_hashes": {}},
                        "targets": [self.target], "attempted": []}
 
-    def test_allowlist_is_one_registry_and_four_advisory_alerts(self):
+    def test_allowlist_is_production_registry_and_two_advisory_alerts(self):
         targets = trim.targets("subscription")
-        self.assertEqual(len(targets), 5)
+        self.assertEqual(len(targets), 3)
+        self.assertTrue(all("/siege-web-prod/" in t["id"] for t in targets))
         self.assertEqual(sum(t["kind"] == "registry" for t in targets), 1)
         self.assertFalse(any("restart" in t["id"] or "connection" in t["id"] for t in targets))
 
@@ -35,6 +36,16 @@ class CostTrimTests(unittest.TestCase):
         self.assertEqual(before, trim.invariant(self.target, self.resource))
         self.resource["properties"]["actions"] = {}
         self.assertNotEqual(before, trim.invariant(self.target, self.resource))
+
+    def test_registry_progress_does_not_hide_configuration_drift(self):
+        target = trim.targets("subscription")[0]
+        resource = {"id": target["id"], "location": "westus", "tags": {},
+                    "properties": {"provisioningState": "Succeeded", "adminUserEnabled": True}}
+        before = trim.invariant(target, resource)
+        resource["properties"]["provisioningState"] = "Updating"
+        self.assertEqual(before, trim.invariant(target, resource))
+        resource["properties"]["adminUserEnabled"] = False
+        self.assertNotEqual(before, trim.invariant(target, resource))
 
     def test_patch_only_sends_authorized_field(self):
         with patch.object(trim, "azure") as request:
