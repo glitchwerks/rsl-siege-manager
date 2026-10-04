@@ -62,7 +62,7 @@ In the same commit that fills any gaps from step 2:
 
 - Replace `## [Unreleased]` with `## [Unreleased]\n\n## [<new-version>] - <YYYY-MM-DD>` (preserve an empty `[Unreleased]` heading at the top so the next cycle has somewhere to land entries).
 - Use the current date in ISO 8601 (`YYYY-MM-DD`).
-- Sub-section order: `### Added`, `### Changed`, `### Fixed`, `### Infrastructure`, `### Documentation`. Omit empty subsections.
+- Use `### siege-api <version>`, `### siege-frontend <version>`, and `### siege-bot <version>` for components with external changes, followed by `### Infrastructure / repo` for build, infrastructure, and documentation work. Omit unchanged component sections. The `Components changed:` line must match the component headings exactly.
 
 ### 4. Verify independent component versions
 
