@@ -28,6 +28,16 @@ approximately $12–$14 per month net at current volume; verify actual rates and
 the next invoice. Alert savings require separate confirmation against the
 account's pricing. Do not delete release images to obtain these savings.
 
+Production storage growth alerts use an explicit 40 GiB budget, independent of
+Basic's 10 GiB included billing allowance: warning above 32 GiB and critical
+above 38 GiB. This prevents both alerts remaining breached at the current
+approximately 29 GiB usage after a template deployment. These are growth
+notifications, not hard capacity limits or a promise of included storage.
+Development retains its previous SKU-derived thresholds. This template change
+does not update live alert thresholds until separately approved deployment.
+To restore the previous production thresholds, set the budget to 100 GiB
+(80/95 GiB); setting it to zero instead follows the selected SKU.
+
 Sources: [registry tiers](https://learn.microsoft.com/en-us/azure/container-registry/container-registry-skus),
 [registry pricing](https://azure.microsoft.com/en-us/pricing/details/container-registry/),
 [monitoring pricing](https://azure.microsoft.com/en-us/pricing/details/monitor/).

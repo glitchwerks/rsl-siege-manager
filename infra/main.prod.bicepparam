@@ -38,6 +38,10 @@ param location = 'westus'
 // Restore Standard if measured pull throughput requires it.
 param acrSku = 'Basic'
 
+// Approximately 29 GiB currently stored. Warn at 32 GiB, critical at 38 GiB.
+// This growth budget is independent of Basic's 10 GiB billing allowance.
+param acrStorageAlertBudgetGiB = 40
+
 // Prod ACR is already deployed as siegeacrprod — override keeps the existing
 // registry rather than creating a new hyphenated name.
 param acrNameOverride = 'siegeacrprod'

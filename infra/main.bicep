@@ -8,8 +8,12 @@ param environment string = 'dev'
 @description('Short prefix used in resource names')
 param appPrefix string = 'siege'
 
-@description('Container Registry SKU (Basic for dev, Standard for prod)')
+@description('Container Registry SKU (Basic, Standard, or Premium)')
 param acrSku string = 'Basic'
+
+@description('Storage budget for registry growth alerts in GiB. Zero preserves the SKU included-storage thresholds; this is not a capacity limit.')
+@minValue(0)
+param acrStorageAlertBudgetGiB int = 0
 
 @description('Override the generated ACR name. Leave empty to use the default convention (appPrefix + "acr" + environment).')
 param acrNameOverride string = ''
@@ -404,6 +408,7 @@ module capacityHealthAlerts 'modules/capacity-health-alerts.bicep' = {
     actionGroupId: monitoring.outputs.actionGroupId
     registryId: registry.outputs.registryId
     acrSku: acrSku
+    acrStorageAlertBudgetGiB: acrStorageAlertBudgetGiB
     postgresServerId: postgres.outputs.serverId
     postgresMaxConnections: postgresMaxConnections
     workspaceId: logAnalytics.outputs.workspaceId
