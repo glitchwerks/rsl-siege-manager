@@ -7,21 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Components changed: siege-api, siege-frontend.
+## [1.5.0] - 2026-10-04
 
-### siege-api 1.4.3
+Selected-member highlighting, reproducible builds, reliable release promotion, and lower Azure operating costs ahead of the portable VPS transition.
 
-- Fixed `/api/version` so local Compose reports the canonical frontend version and deployed environments report the exact frontend build version. (#311)
+Components: siege-api 1.5.0, siege-frontend 1.5.0, siege-bot 1.5.0.
 
-### siege-frontend 1.5.0
+### Added
 
-- Added selected-member assignment highlighting: selecting a member in the Board sidebar highlights every matching building-grid position; selecting the same member again clears the highlight. (#532)
+- **Selected-member assignment highlighting** — selecting a member in the Board sidebar highlights their assigned positions; selecting the member again clears the highlight. (#532, #545)
 
-### Infrastructure / repo
+### Fixed
 
-- Added a secret-backed Azure Logic App that routes sanitized common-schema infrastructure alerts to Slack while retaining email fallback. (#539)
-- Added per-component semantic-version guidance, pull-request prompts, blocking CI enforcement with an audited bypass, and exact deployed-version verification. (#311)
-- Replaced floating Python installs with committed backend and bot `uv` lockfiles, frozen CI and container installs, lock-drift checks, and container-build coverage. (#464)
+- **Exact component versions** — `/api/version` reports the canonical frontend version in local Compose and the exact frontend build version in deployed environments. CI enforces component version discipline, and deployments verify health, image SHA, and frontend build metadata. (#311, #543)
+- **Release image publication race** — production promotion waits for all three immutable images for the exact release SHA instead of allowing a release to retain stale images. (#537, #538)
+
+### Infrastructure
+
+- **Frozen Python dependencies** — backend and bundled bot use committed `uv` lockfiles, frozen CI/container installs, lock-drift checks, and container-build coverage. (#464, #544)
+- **Lower production registry cost** — production uses the Basic registry tier, with storage alerts based on an explicit growth budget. Latency and slow-image advisory checks run every five minutes. (#554)
+- **Guarded daily image cleanup** — production's seven-day retention policy protects current and retained revision images, recent builds/releases, and locked manifests; it serializes with production deployments and preserves sanitized verification reports. The replacement is activated and its first run verified. (#553, #554)
+- **Preserved Azure deployment definitions** — automatic dev infrastructure deployment, managed bot-service-token provenance, the GA certificate API, Slack routing with email fallback, capacity/health alerts, cost-anomaly email, and latency auto-resolution remain available in Bicep and workflows. Additional production rollout of those Azure-only monitoring definitions is deferred under the VPS decision; this release promotes application images without applying the full production infrastructure template. (#482, #539, #250, #251, #263, #540, #541, #542, #546, #547, #548, #550, #551)
+
+### Documentation
+
+- **Portable hosting release boundary** — retire unnecessary Azure-only rollout work, retain host-neutral sidecar testing for the VPS transition, and preserve existing Azure monitoring and recovery definitions. (#555)
+- **Retention operator instructions** — distinguish the development legacy task from guarded production cleanup and remove instructions to manually rerun the retired production purge.
 
 ## [1.4.2] - 2026-09-27
 
