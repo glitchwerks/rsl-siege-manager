@@ -64,15 +64,23 @@ In the same commit that fills any gaps from step 2:
 - Use the current date in ISO 8601 (`YYYY-MM-DD`).
 - Sub-section order: `### Added`, `### Changed`, `### Fixed`, `### Infrastructure`, `### Documentation`. Omit empty subsections.
 
-### 4. Bump the three VERSION sources
+### 4. Verify independent component versions
 
-Update all three to the new repo version:
+The repository tag and component versions are separate. Do not bump a component
+solely to match the release tag: infrastructure/internal changes require no
+component bump. Check the component-versioning plan and the actual external
+surface changes since the previous release, retaining the per-PR versions:
 
-- `backend/VERSION` — plain-text file, single line `<X.Y.Z>\n`.
-- `bot/VERSION` — same format.
-- `frontend/package.json` — `"version": "<X.Y.Z>"`. Also update the matching root-level `"version"` in `frontend/package-lock.json` (lines near the top — the lockfile mirrors `package.json`'s root version in two places). Do NOT run `npm install` to "regenerate" the lockfile just to bump the version; edit the two version fields directly.
+- `backend/VERSION` — API semantic version.
+- `bot/VERSION` — bundled bot semantic version.
+- `frontend/package.json` — frontend semantic version, mirrored in the two root
+  version fields in `frontend/package-lock.json` if it changes.
 
-**Note on per-component discipline:** the component-versioning plan defines independent per-component versions. The repo `v*` tag is a separate axis. For the v1.3.0 release the three component versions were bumped in lockstep with the repo tag (pragmatic alignment after a retroactive cleanup). Going forward, per-PR bumps per the plan are the steady-state rule, and at release time the cutter verifies all three components are at version `>= previous-release-version`. Component versions are allowed to drift from each other and from the repo tag — see the plan's Q3 for the rationale.
+List the three component versions in the release changelog. A frontend feature
+may produce a minor repository release while the API has a patch version and the
+bot retains its prior version. Frozen dependency/build changes alone do not
+justify a minor API or bot version. Do not run `npm install` just to change version
+metadata.
 
 ### 5. Open a release PR
 
@@ -122,7 +130,7 @@ The notes file is the same content as the `[X.Y.Z]` section of `CHANGELOG.md`; e
 
 After `deploy.yml` finishes (3 jobs: Deploy API / Deploy Bot / Deploy Frontend, all "prod"):
 
-- `curl https://<frontend-fqdn>/api/version` returns the new versions for all three components
+- `curl https://<frontend-fqdn>/api/version` returns the exact recorded component versions and release build SHA for all three components
 - The frontend changelog dropdown shows the new entry as latest (bell icon may need a hard refresh to invalidate the cached bundle)
 - The Container App revision UI for all three apps in `siege-web-prod` shows the new image SHA tag and `Healthy / Running / 100% traffic`
 

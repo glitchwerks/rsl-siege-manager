@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Selected-member highlighting, reproducible builds, reliable release promotion, and lower Azure operating costs ahead of the portable VPS transition.
 
-Components: siege-api 1.5.0, siege-frontend 1.5.0, siege-bot 1.5.0.
+Components: siege-api 1.4.3, siege-frontend 1.5.0, siege-bot 1.4.2.
 
 ### Added
 
@@ -32,6 +32,7 @@ Components: siege-api 1.5.0, siege-frontend 1.5.0, siege-bot 1.5.0.
 ### Documentation
 
 - **Portable hosting release boundary** — retire unnecessary Azure-only rollout work, retain host-neutral sidecar testing for the VPS transition, and preserve existing Azure monitoring and recovery definitions. (#555)
+- **Independent component versions** — release instructions now verify the per-component changes instead of aligning every component version to the repository tag.
 - **Retention operator instructions** — distinguish the development legacy task from guarded production cleanup and remove instructions to manually rerun the retired production purge.
 
 ## [1.4.2] - 2026-09-27
