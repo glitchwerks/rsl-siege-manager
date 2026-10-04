@@ -35,6 +35,23 @@ def baseline(rows):
 
 
 class RetentionTests(unittest.TestCase):
+    def test_init_container_images_in_current_and_retained_revisions_are_protected(self):
+        repo = "siege-api"
+        tag_ref = f"{r.REGISTRY}.azurecr.io/{repo}:{image(7)['tags'][0]}"
+        digest_ref = f"{r.REGISTRY}.azurecr.io/{repo}@{image(8)['digest']}"
+        props = {"provisioningState": "Succeeded", "runningStatus": "Running",
+                 "latestReadyRevisionName": "current", "configuration": {},
+                 "template": {"containers": [{"image": "public/current"}],
+                              "initContainers": [{"image": tag_ref}]}}
+        app = {"id": "/subscriptions/test/app", "properties": props}
+        rev = {"properties": {"template": {"containers": [], "initContainers": [{"image": digest_ref}]}}}
+        with patch.object(r, "listed", side_effect=[[app], [rev]] * len(r.GROUPS)):
+            result = r.applications()
+        self.assertIn(tag_ref, result["apps"][0]["images"])
+        self.assertIn(digest_ref, result["references"])
+        rows = {repo: [image(i, days=10+i) for i in range(1, 9)]}
+        self.assertEqual(sum(row["candidate"] for row in r.plan(rows, result["references"], AT)), 1)
+
     def test_seven_day_boundary_and_newest_five(self):
         rows = {"siege-api": [image(i, days=i) for i in range(1, 10)]}
         result = r.plan(rows, [], AT)

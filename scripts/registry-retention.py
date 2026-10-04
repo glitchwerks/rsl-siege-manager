@@ -100,6 +100,12 @@ def inventory_hash(rows):
     return fingerprint(sorted([metadata(row) for row in rows], key=lambda row: row["digest"]))
 
 
+def template_images(properties):
+    template = properties.get("template") or {}
+    containers = (template.get("containers") or []) + (template.get("initContainers") or [])
+    return sorted(container["image"] for container in containers)
+
+
 def applications():
     apps = []
     refs = []
@@ -114,15 +120,15 @@ def applications():
                 raise Stop("Deployment in progress or application failed")
             if props.get("runningStatus") not in (("Running", "Stopped") if group == "siege-web-dev" else ("Running",)):
                 raise Stop("Application baseline unhealthy")
-            containers = props.get("template", {}).get("containers", [])
-            refs.extend(container["image"] for container in containers)
+            images = template_images(props)
+            refs.extend(images)
             ingress = props.get("configuration", {}).get("ingress") or {}
             apps.append({"id": app["id"], "status": props["runningStatus"],
                          "revision": props.get("latestReadyRevisionName"),
-                         "images": sorted(container["image"] for container in containers),
+                         "images": images,
                          "ingressHash": fingerprint(ingress)})
             revisions = listed(f"https://management.azure.com{app['id']}/revisions?api-version=2024-03-01")
-            refs.extend(container["image"] for rev in revisions for container in rev["properties"].get("template", {}).get("containers", []))
+            refs.extend(image for rev in revisions for image in template_images(rev["properties"]))
     return {"apps": sorted(apps, key=lambda app: app["id"]), "references": sorted(refs)}
 
 

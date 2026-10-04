@@ -14,7 +14,7 @@ production registry. Delete a manifest only when it was last updated more than
 seven days ago and none of these protections apply:
 
 - An image tag or digest appears in the current template or any retained
-  Container App revision, active or inactive, in production, development, or
+  Container App revision, active or inactive, including init-container images, in production, development, or
   the standalone bot resource group.
 - It is among the newest five manifests in its repository or the newest five
   release-tagged (`v*`) manifests.
@@ -35,6 +35,7 @@ retry or broad purge occurs after an uncertain write.
 
 Merge the workflow and operator before retiring the legacy task. Run
 `Production Registry Retention` manually with `phase=preflight` on main first.
+The job refuses execution from branches or tags other than main.
 This proves the existing production environment's `AZURE_CREDENTIALS` can read
 all relevant applications/revisions and registry metadata. Do not broaden
 permissions silently if this fails.
@@ -69,7 +70,8 @@ Preflight is valid for 20 minutes. Do not run local maintenance during any
 application/infrastructure deployment or registry write. GitHub production
 promotion, production infrastructure deployment, and cleanup share the
 `production-registry-maintenance` concurrency group with a non-replacing queue.
-Development builds retain their existing paths; any observed reference or
+[GitHub supports queued concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)
+with `queue: max` since May 7, 2026. Development builds retain their existing paths; any observed reference or
 registry drift stops cleanup. Manual Azure operations and other repositories
 are outside that queue, so operators must exclude them during maintenance.
 

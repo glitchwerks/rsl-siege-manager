@@ -18,6 +18,8 @@ on:
 permissions:
   contents: read
 
+# queue: max is supported since May 7, 2026:
+# https://github.blog/changelog/2026-05-07-github-actions-concurrency-groups-now-allow-larger-queues/
 # Shared with all GitHub production deployment paths. FIFO queue preserves
 # queued releases; manual Azure changes remain subject to operator exclusion.
 concurrency:
@@ -27,13 +29,13 @@ concurrency:
 
 jobs:
   retention:
+    if: github.ref == 'refs/heads/main'
     name: Guarded production retention
     runs-on: ubuntu-latest
     environment: prod
     timeout-minutes: 45
     env:
       AZURE_EXTENSION_USE_DYNAMIC_INSTALL: 'no'
-      REPORT: ${{ runner.temp }}/registry-retention/report.json
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -49,21 +51,21 @@ jobs:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: Preflight and preserve evidence
-        run: python3 scripts/registry-retention.py preflight --report "$REPORT"
+        run: python3 scripts/registry-retention.py preflight --report "$RUNNER_TEMP/registry-retention/report.json"
 
       # Activation is separate from deletion and only an explicit manual choice
       # disables the legacy task. A scheduled run never changes the old schedule.
       - name: Activate guarded replacement
         if: github.event_name == 'workflow_dispatch' && inputs.phase == 'activate'
-        run: python3 scripts/registry-retention.py activate --report "$REPORT" --confirm
+        run: python3 scripts/registry-retention.py activate --report "$RUNNER_TEMP/registry-retention/report.json" --confirm
 
       - name: Apply seven-day policy
         if: github.event_name == 'schedule' || inputs.phase == 'apply'
-        run: python3 scripts/registry-retention.py apply --report "$REPORT" --confirm
+        run: python3 scripts/registry-retention.py apply --report "$RUNNER_TEMP/registry-retention/report.json" --confirm
 
       - name: Verify cleanup separately
         if: github.event_name == 'schedule' || inputs.phase == 'apply'
-        run: python3 scripts/registry-retention.py verify --report "$REPORT"
+        run: python3 scripts/registry-retention.py verify --report "$RUNNER_TEMP/registry-retention/report.json"
 
       - name: Preserve sanitized report
         if: always()

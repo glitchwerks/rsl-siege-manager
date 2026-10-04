@@ -153,7 +153,21 @@ def test_retention_activation_and_deletion_are_separately_gated() -> None:
     assert "default: preflight" in workflow
     assert "inputs.phase == 'activate'" in workflow
     assert "github.event_name == 'schedule' || inputs.phase == 'apply'" in workflow
-    assert 'activate --report "$REPORT" --confirm' in workflow
-    assert 'apply --report "$REPORT" --confirm' in workflow
+    assert 'activate --report "$RUNNER_TEMP/registry-retention/report.json" --confirm' in workflow
+    assert 'apply --report "$RUNNER_TEMP/registry-retention/report.json" --confirm' in workflow
     assert "environment: prod" in workflow
     assert "if: always()" in workflow
+
+
+def test_retention_job_gates_production_credentials_to_main() -> None:
+    workflow = (WORKFLOW_PATH.parent / "registry-retention.yml").read_text()
+    assert "if: github.ref == 'refs/heads/main'" in workflow
+
+
+def test_retention_report_path_uses_runner_shell_variable() -> None:
+    workflow = (WORKFLOW_PATH.parent / "registry-retention.yml").read_text()
+    # runner context is allowed in step inputs, but not job-level env.
+    job_env = workflow.split("    env:", 1)[1].split("    steps:", 1)[0]
+    assert "runner." not in job_env
+    for phase in ("preflight", "activate", "apply", "verify"):
+        assert f'{phase} --report "$RUNNER_TEMP/registry-retention/report.json"' in workflow
