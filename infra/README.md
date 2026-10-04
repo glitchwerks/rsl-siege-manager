@@ -100,40 +100,26 @@ The registry name follows a fixed pattern: `${appPrefix}acr${environment}`.
 
 ## Image retention
 
-Both registries run a **scheduled ACR Task** (`weekly-purge`) that executes `acr purge` every **Sunday at 03:00 UTC**. The task runs inside ACR via its system-assigned managed identity — no Container App or Function is needed.
+Production cleanup uses the **Production Registry Retention** GitHub workflow,
+scheduled daily at 04:17 UTC. The old production `weekly-purge` task is disabled;
+do not invoke it manually. The seven-day policy protects images referenced by
+current templates and every retained revision (including init containers), the
+latest five builds and five release manifests per repository, and locked images.
+It checks for deployment drift and shares a queue with production promotion.
 
-### Retention rules
+See [the retention runbook](../docs/operations/registry-retention.md) for
+preflight, activation, application, verification, and task-scheduling recovery.
+Recovery can restore scheduling; deleted historical images cannot be restored.
+Use the workflow's read-only `preflight` phase to review the current inventory.
 
-| Rule | Detail |
-|---|---|
-| Release tags (`v*`) | **Never deleted.** The SHA filter `^[a-f0-9]{40}$` only matches 40-char lowercase hex commit hashes — release tags (`v1.0.0`, etc.) are never touched. |
-| SHA / commit-hash tags | Keep the **last 10** per repo (`--keep 10`); delete older ones. |
-| Untagged manifests | Delete any untagged manifest older than **7 days** (`--untagged --ago 7d`). |
+Development retains its existing Sunday 03:00 UTC ACR `weekly-purge` task:
+SHA tags beyond the task's keep count and untagged manifests older than seven
+days are eligible; release tags are excluded. Development's task does not inspect
+application revision references and must not be used as production's policy.
+The `acrPurgeSchedule` and `acrPurgeKeepCount` parameters control this legacy task;
+`acrLegacyPurgeEnabled = false` in production keeps it disabled on future deployments.
 
 Repositories covered: `siege-api`, `siege-bot`, `siege-frontend`.
-
-### First-time backlog clearance (mandatory after first deploy)
-
-The task is deployed but **not triggered automatically on deploy**. After the first infra deploy, run the task once on-demand to clear the existing backlog (~364 dev manifests, ~155 prod):
-
-```bash
-# Dev
-az acr task run --name weekly-purge --registry siegewebacr --resource-group siege-web-dev
-
-# Prod
-az acr task run --name weekly-purge --registry siegeacrprod --resource-group siege-web-prod
-```
-
-Verify storage dropped with:
-
-```bash
-az acr show-usage --name siegewebacr --resource-group siege-web-dev
-az acr show-usage --name siegeacrprod --resource-group siege-web-prod
-```
-
-### Changing the schedule or keep count
-
-Pass `acrPurgeSchedule` (cron string, UTC) and `acrPurgeKeepCount` (int ≥ 1) as parameters. The defaults (`'0 3 * * Sun'` / `10`) are set in each `.bicepparam` file and should be the same across environments for predictable behavior.
 
 ## Resource group naming convention
 

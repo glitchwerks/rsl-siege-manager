@@ -38,7 +38,7 @@ param location = 'westus'
 // Restore Standard if measured pull throughput requires it.
 param acrSku = 'Basic'
 
-// Approximately 29 GiB currently stored. Warn at 32 GiB, critical at 38 GiB.
+// Storage growth budget: warn at 32 GiB, critical at 38 GiB.
 // This growth budget is independent of Basic's 10 GiB billing allowance.
 param acrStorageAlertBudgetGiB = 40
 
@@ -180,10 +180,9 @@ param discordDay1RoleId = ''
 param discordDay2RoleId = ''
 
 // ── ACR image retention ───────────────────────────────────────────────────────
-// Prod currently has ~155 manifests (51/52/52 across api/bot/frontend).
-// Release tags (v*) are preserved forever. SHA/commit tags beyond the last 10
-// per repo are deleted weekly. Untagged manifests older than 7 days are removed.
-// After the first deploy, run once on-demand to clear the existing backlog:
-//   az acr task run --name weekly-purge --registry siegeacrprod
+// Legacy task settings are retained for Azure recovery. The task is disabled by
+// acrLegacyPurgeEnabled=false; do not run it manually. Production uses guarded
+// daily seven-day cleanup with deployment-reference protection. See
+// docs/operations/registry-retention.md.
 param acrPurgeKeepCount = 10
 param acrPurgeSchedule = '0 3 * * Sun'
