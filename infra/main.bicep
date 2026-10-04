@@ -8,8 +8,12 @@ param environment string = 'dev'
 @description('Short prefix used in resource names')
 param appPrefix string = 'siege'
 
-@description('Container Registry SKU (Basic for dev, Standard for prod)')
+@description('Container Registry SKU (Basic, Standard, or Premium)')
 param acrSku string = 'Basic'
+
+@description('Storage budget for registry growth alerts in GiB. Zero preserves the SKU included-storage thresholds; this is not a capacity limit.')
+@minValue(0)
+param acrStorageAlertBudgetGiB int = 0
 
 @description('Override the generated ACR name. Leave empty to use the default convention (appPrefix + "acr" + environment).')
 param acrNameOverride string = ''
@@ -20,6 +24,9 @@ param acrPurgeKeepCount int = 10
 
 @description('Cron schedule (UTC) for the weekly ACR purge task. Default: Sunday 03:00 UTC.')
 param acrPurgeSchedule string = '0 3 * * Sun'
+
+@description('Enable the legacy ACR purge task. Disable in production when guarded retention is activated.')
+param acrLegacyPurgeEnabled bool = true
 
 @description('Image tag to deploy')
 param imageTag string = 'latest'
@@ -207,6 +214,10 @@ assert externalBotApiUrlIsHttps = !useExternalSidecar || environment == 'dev' ||
 @description('Fallback email address for the monitoring action group')
 param alertEmail string
 
+@description('Evaluation frequency for latency and slow-image warnings only. Query windows remain five minutes; operational error alerts keep one-minute checks.')
+@allowed(['PT1M', 'PT5M'])
+param advisoryAlertEvaluationFrequency string = 'PT1M'
+
 // Cost Management anomaly detection is subscription-wide. Only the coordinated
 // production infrastructure deployment may create/update this email-only rule;
 // automatic dev deployments must leave subscription billing alerts untouched.
@@ -246,6 +257,7 @@ module registry 'modules/registry.bicep' = {
     acrNameOverride: acrNameOverride
     purgeKeepCount: acrPurgeKeepCount
     purgeSchedule: acrPurgeSchedule
+    purgeEnabled: acrLegacyPurgeEnabled
   }
 }
 
@@ -312,6 +324,7 @@ module monitoring 'modules/monitoring.bicep' = {
     appInsightsId: appInsights.outputs.appInsightsId
     appInsightsName: appInsights.outputs.appInsightsName
     alertEmail: alertEmail
+    advisoryAlertEvaluationFrequency: advisoryAlertEvaluationFrequency
     keyVaultName: keyVault.outputs.vaultName
     keyVaultUri: keyVault.outputs.vaultUri
     tags: {
@@ -399,6 +412,7 @@ module capacityHealthAlerts 'modules/capacity-health-alerts.bicep' = {
     actionGroupId: monitoring.outputs.actionGroupId
     registryId: registry.outputs.registryId
     acrSku: acrSku
+    acrStorageAlertBudgetGiB: acrStorageAlertBudgetGiB
     postgresServerId: postgres.outputs.serverId
     postgresMaxConnections: postgresMaxConnections
     workspaceId: logAnalytics.outputs.workspaceId

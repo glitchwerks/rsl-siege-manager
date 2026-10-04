@@ -20,6 +20,9 @@ param purgeKeepCount int = 10
 @description('Cron schedule for the weekly purge task (UTC). Default: Sunday 03:00 UTC.')
 param purgeSchedule string = '0 3 * * Sun'
 
+@description('Enable legacy tag-based cleanup. Production uses deployment-aware retention instead.')
+param purgeEnabled bool = true
+
 // ACR names must be alphanumeric only, 5-50 chars. Using a fixed, predictable
 // name (e.g. siegeacrdev / siegeacrprod) so the GitHub Actions workflow can
 // reference it without reading Bicep output at deploy time.
@@ -108,7 +111,7 @@ resource purgeTask 'Microsoft.ContainerRegistry/registries/tasks@2019-06-01-prev
       ]
     }
     isSystemTask: false
-    status: 'Enabled'
+    status: purgeEnabled ? 'Enabled' : 'Disabled'
     timeout: 3600
   }
 }
