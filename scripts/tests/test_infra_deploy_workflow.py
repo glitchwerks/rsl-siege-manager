@@ -43,8 +43,7 @@ def test_push_runs_share_the_dev_concurrency_group() -> None:
     workflow = _workflow_text()
 
     assert (
-        "group: infra-deploy-${{ github.event_name == 'push' && 'dev' || "
-        "inputs.environment }}"
+        "format('infra-deploy-{0}', github.event_name == 'push' && 'dev' || inputs.environment)"
     ) in workflow
 
 
@@ -135,3 +134,26 @@ def test_infra_ci_uses_only_a_placeholder_slack_webhook() -> None:
     assert workflow.count(placeholder) == 2
     assert "secrets.SLACK_ALERT_WEBHOOK_URL" not in workflow
     assert "secrets.SLACK_ALERT_BOT_WEBHOOK" not in workflow
+
+
+def test_production_deployments_and_retention_share_a_non_replacing_queue() -> None:
+    retention = (WORKFLOW_PATH.parent / "registry-retention.yml").read_text()
+    app = APP_DEPLOY_WORKFLOW_PATH.read_text()
+    infra = _workflow_text()
+    for workflow in (retention, app, infra):
+        assert "production-registry-maintenance" in workflow
+        assert "queue: max" in workflow
+        assert "cancel-in-progress: false" in workflow
+    assert "inputs.environment == 'prod'" in app
+    assert "inputs.environment == 'prod'" in infra
+
+
+def test_retention_activation_and_deletion_are_separately_gated() -> None:
+    workflow = (WORKFLOW_PATH.parent / "registry-retention.yml").read_text()
+    assert "default: preflight" in workflow
+    assert "inputs.phase == 'activate'" in workflow
+    assert "github.event_name == 'schedule' || inputs.phase == 'apply'" in workflow
+    assert 'activate --report "$REPORT" --confirm' in workflow
+    assert 'apply --report "$REPORT" --confirm' in workflow
+    assert "environment: prod" in workflow
+    assert "if: always()" in workflow

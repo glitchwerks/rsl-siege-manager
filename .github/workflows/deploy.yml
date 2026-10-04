@@ -45,12 +45,9 @@ on:
 # that exact SHA before applying Bicep. The dev deployment jobs below use their
 # own replacement groups so only the newest eligible application revision wins.
 #
-# Tag-triggered runs get a unique group per tag (`deploy-tag-refs/tags/v1.2.3`)
-# so two different tags never cancel each other — each prod deploy completes
-# independently.
-#
-# workflow_dispatch runs each get a unique group (run_id) so manual re-runs
-# are never cancelled by each other.
+# Production promotions share a queued group with guarded registry cleanup and
+# production infrastructure deployment. Dev/main builds retain their prior
+# groups. queue: max prevents queued production promotions replacing each other.
 
 # ── Permissions ────────────────────────────────────────────────────────────────
 #
@@ -74,11 +71,12 @@ permissions:
 concurrency:
   group: >-
     ${{
-      github.ref_type == 'tag' && format('deploy-tag-{0}', github.ref) ||
+      (github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && inputs.environment == 'prod')) && 'production-registry-maintenance' ||
       github.event_name == 'workflow_dispatch' && github.run_id ||
       format('deploy-main-build-{0}', github.sha)
     }}
   cancel-in-progress: false
+  queue: max
 
 jobs:
 

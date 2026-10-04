@@ -25,6 +25,9 @@ param acrPurgeKeepCount int = 10
 @description('Cron schedule (UTC) for the weekly ACR purge task. Default: Sunday 03:00 UTC.')
 param acrPurgeSchedule string = '0 3 * * Sun'
 
+@description('Enable the legacy ACR purge task. Disable in production when guarded retention is activated.')
+param acrLegacyPurgeEnabled bool = true
+
 @description('Image tag to deploy')
 param imageTag string = 'latest'
 
@@ -254,6 +257,7 @@ module registry 'modules/registry.bicep' = {
     acrNameOverride: acrNameOverride
     purgeKeepCount: acrPurgeKeepCount
     purgeSchedule: acrPurgeSchedule
+    purgeEnabled: acrLegacyPurgeEnabled
   }
 }
 

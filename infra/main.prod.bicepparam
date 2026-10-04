@@ -42,6 +42,9 @@ param acrSku = 'Basic'
 // This growth budget is independent of Basic's 10 GiB billing allowance.
 param acrStorageAlertBudgetGiB = 40
 
+// Production cleanup runs through the guarded registry-retention workflow.
+param acrLegacyPurgeEnabled = false
+
 // Prod ACR is already deployed as siegeacrprod — override keeps the existing
 // registry rather than creating a new hyphenated name.
 param acrNameOverride = 'siegeacrprod'

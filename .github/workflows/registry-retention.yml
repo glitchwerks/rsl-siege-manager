@@ -1,0 +1,75 @@
+name: Production Registry Retention
+
+on:
+  schedule:
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+    inputs:
+      phase:
+        description: 'Preflight only, activate replacement, or apply guarded cleanup'
+        required: true
+        type: choice
+        default: preflight
+        options:
+          - preflight
+          - activate
+          - apply
+
+permissions:
+  contents: read
+
+# Shared with all GitHub production deployment paths. FIFO queue preserves
+# queued releases; manual Azure changes remain subject to operator exclusion.
+concurrency:
+  group: production-registry-maintenance
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  retention:
+    name: Guarded production retention
+    runs-on: ubuntu-latest
+    environment: prod
+    timeout-minutes: 45
+    env:
+      AZURE_EXTENSION_USE_DYNAMIC_INSTALL: 'no'
+      REPORT: ${{ runner.temp }}/registry-retention/report.json
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Verify operator
+        run: python3 -m unittest discover -s scripts/tests -p test_registry_retention.py -v
+
+      - name: Log in to Azure
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Preflight and preserve evidence
+        run: python3 scripts/registry-retention.py preflight --report "$REPORT"
+
+      # Activation is separate from deletion and only an explicit manual choice
+      # disables the legacy task. A scheduled run never changes the old schedule.
+      - name: Activate guarded replacement
+        if: github.event_name == 'workflow_dispatch' && inputs.phase == 'activate'
+        run: python3 scripts/registry-retention.py activate --report "$REPORT" --confirm
+
+      - name: Apply seven-day policy
+        if: github.event_name == 'schedule' || inputs.phase == 'apply'
+        run: python3 scripts/registry-retention.py apply --report "$REPORT" --confirm
+
+      - name: Verify cleanup separately
+        if: github.event_name == 'schedule' || inputs.phase == 'apply'
+        run: python3 scripts/registry-retention.py verify --report "$REPORT"
+
+      - name: Preserve sanitized report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: registry-retention-${{ github.run_id }}
+          path: ${{ runner.temp }}/registry-retention/*.json
+          if-no-files-found: warn
+          retention-days: 30

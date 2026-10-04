@@ -55,8 +55,9 @@ on:
 # queue and wait.
 
 concurrency:
-  group: infra-deploy-${{ github.event_name == 'push' && 'dev' || inputs.environment }}
+  group: ${{ github.event_name == 'workflow_dispatch' && inputs.environment == 'prod' && 'production-registry-maintenance' || format('infra-deploy-{0}', github.event_name == 'push' && 'dev' || inputs.environment) }}
   cancel-in-progress: false
+  queue: max
 
 # ── Permissions ──────────────────────────────────────────────────────────────
 #
