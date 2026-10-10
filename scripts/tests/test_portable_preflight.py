@@ -64,7 +64,7 @@ def model():
     }
     result = {"services": {}, "networks": {
         "database": {"internal": True},
-        "proxy": {"ipam": {"config": [{"subnet": "172.30.60.0/28"}]}},
+        "proxy": {"ipam": {"config": [{"subnet": "172.30.60.0/28", "ip_range": "172.30.60.8/29"}]}},
     }}
     for name in ("backend", "frontend", "proxy", "postgres", "bot", "migrate-siege"):
         result["services"][name] = {
@@ -149,6 +149,19 @@ class SafetyTests(unittest.TestCase):
                 bad = factory()
                 bad["services"][name]["networks"].pop("application")
                 self.assertFalse(preflight.validate(bad, topology)["role_sync_receiver_route"])
+
+    def test_dynamic_proxy_range_cannot_allocate_fixed_proxy_address(self):
+        for topology, factory in (("bundled", model), ("mom", mom_model)):
+            for dynamic in (None, "172.30.60.0/28", "172.30.60.0/29",
+                            "172.30.61.0/29", "172.30.60.8/32", "invalid", "172.30.60.8/29"):
+                data = factory()
+                config = data["networks"]["proxy"]["ipam"]["config"][0]
+                if dynamic is None:
+                    config.pop("ip_range")
+                else:
+                    config["ip_range"] = dynamic
+                self.assertEqual(preflight.validate(data, topology)["trust_only_fixed_proxy"],
+                                 dynamic == "172.30.60.8/29")
 
     def test_database_placeholder_case_variants_are_rejected_with_matching_urls(self):
         for topology, factory in (("bundled", model), ("mom", mom_model)):

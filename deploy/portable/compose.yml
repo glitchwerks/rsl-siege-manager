@@ -114,7 +114,9 @@ networks:
   database: {internal: true}
   proxy:
     ipam:
-      config: [{subnet: "${PROXY_SUBNET:?Choose a non-conflicting private subnet}"}]
+      config:
+        - subnet: "${PROXY_SUBNET:?Choose a non-conflicting private subnet}"
+          ip_range: "${PROXY_DYNAMIC_RANGE:?Choose a dynamic range excluding PROXY_IP}"
 
 volumes:
   database-data: {}

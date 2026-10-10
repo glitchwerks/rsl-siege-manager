@@ -131,9 +131,11 @@ def validate(model, topology):
         trusted = command[command.index("--forwarded-allow-ips") + 1]
         address = services["proxy"]["networks"]["proxy"]["ipv4_address"]
         subnet = ipaddress.ip_network(model["networks"]["proxy"]["ipam"]["config"][0]["subnet"])
+        dynamic = ipaddress.ip_network(model["networks"]["proxy"]["ipam"]["config"][0]["ip_range"])
         ip = ipaddress.ip_address(address)
         return (trusted == address and ip in subnet and ip.is_private
                 and ip not in (subnet.network_address, subnet.broadcast_address)
+                and dynamic.subnet_of(subnet) and dynamic.num_addresses >= 4 and ip not in dynamic
                 and "--proxy-headers" in command)
     check("trust_only_fixed_proxy", proxy_trust)
     check("backend_proxy_alias_unambiguous", lambda:

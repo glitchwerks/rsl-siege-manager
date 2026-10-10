@@ -10,7 +10,8 @@ development file: that older path inherits builds and public service ports.
 Only Caddy publishes host ports (80/443). API requests go directly from Caddy to
 the backend, preserving public HTTPS/Host and avoiding a second proxy rewriting
 forwarded headers. The API upstream alias `api-proxy` exists only on the fixed-address proxy network,
-so Caddy cannot accidentally connect over the shared application network.
+so Caddy cannot accidentally connect over the shared application network. The
+dynamic allocation range excludes its fixed address to avoid startup collisions.
 Uvicorn trusts only Caddy's fixed private address; it does not
 trust arbitrary caller headers. Access logging is disabled on this API entrypoint
 so OAuth callback query credentials are not written into access logs.
@@ -38,6 +39,7 @@ rendered values internally and emits only fixed check names and booleans. Do not
 use shell tracing. Keep secret recovery material encrypted outside this host.
 
 Choose a unique Compose project name and non-conflicting private proxy subnet
+with a `PROXY_DYNAMIC_RANGE` contained in `PROXY_SUBNET` and excluding `PROXY_IP`
 **after** reviewing the approved target host's routes, containers, services, port
 usage, storage capacity, remote access, and recovery path. Example subnets are not
 universal defaults. Never install/change Docker, firewall, networks, DNS, or mounts
