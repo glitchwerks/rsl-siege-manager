@@ -38,7 +38,7 @@ output or raw environment files: they contain credentials. The preflight capture
 rendered values internally and emits only fixed check names and booleans. Do not
 use shell tracing. Keep secret recovery material encrypted outside this host.
 
-Choose a unique Compose project name and non-conflicting private proxy subnet
+Choose a unique Compose project name and non-conflicting RFC 1918 IPv4 proxy subnet
 with a `PROXY_DYNAMIC_RANGE` contained in `PROXY_SUBNET` and excluding `PROXY_IP`
 **after** reviewing the approved target host's routes, containers, services, port
 usage, storage capacity, remote access, and recovery path. Example subnets are not

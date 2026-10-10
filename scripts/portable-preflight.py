@@ -139,7 +139,10 @@ def validate(model, topology):
         subnet = ipaddress.ip_network(model["networks"]["proxy"]["ipam"]["config"][0]["subnet"])
         dynamic = ipaddress.ip_network(model["networks"]["proxy"]["ipam"]["config"][0]["ip_range"])
         ip = ipaddress.ip_address(address)
-        return (trusted == address and ip in subnet and ip.is_private
+        return (subnet.version == dynamic.version == ip.version == 4
+                and any(subnet.subnet_of(ipaddress.ip_network(private))
+                        for private in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"))
+                and trusted == address and ip in subnet and ip.is_private
                 and ip not in (subnet.network_address, subnet.network_address + 1, subnet.broadcast_address)
                 and dynamic.subnet_of(subnet) and dynamic.num_addresses >= 4 and ip not in dynamic
                 and "--proxy-headers" in command)

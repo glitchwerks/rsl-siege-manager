@@ -157,6 +157,18 @@ class SafetyTests(unittest.TestCase):
                 bad["services"][name]["networks"].pop("application")
                 self.assertFalse(preflight.validate(bad, topology)["role_sync_receiver_route"])
 
+    def test_proxy_network_requires_private_ipv4(self):
+        for topology, factory in (("bundled", model), ("mom", mom_model)):
+            for subnet, dynamic, address in (("fd00::/120", "fd00::80/121", "fd00::2"),
+                    ("127.0.0.0/28", "127.0.0.8/29", "127.0.0.2"),
+                    ("8.8.8.0/28", "8.8.8.8/29", "8.8.8.2")):
+                data = factory()
+                config = data["networks"]["proxy"]["ipam"]["config"][0]
+                config.update(subnet=subnet, ip_range=dynamic)
+                data["services"]["proxy"]["networks"]["proxy"]["ipv4_address"] = address
+                data["services"]["backend"]["command"][-1] = address
+                self.assertFalse(preflight.validate(data, topology)["trust_only_fixed_proxy"])
+
     def test_proxy_cannot_claim_the_inferred_gateway(self):
         for topology, factory in (("bundled", model), ("mom", mom_model)):
             data = factory()
