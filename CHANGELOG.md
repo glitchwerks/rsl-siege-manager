@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Infrastructure
 
+- **Portable recovery preparation** — add separately gated PostgreSQL 16 snapshot backups, offline archive verification, and isolated least-privilege restore rehearsal with sanitized evidence and disposable CI coverage. Scheduling, encrypted off-host copies, and live recovery acceptance remain separately approved (#557).
+
 - **Portable production preparation** — add standalone Compose with digest-pinned images, private database/sidecar ports, HTTPS proxy trust, explicit bundled/mom-bot topologies, resource/log bounds, a sanitized configuration preflight, and recovery gates. Pilot activation, backup automation, and production cutover remain separately gated (#557).
 
 ## [1.5.0] - 2026-10-04
