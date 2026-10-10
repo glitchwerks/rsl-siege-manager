@@ -19,6 +19,8 @@ SPEC.loader.exec_module(preflight)
 
 def fixture(directory):
     directory = Path(directory)
+    for name in ("Caddyfile", "init-databases.sql"):
+        (directory / name).write_bytes((preflight.PORTABLE / name).read_bytes())
     runtime = directory / "runtime"
     runtime.mkdir(mode=0o700)
     replacements = {
@@ -276,6 +278,9 @@ class ReportTests(unittest.TestCase):
         guard = patch.object(preflight, "private_runtime_files", return_value=True)
         guard.start()
         self.addCleanup(guard.stop)
+        binds = patch.object(preflight, "deployment_bind_sources_current", return_value=True)
+        binds.start()
+        self.addCleanup(binds.stop)
         reader = patch.object(preflight, "read_secret_file", return_value="synthetic-admin-password-long-enough")
         reader.start()
         self.addCleanup(reader.stop)
@@ -342,6 +347,35 @@ class RuntimePermissionTests(unittest.TestCase):
             path.symlink_to(target)
             self.assertFalse(preflight.private_runtime_files("mom", stack, root))
 
+    def test_missing_stale_or_nonregular_bind_sources_stop_before_render(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            stack = fixture(root)
+            for name in ("Caddyfile", "init-databases.sql"):
+                path = root / name
+                content = path.read_bytes()
+                for invalid in ("missing", "directory", "stale", "symlink"):
+                    with self.subTest(name=name, invalid=invalid):
+                        path.unlink()
+                        if invalid == "directory":
+                            path.mkdir()
+                        elif invalid == "stale":
+                            path.write_text("unreviewed configuration")
+                        elif invalid == "symlink":
+                            path.symlink_to(preflight.PORTABLE / name)
+                        with patch("sys.argv", ["preflight", "--topology", "mom", "--stack-env", str(stack),
+                                "--project-directory", str(root), "--report", str(root / f"{name}-{invalid}.json")]), \
+                                patch.object(preflight, "render") as render, redirect_stdout(io.StringIO()) as output:
+                            self.assertEqual(preflight.main(), 1)
+                            render.assert_not_called()
+                            self.assertFalse(json.loads(output.getvalue())["checks"]["deployment_bind_sources_current"])
+                        if path.is_dir():
+                            path.rmdir()
+                        elif path.is_symlink() or path.exists():
+                            path.unlink()
+                        path.write_bytes(content)
+                self.assertTrue(preflight.deployment_bind_sources_current(root))
+
     def test_exposed_credentials_stop_before_render(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -352,7 +386,7 @@ class RuntimePermissionTests(unittest.TestCase):
                     patch.object(preflight, "render") as render, redirect_stdout(io.StringIO()) as output:
                 self.assertEqual(preflight.main(), 1)
                 render.assert_not_called()
-                self.assertEqual(json.loads(output.getvalue())["checks"], {"runtime_credentials_private": False})
+                self.assertFalse(json.loads(output.getvalue())["checks"]["runtime_credentials_private"])
 
 
 class AdministratorSecretTests(unittest.TestCase):
@@ -429,6 +463,7 @@ class ComposeTests(unittest.TestCase):
             for topology in ("bundled", "mom"):
                 with self.subTest(topology=topology):
                     self.assertTrue(preflight.private_runtime_files(topology, stack, Path(directory)))
+                    self.assertTrue(preflight.deployment_bind_sources_current(Path(directory)))
                     backend_file = Path(directory) / "runtime/backend.env"
                     content = backend_file.read_text()
                     if topology == "mom":

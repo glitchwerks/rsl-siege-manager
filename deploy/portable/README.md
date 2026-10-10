@@ -17,7 +17,8 @@ so OAuth callback query credentials are not written into access logs.
 
 An operator prepares these files under a protected deployment directory. Copy
 `Caddyfile` and `init-databases.sql` there too; Compose resolves their mounts
-relative to `--project-directory`:
+relative to `--project-directory`. Preflight requires both copies to match the
+reviewed repository versions; refresh them after updating this configuration:
 
 - `stack.env`: copy the shape of `stack.env.example`; use actual image digests
   obtained from CI/registry metadata. These examples are intentionally invalid

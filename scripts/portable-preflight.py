@@ -205,6 +205,23 @@ def private_runtime_files(topology, stack_env, project_directory):
         return False
 
 
+def deployment_bind_sources_current(project_directory):
+    """Require reviewed non-secret bind files, never container-created directories."""
+    try:
+        for name in ("Caddyfile", "init-databases.sql"):
+            path = project_directory / name
+            fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
+            with os.fdopen(fd, "rb") as source:
+                metadata = os.fstat(source.fileno())
+                if not stat.S_ISREG(metadata.st_mode) or metadata.st_size > 65536:
+                    return False
+                if source.read(65537) != (PORTABLE / name).read_bytes():
+                    return False
+        return True
+    except OSError:
+        return False
+
+
 def render(topology, stack_env, project_directory):
     command = ["docker", "compose", "--env-file", str(stack_env), "--project-directory",
                str(project_directory), "-f", str(PORTABLE / "compose.yml"), "-f",
@@ -224,11 +241,13 @@ def main():
     parser.add_argument("--report", type=Path, required=True)
     args = parser.parse_args()
     try:
-        if private_runtime_files(args.topology, args.stack_env, args.project_directory):
-            checks = validate(render(args.topology, args.stack_env, args.project_directory), args.topology)
-            checks["runtime_credentials_private"] = True
-        else:
-            checks = {"runtime_credentials_private": False}
+        checks = {
+            "runtime_credentials_private": private_runtime_files(
+                args.topology, args.stack_env, args.project_directory),
+            "deployment_bind_sources_current": deployment_bind_sources_current(args.project_directory),
+        }
+        if all(checks.values()):
+            checks.update(validate(render(args.topology, args.stack_env, args.project_directory), args.topology))
     except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired):
         # Compose stderr, exception messages, and rendered values may contain secrets.
         checks = {"compose_render": False}
