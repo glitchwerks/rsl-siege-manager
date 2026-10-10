@@ -83,7 +83,7 @@ second process with a production Discord token.
 The first boot of an **empty** PostgreSQL volume creates `siege`/`siege_app` and
 `mom_bot`/`mom_app`, with no superuser, role-creation, or database-creation privileges
 for either application role. Cross-database PUBLIC access is revoked. Encode URL
-passwords correctly; the database environment holds raw values. Existing volumes
+passwords correctly; portable database URLs must have no query options or fragments; the database environment holds raw values. Existing volumes
 are not reinitialized when environment passwords change. Rotation must update the
 actual database role and all consumers through a separate reviewed procedure;
 never remove a volume to make changed credentials take effect.
@@ -92,6 +92,10 @@ The portable API services explicitly clear the existing image's entrypoint,
 which otherwise runs migrations automatically and ignores the supplied command.
 Runtime starts Uvicorn with the reviewed proxy trust settings; only the opt-in
 maintenance service invokes Alembic. This override is confined to these files.
+
+The mom runtime also clears inherited entrypoints and explicitly starts
+`/app/.venv/bin/python -m mom_bot`, so normal activation cannot invoke an inherited
+migration wrapper.
 
 For mom-bot migrations use the `migrate-mom` service's direct Alembic command. Its
 image entrypoint is explicitly cleared so an inherited entrypoint cannot invoke

@@ -25,6 +25,9 @@ services:
     environment: {DISCORD_BOT_API_URL: "http://mom:8001"}
   mom:
     <<: *mom
+    # Start only the bot, regardless of an image's inherited migration entrypoint.
+    entrypoint: []
+    command: [/app/.venv/bin/python, -m, mom_bot]
     restart: unless-stopped
     init: true
     depends_on:

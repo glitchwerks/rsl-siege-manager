@@ -117,6 +117,7 @@ def mom_model():
     }
     services["proxy"]["environment"].update(ROLE_SYNC_UPSTREAM="mom:8001",
         ROLE_SYNC_PATH="/api/internal/role-sync")
+    mom.update(entrypoint=[], command=["/app/.venv/bin/python", "-m", "mom_bot"])
     services["mom"] = mom
     services["migrate-mom"] = copy.deepcopy(mom)
     services["migrate-mom"].update(profiles=["maintenance"], restart="no", entrypoint=[],
@@ -156,6 +157,40 @@ class SafetyTests(unittest.TestCase):
                 bad = factory()
                 bad["services"][name]["networks"].pop("application")
                 self.assertFalse(preflight.validate(bad, topology)["role_sync_receiver_route"])
+
+    def test_mom_runtime_cannot_inherit_migration_entrypoint(self):
+        for entrypoint in (None, ["/app/migrate.sh"]):
+            data = mom_model()
+            if entrypoint is None:
+                data["services"]["mom"].pop("entrypoint")
+            else:
+                data["services"]["mom"]["entrypoint"] = entrypoint
+            self.assertFalse(preflight.validate(data, "mom")["mom_runtime_does_not_auto_migrate"])
+        data = mom_model()
+        data["services"]["mom"]["command"] = ["/app/migrate.sh"]
+        self.assertFalse(preflight.validate(data, "mom")["mom_runtime_does_not_auto_migrate"])
+
+    def test_database_queries_and_fragments_cannot_override_connection_targets(self):
+        for topology, factory in (("bundled", model), ("mom", mom_model)):
+            targets = [("backend", "DATABASE_URL", "siege_database_credentials_match")]
+            if topology == "mom":
+                targets.append(("mom", "MOM_BOT_DATABASE_URL", "mom_database_credentials_match"))
+            for service, key, check in targets:
+                for suffix in ("?host=other-db&port=6543", "?sslmode=require", "#fragment"):
+                    data = factory()
+                    data["services"][service]["environment"][key] += suffix
+                    self.assertFalse(preflight.validate(data, topology)[check])
+
+    def test_siege_notification_channel_defaults_and_explicit_values(self):
+        for topology, factory in (("bundled", model), ("mom", mom_model)):
+            data = factory()
+            self.assertTrue(preflight.validate(data, topology)["siege_notification_channels_configured"])
+            for key in ("DISCORD_SIEGE_CHANNEL", "DISCORD_SIEGE_IMAGES_CHANNEL"):
+                for value in (None, "", " ", "REPLACE_CHANNEL", "synthetic-channel"):
+                    data = factory()
+                    data["services"]["backend"]["environment"][key] = value
+                    self.assertEqual(preflight.validate(data, topology)["siege_notification_channels_configured"],
+                                     value == "synthetic-channel")
 
     def test_proxy_network_requires_private_ipv4(self):
         for topology, factory in (("bundled", model), ("mom", mom_model)):

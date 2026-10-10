@@ -111,6 +111,10 @@ def validate(model, topology):
 
     check("required_login_role_configured", lambda:
           configured_value(env.get("DISCORD_REQUIRED_ROLE", "Clan Deputies")))
+    check("siege_notification_channels_configured", lambda: all(
+          configured_value(env.get(k, default)) for k, default in (
+              ("DISCORD_SIEGE_CHANNEL", "clan-siege-assignments"),
+              ("DISCORD_SIEGE_IMAGES_CHANNEL", "clan-siege-assignment-images"))))
     check("oauth_public_origin", lambda: env["DISCORD_REDIRECT_URI"] == f"https://{host}/api/auth/callback"
           and env["ALLOWED_ORIGINS"] == f"https://{host}"
           and snowflake(env.get("DISCORD_CLIENT_ID"))
@@ -178,6 +182,7 @@ def validate(model, topology):
         url = urlsplit(services[service]["environment"][variable])
         return (url.scheme == scheme and url.hostname == "postgres" and url.port == 5432
                 and url.username == username and url.path == f"/{database}"
+                and not url.query and not url.fragment
                 and len(database_env.get(password_key, "")) >= 16
                 and "REPLACE" not in database_env[password_key].upper()
                 and unquote(url.password or "") == database_env[password_key])
@@ -196,6 +201,9 @@ def validate(model, topology):
     check("sidecar_auth_matches", lambda: env["DISCORD_BOT_API_KEY"] == bot_env[
         "MOM_BOT_SECRET_DISCORD_BOT_API_KEY" if topology == "mom" else "BOT_API_KEY"])
     if topology == "mom":
+        check("mom_runtime_does_not_auto_migrate", lambda:
+              services["mom"].get("entrypoint") == []
+              and services["mom"].get("command") == ["/app/.venv/bin/python", "-m", "mom_bot"])
         check("mom_notification_recipients_configured", lambda:
               snowflake(bot_env.get("MOM_BOT_SECRET_NEW_MEMBERS_CHANNEL_ID"))
               and all(configured_value(bot_env.get(k)) for k in
