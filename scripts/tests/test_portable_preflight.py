@@ -150,6 +150,27 @@ class SafetyTests(unittest.TestCase):
                 bad["services"][name]["networks"].pop("application")
                 self.assertFalse(preflight.validate(bad, topology)["role_sync_receiver_route"])
 
+    def test_database_placeholder_case_variants_are_rejected_with_matching_urls(self):
+        for topology, factory in (("bundled", model), ("mom", mom_model)):
+            for key in ("SIEGE_DB_PASSWORD", "MOM_DB_PASSWORD"):
+                for password in ("replace_application_password_long_enough",
+                                 "RePlAcE_application_password_long_enough"):
+                    data = factory()
+                    database_env = data["services"]["postgres"]["environment"]
+                    original = database_env[key]
+                    database_env[key] = password
+                    if key == "SIEGE_DB_PASSWORD":
+                        env = data["services"]["backend"]["environment"]
+                        env["DATABASE_URL"] = env["DATABASE_URL"].replace(original, password)
+                        check = "siege_database_credentials_match"
+                    elif topology == "mom":
+                        env = data["services"]["mom"]["environment"]
+                        env["MOM_BOT_DATABASE_URL"] = env["MOM_BOT_DATABASE_URL"].replace(original, password)
+                        check = "mom_database_credentials_match"
+                    else:
+                        check = "distinct_application_database_passwords"
+                    self.assertFalse(preflight.validate(data, topology)[check])
+
     def test_runtime_session_placeholders_are_rejected(self):
         for topology, factory in (("bundled", model), ("mom", mom_model)):
             for value in ("changeme-use-a-long-random-string-in-production",
@@ -395,6 +416,22 @@ class RuntimePermissionTests(unittest.TestCase):
             path.rename(target)
             path.symlink_to(target)
             self.assertFalse(preflight.private_runtime_files("mom", stack, root))
+
+    def test_runtime_paths_must_be_owned_by_invoking_user(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            stack = fixture(root)
+            original = Path.lstat
+            for path in (root, root / "runtime", stack, root / "runtime/backend.env",
+                         root / "runtime/database.env", root / "runtime/mom.env",
+                         root / "runtime/postgres-admin"):
+                def metadata(candidate):
+                    info = original(candidate)
+                    if candidate == path:
+                        return type("Metadata", (), {"st_mode": info.st_mode, "st_uid": os.geteuid() + 1})()
+                    return info
+                with patch.object(Path, "lstat", metadata):
+                    self.assertFalse(preflight.private_runtime_files("mom", stack, root))
 
     def test_missing_stale_or_nonregular_bind_sources_stop_before_render(self):
         with tempfile.TemporaryDirectory() as directory:

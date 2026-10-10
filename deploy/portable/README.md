@@ -31,8 +31,8 @@ reviewed repository versions; refresh them after updating this configuration:
   Compose secret. Keep it out of application containers.
 - Exactly one of `runtime/mom.env` or `runtime/bundled.env`.
 
-Restrict directories to the deployment operator (0700) and credential files to
-0600. These paths are ignored by Git. Never publish rendered `compose config`
+The invoking deployment operator must own all deployment/runtime directories and
+credential files. Restrict directories to 0700 and credential files to 0600. These paths are ignored by Git. Never publish rendered `compose config`
 output or raw environment files: they contain credentials. The preflight captures
 rendered values internally and emits only fixed check names and booleans. Do not
 use shell tracing. Keep secret recovery material encrypted outside this host.

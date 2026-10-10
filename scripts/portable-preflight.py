@@ -161,14 +161,14 @@ def validate(model, topology):
     # must not authenticate as the other application's publicly known role.
     check("distinct_application_database_passwords", lambda:
           len(database_env["MOM_DB_PASSWORD"]) >= 16
-          and "REPLACE" not in database_env["MOM_DB_PASSWORD"]
+          and "REPLACE" not in database_env["MOM_DB_PASSWORD"].upper()
           and database_env["SIEGE_DB_PASSWORD"] != database_env["MOM_DB_PASSWORD"])
     def database_url(service, variable, scheme, username, database, password_key):
         url = urlsplit(services[service]["environment"][variable])
         return (url.scheme == scheme and url.hostname == "postgres" and url.port == 5432
                 and url.username == username and url.path == f"/{database}"
                 and len(database_env.get(password_key, "")) >= 16
-                and "REPLACE" not in database_env[password_key]
+                and "REPLACE" not in database_env[password_key].upper()
                 and unquote(url.password or "") == database_env[password_key])
     check("siege_database_credentials_match", lambda: database_url(
         "backend", "DATABASE_URL", "postgresql+asyncpg", "siege_app", "siege", "SIEGE_DB_PASSWORD"))
@@ -209,7 +209,8 @@ def private_runtime_files(topology, stack_env, project_directory):
         for path in directories | files:
             metadata = path.lstat()
             expected = stat.S_ISDIR if path in directories else stat.S_ISREG
-            if not expected(metadata.st_mode) or metadata.st_mode & 0o077:
+            if (not expected(metadata.st_mode) or metadata.st_uid != os.geteuid()
+                    or metadata.st_mode & 0o077):
                 return False
         return True
     except OSError:
