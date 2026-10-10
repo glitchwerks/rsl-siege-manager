@@ -166,6 +166,28 @@ class SafetyTests(unittest.TestCase):
                     data["services"]["backend"]["environment"][key] = value
                     self.assertFalse(preflight.validate(data, "bundled")["oauth_public_origin"])
 
+    def test_rejects_reused_directional_or_session_keys(self):
+        for topology, factory in (("bundled", model), ("mom", mom_model)):
+            for first, second in (("DISCORD_BOT_API_KEY", "BOT_SERVICE_TOKEN"),
+                                  ("SESSION_SECRET", "DISCORD_BOT_API_KEY"),
+                                  ("SESSION_SECRET", "BOT_SERVICE_TOKEN")):
+                with self.subTest(topology=topology, first=first, second=second):
+                    data = factory()
+                    env = data["services"]["backend"]["environment"]
+                    env[second] = env[first]
+                    data["services"]["migrate-siege"]["environment"] = copy.deepcopy(env)
+                    if topology == "bundled":
+                        data["services"]["bot"]["environment"]["BOT_API_KEY"] = env["DISCORD_BOT_API_KEY"]
+                    else:
+                        for service in ("mom", "migrate-mom"):
+                            bot_env = data["services"][service]["environment"]
+                            bot_env["MOM_BOT_SECRET_DISCORD_BOT_API_KEY"] = env["DISCORD_BOT_API_KEY"]
+                            bot_env["MOM_BOT_SECRET_SIEGE_WEB_BOT_TOKEN"] = env["BOT_SERVICE_TOKEN"]
+                    checks = preflight.validate(data, topology)
+                    self.assertTrue(checks["secure_auth_configuration"])
+                    self.assertTrue(checks["sidecar_auth_matches"])
+                    self.assertFalse(checks["authentication_keys_distinct"])
+
     def test_rejects_equal_database_passwords_even_when_urls_match(self):
         for topology, data in (("bundled", model()), ("mom", mom_model())):
             with self.subTest(topology=topology):

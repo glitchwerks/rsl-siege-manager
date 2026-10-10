@@ -63,7 +63,8 @@ Use `compose.yml` plus **one** overlay:
 
 The two modes preserve existing wire contracts. Sidecar and database ports are
 private Docker-network endpoints; never publish them or expose them via Caddy.
-The mom→backend key and backend→mom key are independent; match both ends according
+The reverse-call key, forward sidecar key, and session-signing key must all be
+distinct; preflight rejects reuse in either topology. Match both service ends according
 to the examples. Environment values are deployment-scoped, not dev/prod-prefixed.
 Use a dedicated test guild/token/recipient set during pilot work. Never start a
 second process with a production Discord token.

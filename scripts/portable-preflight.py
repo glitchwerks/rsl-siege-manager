@@ -99,6 +99,8 @@ def validate(model, topology):
           and env["AUTH_DISABLED"] == "false"
           and all(len(env.get(k, "")) >= 32 and "REPLACE" not in env[k]
                   for k in ("SESSION_SECRET", "DISCORD_BOT_API_KEY", "BOT_SERVICE_TOKEN")))
+    check("authentication_keys_distinct", lambda: len({env[k] for k in
+          ("SESSION_SECRET", "DISCORD_BOT_API_KEY", "BOT_SERVICE_TOKEN")}) == 3)
     def configured_value(value):
         return isinstance(value, str) and bool(value.strip()) and "REPLACE" not in value.upper()
 
