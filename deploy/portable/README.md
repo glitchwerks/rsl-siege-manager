@@ -15,7 +15,9 @@ so OAuth callback query credentials are not written into access logs.
 
 ## Images and runtime configuration
 
-An operator prepares these files under a protected deployment directory:
+An operator prepares these files under a protected deployment directory. Copy
+`Caddyfile` and `init-databases.sql` there too; Compose resolves their mounts
+relative to `--project-directory`:
 
 - `stack.env`: copy the shape of `stack.env.example`; use actual image digests
   obtained from CI/registry metadata. These examples are intentionally invalid
@@ -93,12 +95,16 @@ intended reviewed database, with verified backup/recovery first.
 Day-role sync is disabled in the example until conforming receiver acceptance.
 For production cutover preserve today's enabled state, role IDs, and recipient
 settings rather than silently adopting pilot defaults. Set `DAY_ROLE_SYNC_URL` to
-`https://PUBLIC_HOST/api/internal/role-sync` in either topology. Caddy terminates
+`https://PUBLIC_HOST/api/internal/role-sync` with the mom topology. Caddy terminates
 public TLS and forwards only this POST to the selected receiver on the application
-network, rewriting to `/api/role-sync` for the bundled bot. The receiver verifies
+network. The receiver verifies
 the existing sidecar bearer key. No other sidecar endpoint is exposed. Preflight
 rejects an enabled configuration with a missing, HTTP, or mismatched webhook URL,
-and verifies the overlay's receiver route and network connectivity. Pilot acceptance
+and verifies the overlay's receiver route and network connectivity.
+The bundled receiver currently cannot apply the producer's unassign payload;
+preflight blocks enabled role sync in that topology, and its proxy does not route
+to the bot. If production role sync is enabled, use the mom topology and preserve
+that setting. Bundled support requires a separate contract fix before activation. Pilot acceptance
 must verify TLS, a rejected unauthenticated webhook, and a successful authenticated
 role update in the test guild before production activation.
 
@@ -108,12 +114,15 @@ From the repository root, with Docker Compose v2 installed on the reviewed targe
 
 ```sh
 python3 scripts/portable-preflight.py --topology mom \
-  --stack-env deploy/portable/stack.env \
+  --stack-env /protected/deployment/stack.env \
+  --project-directory /protected/deployment \
   --report /protected/evidence/portable-config-001.json
 ```
 
 Select `--topology bundled` for the reference bot. The report directory must already
-exist and be protected. Reports are created exclusively at mode 0600; an existing
+exist and be protected. Before rendering, the gate checks private directories (0700) and regular credential
+files (0600 or stricter), rejecting symlinks and group/other access. Reports are
+created exclusively at mode 0600; an existing
 report is never overwritten. A STOP requires diagnosis before any next phase.
 If report creation or writing fails, the command exits nonzero and prints a
 sanitized `STOP` with `report_write_failed`, without a traceback or raw filesystem

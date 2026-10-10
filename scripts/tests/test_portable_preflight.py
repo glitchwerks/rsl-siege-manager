@@ -20,7 +20,7 @@ SPEC.loader.exec_module(preflight)
 def fixture(directory):
     directory = Path(directory)
     runtime = directory / "runtime"
-    runtime.mkdir()
+    runtime.mkdir(mode=0o700)
     replacements = {
         "REPLACE_SIEGE_PASSWORD": "synthetic-siege-password-long-enough",
         "REPLACE_MOM_PASSWORD": "synthetic-mom-password-long-enough",
@@ -36,17 +36,16 @@ def fixture(directory):
                                   f"synthetic-{'mom' if name == 'mom' else 'siege'}-password-long-enough")
         for old, new in replacements.items():
             content = content.replace(old, new)
-        if name == "backend":
-            content = content.replace("DAY_ROLE_SYNC_ENABLED=false", "DAY_ROLE_SYNC_ENABLED=true")
-            content = content.replace("# DAY_ROLE_SYNC_URL=", "DAY_ROLE_SYNC_URL=")
         content = content.replace("REPLACE", "synthetic")
         content = content.replace("siege-pilot.example.com", "siege-ci.fixture-domain.net")
         (runtime / f"{name}.env").write_text(content)
+        (runtime / f"{name}.env").chmod(0o600)
     (runtime / "postgres-admin").write_text("synthetic-admin-password-long-enough")
     (runtime / "postgres-admin").chmod(0o600)
     stack = (preflight.PORTABLE / "stack.env.example").read_text().replace("REPLACE", "a" * 64)
     stack = stack.replace("siege-pilot.example.com", "siege-ci.fixture-domain.net")
     (directory / "stack.env").write_text(stack)
+    (directory / "stack.env").chmod(0o600)
     return directory / "stack.env"
 
 
@@ -75,7 +74,7 @@ def model():
     services["backend"].update(environment=env, entrypoint=[], command=["--proxy-headers", "--forwarded-allow-ips", "172.30.60.2"])
     services["migrate-siege"].update(environment=copy.deepcopy(env), entrypoint=[], command=["alembic", "upgrade", "head"], profiles=["maintenance"], restart="no")
     services["proxy"].update(environment={"PUBLIC_HOST": "pilot.fixture-domain.net",
-        "ROLE_SYNC_UPSTREAM": "bot:8001", "ROLE_SYNC_PATH": "/api/role-sync"},
+        "ROLE_SYNC_UPSTREAM": "backend:8000", "ROLE_SYNC_PATH": "/api/internal/role-sync"},
         networks={"application": {}, "proxy": {"ipv4_address": "172.30.60.2"}}, ports=[
             {"published": "80", "target": 80}, {"published": "443", "target": 443}])
     services["postgres"].update(networks={"database": {}}, environment={
@@ -133,7 +132,8 @@ class SafetyTests(unittest.TestCase):
                 with self.subTest(topology=topology, url=url):
                     env["DAY_ROLE_SYNC_URL"] = url
                     checks = preflight.validate(data, topology)
-                    self.assertEqual(checks["role_sync_https_configuration"], url == valid)
+                    self.assertEqual(checks["role_sync_https_configuration"],
+                                     topology == "mom" and url == valid)
                     self.assertTrue(checks["role_sync_receiver_route"])
             env["DAY_ROLE_SYNC_ENABLED"] = "typo"
             self.assertFalse(preflight.validate(data, topology)["role_sync_https_configuration"])
@@ -273,6 +273,9 @@ class SafetyTests(unittest.TestCase):
 
 class ReportTests(unittest.TestCase):
     def setUp(self):
+        guard = patch.object(preflight, "private_runtime_files", return_value=True)
+        guard.start()
+        self.addCleanup(guard.stop)
         reader = patch.object(preflight, "read_secret_file", return_value="synthetic-admin-password-long-enough")
         reader.start()
         self.addCleanup(reader.stop)
@@ -320,6 +323,38 @@ class ReportTests(unittest.TestCase):
             self.assertEqual(path.stat().st_mode & 0o777, 0o600)
 
 
+class RuntimePermissionTests(unittest.TestCase):
+    def test_runtime_permissions_reject_exposed_or_nonregular_credentials(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            stack = fixture(root)
+            for topology in ("mom", "bundled"):
+                self.assertTrue(preflight.private_runtime_files(topology, stack, root))
+                for path in (root / "runtime", stack, root / "runtime/backend.env",
+                             root / "runtime/database.env", root / f"runtime/{topology}.env"):
+                    mode = path.stat().st_mode & 0o777
+                    path.chmod(0o755 if path.is_dir() else 0o644)
+                    self.assertFalse(preflight.private_runtime_files(topology, stack, root))
+                    path.chmod(mode)
+            path = root / "runtime/backend.env"
+            target = root / "private.env"
+            path.rename(target)
+            path.symlink_to(target)
+            self.assertFalse(preflight.private_runtime_files("mom", stack, root))
+
+    def test_exposed_credentials_stop_before_render(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            stack = fixture(root)
+            (root / "runtime/backend.env").chmod(0o644)
+            with patch("sys.argv", ["preflight", "--topology", "mom", "--stack-env", str(stack),
+                    "--project-directory", str(root), "--report", str(root / "report.json")]), \
+                    patch.object(preflight, "render") as render, redirect_stdout(io.StringIO()) as output:
+                self.assertEqual(preflight.main(), 1)
+                render.assert_not_called()
+                self.assertEqual(json.loads(output.getvalue())["checks"], {"runtime_credentials_private": False})
+
+
 class AdministratorSecretTests(unittest.TestCase):
     def test_admin_file_must_be_usable_and_separate_without_disclosure(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -355,13 +390,13 @@ class AdministratorSecretTests(unittest.TestCase):
 @unittest.skipUnless(os.environ.get("PORTABLE_COMPOSE_TEST") == "1", "Compose rendering runs in CI")
 class ComposeTests(unittest.TestCase):
     def test_caddy_routes_only_role_sync_post_before_backend(self):
-        for bot, path in (("mom", "/api/internal/role-sync"), ("bot", "/api/role-sync")):
+        for bot, path in (("mom", "/api/internal/role-sync"), ("backend", "/api/internal/role-sync")):
             with self.subTest(bot=bot):
                 result = subprocess.run([
                     "docker", "run", "--rm", "--network", "none",
                     "-e", "PUBLIC_HOST=pilot.fixture-domain.net",
                     "-e", "ACME_EMAIL=ci@fixture-domain.net",
-                    "-e", f"ROLE_SYNC_UPSTREAM={bot}:8001", "-e", f"ROLE_SYNC_PATH={path}",
+                    "-e", f"ROLE_SYNC_UPSTREAM={bot}:{8001 if bot == 'mom' else 8000}", "-e", f"ROLE_SYNC_PATH={path}",
                     "-v", f"{preflight.PORTABLE / 'Caddyfile'}:/etc/caddy/Caddyfile:ro",
                     "caddy:2", "caddy", "adapt", "--config", "/etc/caddy/Caddyfile"],
                     capture_output=True, text=True, check=True, timeout=120)
@@ -381,17 +416,25 @@ class ComposeTests(unittest.TestCase):
                 handlers = [handler for route in ordered[0]["handle"][0]["routes"]
                             for handler in route["handle"]]
                 self.assertEqual(handlers[0], {"handler": "rewrite", "uri": path})
-                self.assertEqual(handlers[1]["upstreams"], [{"dial": f"{bot}:8001"}])
+                self.assertEqual(handlers[1]["upstreams"], [{"dial": f"{bot}:{8001 if bot == 'mom' else 8000}"}])
                 self.assertIn("backend:8000", json.dumps(ordered[1]))
                 # No other route reaches either bot's sidecar.
                 all_config = json.dumps(config)
-                self.assertEqual(all_config.count(f"{bot}:8001"), 1)
+                self.assertEqual(all_config.count("mom:8001"), 1 if bot == "mom" else 0)
+                self.assertNotIn("bot:8001", all_config)
 
     def test_both_actual_topologies_render_and_pass(self):
         with tempfile.TemporaryDirectory() as directory:
             stack = fixture(directory)
             for topology in ("bundled", "mom"):
                 with self.subTest(topology=topology):
+                    self.assertTrue(preflight.private_runtime_files(topology, stack, Path(directory)))
+                    backend_file = Path(directory) / "runtime/backend.env"
+                    content = backend_file.read_text()
+                    if topology == "mom":
+                        content = content.replace("DAY_ROLE_SYNC_ENABLED=false", "DAY_ROLE_SYNC_ENABLED=true")
+                        content = content.replace("# DAY_ROLE_SYNC_URL=", "DAY_ROLE_SYNC_URL=")
+                        backend_file.write_text(content)
                     data = preflight.render(topology, stack, Path(directory))
                     checks = preflight.validate(data, topology)
                     self.assertTrue(all(checks.values()), [k for k, v in checks.items() if not v])

@@ -8,8 +8,8 @@ x-runtime: &runtime
 services:
   proxy:
     environment:
-      ROLE_SYNC_UPSTREAM: bot:8001
-      ROLE_SYNC_PATH: /api/role-sync
+      ROLE_SYNC_UPSTREAM: backend:8000
+      ROLE_SYNC_PATH: /api/internal/role-sync
   backend:
     environment: {DISCORD_BOT_API_URL: "http://bot:8001"}
   migrate-siege:

@@ -112,11 +112,12 @@ def validate(model, topology):
     check("role_sync_https_configuration", lambda:
           env.get("DAY_ROLE_SYNC_ENABLED", "false") in {"true", "false"}
           and (env.get("DAY_ROLE_SYNC_ENABLED", "false") == "false"
-               or env.get("DAY_ROLE_SYNC_URL") == f"https://{host}/api/internal/role-sync"))
+               or (topology == "mom" and env.get("DAY_ROLE_SYNC_URL") ==
+                   f"https://{host}/api/internal/role-sync")))
     check("role_sync_receiver_route", lambda:
-          proxy_env["ROLE_SYNC_UPSTREAM"] == f"{bot}:8001"
-          and proxy_env["ROLE_SYNC_PATH"] ==
-              ("/api/internal/role-sync" if topology == "mom" else "/api/role-sync")
+          proxy_env["ROLE_SYNC_UPSTREAM"] ==
+              ("mom:8001" if topology == "mom" else "backend:8000")
+          and proxy_env["ROLE_SYNC_PATH"] == "/api/internal/role-sync"
           and "application" in services["proxy"]["networks"]
           and "application" in services[bot]["networks"])
 
@@ -186,6 +187,24 @@ def validate(model, topology):
     return checks
 
 
+def private_runtime_files(topology, stack_env, project_directory):
+    """Check modes without reading credentials or following final symlinks."""
+    runtime = project_directory / "runtime"
+    directories = {project_directory, runtime, stack_env.parent}
+    files = {stack_env, runtime / "backend.env", runtime / "database.env",
+             runtime / ("mom.env" if topology == "mom" else "bundled.env"),
+             runtime / "postgres-admin"}
+    try:
+        for path in directories | files:
+            metadata = path.lstat()
+            expected = stat.S_ISDIR if path in directories else stat.S_ISREG
+            if not expected(metadata.st_mode) or metadata.st_mode & 0o077:
+                return False
+        return True
+    except OSError:
+        return False
+
+
 def render(topology, stack_env, project_directory):
     command = ["docker", "compose", "--env-file", str(stack_env), "--project-directory",
                str(project_directory), "-f", str(PORTABLE / "compose.yml"), "-f",
@@ -205,7 +224,11 @@ def main():
     parser.add_argument("--report", type=Path, required=True)
     args = parser.parse_args()
     try:
-        checks = validate(render(args.topology, args.stack_env, args.project_directory), args.topology)
+        if private_runtime_files(args.topology, args.stack_env, args.project_directory):
+            checks = validate(render(args.topology, args.stack_env, args.project_directory), args.topology)
+            checks["runtime_credentials_private"] = True
+        else:
+            checks = {"runtime_credentials_private": False}
     except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired):
         # Compose stderr, exception messages, and rendered values may contain secrets.
         checks = {"compose_render": False}
