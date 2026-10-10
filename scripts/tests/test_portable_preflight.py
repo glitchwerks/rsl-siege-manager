@@ -58,8 +58,8 @@ def model():
             "logging": {"driver": "json-file", "options": {"max-size": "10m", "max-file": "3"}},
         }
     services = result["services"]
-    services["backend"].update(environment=env, command=["--proxy-headers", "--forwarded-allow-ips", "172.30.60.2"])
-    services["migrate-siege"].update(environment=copy.deepcopy(env), profiles=["maintenance"], restart="no")
+    services["backend"].update(environment=env, entrypoint=[], command=["--proxy-headers", "--forwarded-allow-ips", "172.30.60.2"])
+    services["migrate-siege"].update(environment=copy.deepcopy(env), entrypoint=[], command=["alembic", "upgrade", "head"], profiles=["maintenance"], restart="no")
     services["proxy"].update(environment={"PUBLIC_HOST": "pilot.example.com"},
         networks={"proxy": {"ipv4_address": "172.30.60.2"}}, ports=[
             {"published": "80", "target": 80}, {"published": "443", "target": 443}])
@@ -80,6 +80,7 @@ class SafetyTests(unittest.TestCase):
             ("bot", "image", "registry.example/app:latest"),
             ("backend", "command", ["--proxy-headers", "--forwarded-allow-ips", "*"]),
             ("backend", "privileged", True),
+            ("backend", "entrypoint", ["./entrypoint.sh"]),
         ]
         for service, key, value in changes:
             with self.subTest(service=service, key=key):

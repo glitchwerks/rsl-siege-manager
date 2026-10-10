@@ -97,6 +97,9 @@ def validate(model, topology):
     check("siege_database_credentials_match", lambda: database_url(
         "backend", "DATABASE_URL", "postgresql+asyncpg", "siege_app", "siege", "SIEGE_DB_PASSWORD"))
     check("siege_migration_matches_runtime", lambda: services["migrate-siege"]["environment"] == env)
+    check("siege_entrypoint_does_not_auto_migrate", lambda: all(
+        services[n].get("entrypoint") == [] for n in ("backend", "migrate-siege"))
+        and services["migrate-siege"]["command"] == ["alembic", "upgrade", "head"])
     bot_env = services.get(bot, {}).get("environment", {})
     check("sidecar_auth_matches", lambda: env["DISCORD_BOT_API_KEY"] == bot_env[
         "MOM_BOT_SECRET_DISCORD_BOT_API_KEY" if topology == "mom" else "BOT_API_KEY"])

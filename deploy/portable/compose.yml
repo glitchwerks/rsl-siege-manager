@@ -11,6 +11,9 @@ x-runtime: &runtime
 x-backend: &backend
   <<: *runtime
   image: ${BACKEND_IMAGE:?Set an immutable backend image}
+  # CI's API image otherwise runs migrations and ignores Compose command.
+  # Explicit maintenance services own migrations; runtime starts Uvicorn only.
+  entrypoint: []
   env_file: ./runtime/backend.env
   environment:
     ENVIRONMENT: production

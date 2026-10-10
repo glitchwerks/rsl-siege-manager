@@ -76,6 +76,11 @@ are not reinitialized when environment passwords change. Rotation must update th
 actual database role and all consumers through a separate reviewed procedure;
 never remove a volume to make changed credentials take effect.
 
+The portable API services explicitly clear the existing image's entrypoint,
+which otherwise runs migrations automatically and ignores the supplied command.
+Runtime starts Uvicorn with the reviewed proxy trust settings; only the opt-in
+maintenance service invokes Alembic. This override is confined to these files.
+
 For mom-bot migrations use the `migrate-mom` service's direct Alembic command. Its
 Azure-only `migrate.sh` entrypoint is deliberately bypassed. `migrate-siege` and
 `migrate-mom` belong to the opt-in `maintenance` profile; they are not started by
