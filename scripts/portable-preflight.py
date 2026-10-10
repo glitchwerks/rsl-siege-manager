@@ -70,12 +70,12 @@ def validate(model, topology):
           and env["AUTH_DISABLED"] == "false"
           and all(len(env.get(k, "")) >= 32 and "REPLACE" not in env[k]
                   for k in ("SESSION_SECRET", "DISCORD_BOT_API_KEY", "BOT_SERVICE_TOKEN")))
-    def configured_oauth(value):
+    def configured_value(value):
         return isinstance(value, str) and bool(value.strip()) and "REPLACE" not in value.upper()
 
     check("oauth_public_origin", lambda: env["DISCORD_REDIRECT_URI"] == f"https://{host}/api/auth/callback"
           and env["ALLOWED_ORIGINS"] == f"https://{host}"
-          and all(configured_oauth(env.get(k)) for k in ("DISCORD_CLIENT_ID", "DISCORD_CLIENT_SECRET")))
+          and all(configured_value(env.get(k)) for k in ("DISCORD_CLIENT_ID", "DISCORD_CLIENT_SECRET")))
     check("private_sidecar_url", lambda: env["DISCORD_BOT_API_URL"] == f"http://{bot}:8001")
 
     def proxy_trust():
@@ -110,6 +110,12 @@ def validate(model, topology):
         services[n].get("entrypoint") == [] for n in ("backend", "migrate-siege"))
         and services["migrate-siege"]["command"] == ["alembic", "upgrade", "head"])
     bot_env = services.get(bot, {}).get("environment", {})
+    token_key = "MOM_BOT_SECRET_DISCORD_TOKEN" if topology == "mom" else "DISCORD_TOKEN"
+    guild_key = "MOM_BOT_SECRET_GUILD_ID" if topology == "mom" else "DISCORD_GUILD_ID"
+    check("discord_bot_identity_configured", lambda: configured_value(bot_env.get(token_key))
+          and configured_value(bot_env.get(guild_key))
+          and bot_env[guild_key].isascii() and bot_env[guild_key].isdigit()
+          and int(bot_env[guild_key]) > 0 and env.get("DISCORD_GUILD_ID") == bot_env[guild_key])
     check("sidecar_auth_matches", lambda: env["DISCORD_BOT_API_KEY"] == bot_env[
         "MOM_BOT_SECRET_DISCORD_BOT_API_KEY" if topology == "mom" else "BOT_API_KEY"])
     if topology == "mom":
@@ -152,10 +158,18 @@ def main():
               "timestamp": datetime.now(timezone.utc).isoformat(), "checks": checks,
               "result": "PASS" if checks and all(checks.values()) else "STOP"}
     # Do not overwrite earlier evidence or follow an existing report symlink.
-    fd = os.open(args.report, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    with os.fdopen(fd, "w") as output:
-        json.dump(report, output, indent=2)
-        output.write("\n")
+    try:
+        fd = os.open(args.report, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w") as output:
+            json.dump(report, output, indent=2)
+            output.write("\n")
+    except OSError:
+        # Preserve existing/partial evidence. Never echo paths or OS diagnostics.
+        report["checks"]["report_write"] = False
+        report["result"] = "STOP"
+        report["error"] = "report_write_failed"
+        print(json.dumps(report))
+        return 1
     print(json.dumps(report))
     return 0 if report["result"] == "PASS" else 1
 

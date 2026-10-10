@@ -107,12 +107,20 @@ python3 scripts/portable-preflight.py --topology mom \
 Select `--topology bundled` for the reference bot. The report directory must already
 exist and be protected. Reports are created exclusively at mode 0600; an existing
 report is never overwritten. A STOP requires diagnosis before any next phase.
+If report creation or writing fails, the command exits nonzero and prints a
+sanitized `STOP` with `report_write_failed`, without a traceback or raw filesystem
+diagnostics. Preserve any existing/partial file and retry with a new report path
+after correcting the directory/access issue; never treat incomplete evidence as
+acceptance.
 The command renders configuration only: no pull, build, service/container creation,
 network creation, database access, Discord traffic, or host configuration change.
 It rejects OAuth credential placeholders and requires distinct raw application
 database passwords, including when both connection URLs match their configured
 passwords. The database roles are created in either topology, so password
 separation is required even in bundled mode.
+The selected bot must have a nonblank, non-placeholder Discord token and a positive
+numeric guild ID matching the backend. This checks configuration shape and
+consistency only; live token validity remains a separate pilot check.
 Keep Compose diagnostics private; the sanitized report intentionally suppresses
 raw stderr. This report does not validate host suitability or live identity access.
 

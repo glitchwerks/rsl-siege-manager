@@ -1,11 +1,14 @@
 """Security regressions plus opt-in daemon-free Compose rendering in CI."""
 import copy
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
 import tempfile
 import unittest
+from contextlib import redirect_stdout
+from unittest.mock import patch
 
 SCRIPT = Path(__file__).resolve().parents[1] / "portable-preflight.py"
 SPEC = importlib.util.spec_from_file_location("portable_preflight", SCRIPT)
@@ -23,9 +26,11 @@ def fixture(directory):
         "REPLACE_SHARED_SIDECAR_KEY": "synthetic-sidecar-key-" + "x" * 32,
         "REPLACE_REVERSE_CALL_KEY": "synthetic-reverse-key-" + "x" * 32,
         "REPLACE_RANDOM_SIGNING_KEY": "synthetic-signing-key-" + "x" * 32,
+        "REPLACE_TEST_GUILD": "123456789012345678",
     }
     for name in ("backend", "database", "bundled", "mom"):
         content = (preflight.PORTABLE / f"{name}.env.example").read_text()
+        content = content.replace("DISCORD_GUILD_ID=REPLACE\n", "DISCORD_GUILD_ID=123456789012345678\n")
         content = content.replace("REPLACE_URL_ENCODED_PASSWORD",
                                   f"synthetic-{'mom' if name == 'mom' else 'siege'}-password-long-enough")
         for old, new in replacements.items():
@@ -43,6 +48,7 @@ def model():
         "ENVIRONMENT": "production", "AUTH_DISABLED": "false",
         "SESSION_SECRET": "s" * 32, "DISCORD_BOT_API_KEY": "k" * 32,
         "BOT_SERVICE_TOKEN": "r" * 32, "DISCORD_CLIENT_ID": "123",
+        "DISCORD_GUILD_ID": "123456789012345678",
         "DISCORD_CLIENT_SECRET": "synthetic", "DISCORD_BOT_API_URL": "http://bot:8001",
         "DISCORD_REDIRECT_URI": "https://pilot.example.com/api/auth/callback",
         "ALLOWED_ORIGINS": "https://pilot.example.com",
@@ -67,7 +73,8 @@ def model():
     services["postgres"].update(networks={"database": {}}, environment={
         "SIEGE_DB_PASSWORD": "synthetic-password-long-enough",
         "MOM_DB_PASSWORD": "synthetic-mom-password-long-enough"})
-    services["bot"]["environment"] = {"BOT_API_KEY": "k" * 32}
+    services["bot"]["environment"] = {"BOT_API_KEY": "k" * 32,
+        "DISCORD_TOKEN": "synthetic-test-token", "DISCORD_GUILD_ID": "123456789012345678"}
     return result
 
 
@@ -83,6 +90,8 @@ def mom_model():
         "MOM_BOT_SECRET_DISCORD_BOT_API_KEY": env["DISCORD_BOT_API_KEY"],
         "MOM_BOT_SECRET_SOURCE": "environment", "MOM_BOT_DATABASE_AUTH": "password",
         "MOM_BOT_ENV": "prod", "MOM_BOT_SECRET_SIEGE_WEB_URL": "http://backend:8000",
+        "MOM_BOT_SECRET_DISCORD_TOKEN": "synthetic-test-token",
+        "MOM_BOT_SECRET_GUILD_ID": "123456789012345678",
         "MOM_BOT_SECRET_SIEGE_WEB_BOT_TOKEN": env["BOT_SERVICE_TOKEN"],
     }
     services["mom"] = mom
@@ -93,6 +102,26 @@ def mom_model():
 
 
 class SafetyTests(unittest.TestCase):
+    def test_rejects_unconfigured_bot_identity_for_both_topologies(self):
+        for topology, factory, keys in (
+            ("bundled", model, ("DISCORD_TOKEN", "DISCORD_GUILD_ID")),
+            ("mom", mom_model, ("MOM_BOT_SECRET_DISCORD_TOKEN", "MOM_BOT_SECRET_GUILD_ID")),
+        ):
+            bot = "mom" if topology == "mom" else "bot"
+            for key in keys:
+                for value in (None, "", " ", "REPLACE_TEST_BOT_TOKEN", "REPLACE_TEST_GUILD"):
+                    with self.subTest(topology=topology, key=key, value=value):
+                        data = factory()
+                        data["services"][bot]["environment"][key] = value
+                        self.assertFalse(preflight.validate(data, topology)["discord_bot_identity_configured"])
+            for value in ("invalid-id", "0", "-1"):
+                data = factory()
+                data["services"][bot]["environment"][keys[1]] = value
+                self.assertFalse(preflight.validate(data, topology)["discord_bot_identity_configured"])
+            data = factory()
+            data["services"]["backend"]["environment"]["DISCORD_GUILD_ID"] = "987654321"
+            self.assertFalse(preflight.validate(data, topology)["discord_bot_identity_configured"])
+
     def test_valid_configuration(self):
         self.assertTrue(all(preflight.validate(model(), "bundled").values()))
         self.assertTrue(all(preflight.validate(mom_model(), "mom").values()))
@@ -159,6 +188,50 @@ class SafetyTests(unittest.TestCase):
         data = model()
         data["services"]["backend"]["environment"]["DISCORD_REDIRECT_URI"] = "http://pilot.example.com/api/auth/callback"
         self.assertFalse(preflight.validate(data, "bundled")["oauth_public_origin"])
+
+
+class ReportTests(unittest.TestCase):
+    def run_preflight(self, report_path):
+        stdout = io.StringIO()
+        with patch("sys.argv", ["portable-preflight", "--topology", "bundled",
+                               "--stack-env", "unused", "--report", str(report_path)]), \
+                patch.object(preflight, "render", return_value=model()), redirect_stdout(stdout):
+            status = preflight.main()
+        return status, json.loads(stdout.getvalue())
+
+    def test_existing_report_is_preserved_and_stops(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "report.json"
+            path.write_text("earlier evidence")
+            status, report = self.run_preflight(path)
+            self.assertEqual(status, 1)
+            self.assertEqual(report["result"], "STOP")
+            self.assertEqual(report["error"], "report_write_failed")
+            self.assertEqual(path.read_text(), "earlier evidence")
+            self.assertNotIn(str(path), json.dumps(report))
+
+    def test_missing_report_directory_stops_without_creating_it(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "missing" / "report.json"
+            status, report = self.run_preflight(path)
+            self.assertEqual(status, 1)
+            self.assertFalse(report["checks"]["report_write"])
+            self.assertFalse(path.parent.exists())
+
+    def test_permission_error_does_not_expose_os_diagnostics(self):
+        with patch.object(preflight.os, "open", side_effect=PermissionError("private diagnostic")):
+            status, report = self.run_preflight("unused")
+        self.assertEqual(status, 1)
+        self.assertEqual(report["result"], "STOP")
+        self.assertNotIn("private diagnostic", json.dumps(report))
+
+    def test_new_report_is_private_and_matches_stdout(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "report.json"
+            status, report = self.run_preflight(path)
+            self.assertEqual(status, 0)
+            self.assertEqual(report, json.loads(path.read_text()))
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
 
 
 @unittest.skipUnless(os.environ.get("PORTABLE_COMPOSE_TEST") == "1", "Compose rendering runs in CI")
