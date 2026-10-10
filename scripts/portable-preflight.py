@@ -109,6 +109,17 @@ def validate(model, topology):
           and all(configured_value(env.get(k)) for k in ("DISCORD_CLIENT_ID", "DISCORD_CLIENT_SECRET")))
     check("private_sidecar_url", lambda: env["DISCORD_BOT_API_URL"] == f"http://{bot}:8001")
 
+    check("role_sync_https_configuration", lambda:
+          env.get("DAY_ROLE_SYNC_ENABLED", "false") in {"true", "false"}
+          and (env.get("DAY_ROLE_SYNC_ENABLED", "false") == "false"
+               or env.get("DAY_ROLE_SYNC_URL") == f"https://{host}/api/internal/role-sync"))
+    check("role_sync_receiver_route", lambda:
+          proxy_env["ROLE_SYNC_UPSTREAM"] == f"{bot}:8001"
+          and proxy_env["ROLE_SYNC_PATH"] ==
+              ("/api/internal/role-sync" if topology == "mom" else "/api/role-sync")
+          and "application" in services["proxy"]["networks"]
+          and "application" in services[bot]["networks"])
+
     def proxy_trust():
         command = backend["command"]
         trusted = command[command.index("--forwarded-allow-ips") + 1]

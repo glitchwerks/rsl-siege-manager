@@ -15,6 +15,10 @@ x-mom: &mom
     driver: json-file
     options: {max-size: 10m, max-file: "3"}
 services:
+  proxy:
+    environment:
+      ROLE_SYNC_UPSTREAM: mom:8001
+      ROLE_SYNC_PATH: /api/internal/role-sync
   backend:
     environment: {DISCORD_BOT_API_URL: "http://mom:8001"}
   migrate-siege:

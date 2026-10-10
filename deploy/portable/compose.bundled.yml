@@ -6,6 +6,10 @@ x-runtime: &runtime
     driver: json-file
     options: {max-size: 10m, max-file: "3"}
 services:
+  proxy:
+    environment:
+      ROLE_SYNC_UPSTREAM: bot:8001
+      ROLE_SYNC_PATH: /api/role-sync
   backend:
     environment: {DISCORD_BOT_API_URL: "http://bot:8001"}
   migrate-siege:

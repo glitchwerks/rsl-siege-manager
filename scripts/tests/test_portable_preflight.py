@@ -4,6 +4,7 @@ import importlib.util
 import io
 import json
 import os
+import subprocess
 from pathlib import Path
 import tempfile
 import unittest
@@ -35,6 +36,9 @@ def fixture(directory):
                                   f"synthetic-{'mom' if name == 'mom' else 'siege'}-password-long-enough")
         for old, new in replacements.items():
             content = content.replace(old, new)
+        if name == "backend":
+            content = content.replace("DAY_ROLE_SYNC_ENABLED=false", "DAY_ROLE_SYNC_ENABLED=true")
+            content = content.replace("# DAY_ROLE_SYNC_URL=", "DAY_ROLE_SYNC_URL=")
         content = content.replace("REPLACE", "synthetic")
         content = content.replace("siege-pilot.example.com", "siege-ci.fixture-domain.net")
         (runtime / f"{name}.env").write_text(content)
@@ -70,8 +74,9 @@ def model():
     services = result["services"]
     services["backend"].update(environment=env, entrypoint=[], command=["--proxy-headers", "--forwarded-allow-ips", "172.30.60.2"])
     services["migrate-siege"].update(environment=copy.deepcopy(env), entrypoint=[], command=["alembic", "upgrade", "head"], profiles=["maintenance"], restart="no")
-    services["proxy"].update(environment={"PUBLIC_HOST": "pilot.fixture-domain.net"},
-        networks={"proxy": {"ipv4_address": "172.30.60.2"}}, ports=[
+    services["proxy"].update(environment={"PUBLIC_HOST": "pilot.fixture-domain.net",
+        "ROLE_SYNC_UPSTREAM": "bot:8001", "ROLE_SYNC_PATH": "/api/role-sync"},
+        networks={"application": {}, "proxy": {"ipv4_address": "172.30.60.2"}}, ports=[
             {"published": "80", "target": 80}, {"published": "443", "target": 443}])
     services["postgres"].update(networks={"database": {}}, environment={
         "SIEGE_DB_PASSWORD": "synthetic-password-long-enough",
@@ -79,6 +84,7 @@ def model():
         "POSTGRES_PASSWORD_FILE": "/run/secrets/postgres-admin"},
         secrets=[{"source": "postgres-admin", "target": "postgres-admin"}])
     result["secrets"] = {"postgres-admin": {"file": "/synthetic/postgres-admin"}}
+    services["bot"]["networks"] = {"application": {}}
     services["bot"]["environment"] = {"BOT_API_KEY": "k" * 32,
         "DISCORD_TOKEN": "synthetic-test-token", "DISCORD_GUILD_ID": "123456789012345678"}
     return result
@@ -100,6 +106,8 @@ def mom_model():
         "MOM_BOT_SECRET_GUILD_ID": "123456789012345678",
         "MOM_BOT_SECRET_SIEGE_WEB_BOT_TOKEN": env["BOT_SERVICE_TOKEN"],
     }
+    services["proxy"]["environment"].update(ROLE_SYNC_UPSTREAM="mom:8001",
+        ROLE_SYNC_PATH="/api/internal/role-sync")
     services["mom"] = mom
     services["migrate-mom"] = copy.deepcopy(mom)
     services["migrate-mom"].update(profiles=["maintenance"], restart="no", entrypoint=[],
@@ -112,6 +120,32 @@ class SafetyTests(unittest.TestCase):
         reader = patch.object(preflight, "read_secret_file", return_value="synthetic-admin-password-long-enough")
         reader.start()
         self.addCleanup(reader.stop)
+
+    def test_role_sync_requires_public_https_and_connected_selected_receiver(self):
+        for topology, factory in (("bundled", model), ("mom", mom_model)):
+            data = factory()
+            env = data["services"]["backend"]["environment"]
+            env["DAY_ROLE_SYNC_ENABLED"] = "true"
+            valid = "https://pilot.fixture-domain.net/api/internal/role-sync"
+            for url in (None, "", "http://mom:8001/api/internal/role-sync",
+                        "https://other.fixture-domain.net/api/internal/role-sync",
+                        "https://pilot.fixture-domain.net/api/role-sync", valid):
+                with self.subTest(topology=topology, url=url):
+                    env["DAY_ROLE_SYNC_URL"] = url
+                    checks = preflight.validate(data, topology)
+                    self.assertEqual(checks["role_sync_https_configuration"], url == valid)
+                    self.assertTrue(checks["role_sync_receiver_route"])
+            env["DAY_ROLE_SYNC_ENABLED"] = "typo"
+            self.assertFalse(preflight.validate(data, topology)["role_sync_https_configuration"])
+            for field, value in (("ROLE_SYNC_UPSTREAM", "other:8001"),
+                                 ("ROLE_SYNC_PATH", "/api/members")):
+                bad = factory()
+                bad["services"]["proxy"]["environment"][field] = value
+                self.assertFalse(preflight.validate(bad, topology)["role_sync_receiver_route"])
+            for name in ("proxy", "mom" if topology == "mom" else "bot"):
+                bad = factory()
+                bad["services"][name]["networks"].pop("application")
+                self.assertFalse(preflight.validate(bad, topology)["role_sync_receiver_route"])
 
     def test_rejects_reserved_hostnames_even_with_matching_oauth(self):
         for host in ("siege-pilot.example.com", "EXAMPLE.NET", "pilot.example.org",
@@ -320,6 +354,38 @@ class AdministratorSecretTests(unittest.TestCase):
 
 @unittest.skipUnless(os.environ.get("PORTABLE_COMPOSE_TEST") == "1", "Compose rendering runs in CI")
 class ComposeTests(unittest.TestCase):
+    def test_caddy_routes_only_role_sync_post_before_backend(self):
+        for bot, path in (("mom", "/api/internal/role-sync"), ("bot", "/api/role-sync")):
+            with self.subTest(bot=bot):
+                result = subprocess.run([
+                    "docker", "run", "--rm", "--network", "none",
+                    "-e", "PUBLIC_HOST=pilot.fixture-domain.net",
+                    "-e", "ACME_EMAIL=ci@fixture-domain.net",
+                    "-e", f"ROLE_SYNC_UPSTREAM={bot}:8001", "-e", f"ROLE_SYNC_PATH={path}",
+                    "-v", f"{preflight.PORTABLE / 'Caddyfile'}:/etc/caddy/Caddyfile:ro",
+                    "caddy:2", "caddy", "adapt", "--config", "/etc/caddy/Caddyfile"],
+                    capture_output=True, text=True, check=True, timeout=120)
+                config = json.loads(result.stdout)
+                def routes(value):
+                    if isinstance(value, dict):
+                        if "routes" in value:
+                            yield value["routes"]
+                        for child in value.values():
+                            yield from routes(child)
+                    elif isinstance(value, list):
+                        for child in value:
+                            yield from routes(child)
+                ordered = next(group for group in routes(config) if len(group) == 3
+                               and group[0].get("match") == [{
+                                   "method": ["POST"], "path": ["/api/internal/role-sync"]}])
+                handlers = ordered[0]["handle"][0]["routes"][0]["handle"]
+                self.assertEqual(handlers[0], {"handler": "rewrite", "uri": path})
+                self.assertEqual(handlers[1]["upstreams"], [{"dial": f"{bot}:8001"}])
+                self.assertIn("backend:8000", json.dumps(ordered[1]))
+                # No other route reaches either bot's sidecar.
+                all_config = json.dumps(config)
+                self.assertEqual(all_config.count(f"{bot}:8001"), 1)
+
     def test_both_actual_topologies_render_and_pass(self):
         with tempfile.TemporaryDirectory() as directory:
             stack = fixture(directory)

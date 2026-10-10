@@ -62,7 +62,8 @@ Use `compose.yml` plus **one** overlay:
   change in a tested immutable candidate or mom-bot v1.6.0 or later. No bundled bot.
 
 The two modes preserve existing wire contracts. Sidecar and database ports are
-private Docker-network endpoints; never publish them or expose them via Caddy.
+private Docker-network endpoints. Caddy exposes only the authenticated role-sync
+POST described below; the general sidecar API remains private.
 The reverse-call key, forward sidecar key, and session-signing key must all be
 distinct; preflight rejects reuse in either topology. Match both service ends according
 to the examples. Environment values are deployment-scoped, not dev/prod-prefixed.
@@ -91,9 +92,15 @@ intended reviewed database, with verified backup/recovery first.
 
 Day-role sync is disabled in the example until conforming receiver acceptance.
 For production cutover preserve today's enabled state, role IDs, and recipient
-settings rather than silently adopting pilot defaults. The mom receiver is
-`http://mom:8001/api/internal/role-sync`, with its sidecar bearer key. The bundled
-receiver remains supported; consult the canonical webhook spec for its endpoint.
+settings rather than silently adopting pilot defaults. Set `DAY_ROLE_SYNC_URL` to
+`https://PUBLIC_HOST/api/internal/role-sync` in either topology. Caddy terminates
+public TLS and forwards only this POST to the selected receiver on the application
+network, rewriting to `/api/role-sync` for the bundled bot. The receiver verifies
+the existing sidecar bearer key. No other sidecar endpoint is exposed. Preflight
+rejects an enabled configuration with a missing, HTTP, or mismatched webhook URL,
+and verifies the overlay's receiver route and network connectivity. Pilot acceptance
+must verify TLS, a rejected unauthenticated webhook, and a successful authenticated
+role update in the test guild before production activation.
 
 ## Read-only configuration gate
 

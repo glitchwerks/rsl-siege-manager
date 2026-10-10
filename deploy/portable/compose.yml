@@ -98,6 +98,7 @@ services:
       - tls-data:/data
       - tls-config:/config
     networks:
+      application: {}
       proxy: {ipv4_address: "${PROXY_IP:?Set the proxy's fixed private IP}"}
     mem_limit: 128m
     cpus: 0.25
