@@ -1,5 +1,12 @@
 # Deploy anywhere — VPS, home server, or any Docker host
 
+For the prepared production stack with prebuilt images, private service ports,
+explicit bundled/mom-bot topology, and reviewed migration/recovery gates, use the
+[portable production configuration](../deploy/portable/README.md). That path is
+still awaiting pilot acceptance. The development-file overlay below is retained
+for historical/manual setup and inherits development builds and exposed ports;
+do not treat it as the new production configuration.
+
 > **No Azure account required.** This is the portable, hands-on path: you bring a Linux host capable of running Docker, a domain name (or a tunnel), and a Discord application, and this guide takes you the rest of the way. If you'd rather let Azure handle TLS, scaling, and secret management, see [Self-Host on Azure](Self-Host-on-Azure) for the managed path.
 
 **What you'll end up with after following this guide:**

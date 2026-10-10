@@ -1,0 +1,28 @@
+# Exactly one topology overlay is permitted.
+x-runtime: &runtime
+  restart: unless-stopped
+  security_opt: [no-new-privileges:true]
+  logging:
+    driver: json-file
+    options: {max-size: 10m, max-file: "3"}
+services:
+  backend:
+    environment: {DISCORD_BOT_API_URL: "http://bot:8001"}
+  migrate-siege:
+    environment: {DISCORD_BOT_API_URL: "http://bot:8001"}
+  bot:
+    <<: *runtime
+    image: ${BOT_IMAGE:?Set an immutable bundled bot image}
+    env_file: ./runtime/bundled.env
+    environment: {ENVIRONMENT: production}
+    networks: [application]
+    mem_limit: 384m
+    cpus: 0.5
+    pids_limit: 128
+    init: true
+    healthcheck:
+      test: [CMD, python, -c, "import json,urllib.request; d=json.load(urllib.request.urlopen('http://127.0.0.1:8001/api/health', timeout=4)); assert d['bot_connected']"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 90s

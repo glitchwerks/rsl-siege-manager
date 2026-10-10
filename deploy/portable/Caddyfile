@@ -1,0 +1,16 @@
+{
+    email {$ACME_EMAIL}
+    admin off
+}
+
+{$PUBLIC_HOST} {
+    # Caddy replaces forwarded headers from untrusted Internet callers.
+    # Route API directly to preserve HTTPS and the public Host at the backend.
+    @api path /api /api/*
+    handle @api {
+        reverse_proxy backend:8000
+    }
+    handle {
+        reverse_proxy frontend:80
+    }
+}
