@@ -116,7 +116,7 @@ def validate(model, topology):
                    f"https://{host}/api/internal/role-sync")))
     check("role_sync_receiver_route", lambda:
           proxy_env["ROLE_SYNC_UPSTREAM"] ==
-              ("mom:8001" if topology == "mom" else "backend:8000")
+              ("mom:8001" if topology == "mom" else "api-proxy:8000")
           and proxy_env["ROLE_SYNC_PATH"] == "/api/internal/role-sync"
           and "application" in services["proxy"]["networks"]
           and "application" in services[bot]["networks"])
@@ -131,6 +131,12 @@ def validate(model, topology):
                 and ip not in (subnet.network_address, subnet.broadcast_address)
                 and "--proxy-headers" in command)
     check("trust_only_fixed_proxy", proxy_trust)
+    check("backend_proxy_alias_unambiguous", lambda:
+          services["backend"]["networks"]["proxy"]["aliases"] == ["api-proxy"]
+          and not any("api-proxy" in (network or {}).get("aliases", [])
+                      for name, service in services.items()
+                      for network_name, network in service.get("networks", {}).items()
+                      if name != "backend" or network_name != "proxy"))
 
     database_env = services.get("postgres", {}).get("environment", {})
     def administrator_secret():
@@ -233,6 +239,15 @@ def render(topology, stack_env, project_directory):
     return json.loads(result.stdout)
 
 
+def private_report_directory(path):
+    try:
+        metadata = path.lstat()
+        return (stat.S_ISDIR(metadata.st_mode) and metadata.st_uid == os.geteuid()
+                and not metadata.st_mode & 0o077)
+    except OSError:
+        return False
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--topology", choices=["mom", "bundled"], required=True)
@@ -256,6 +271,9 @@ def main():
               "result": "PASS" if checks and all(checks.values()) else "STOP"}
     # Do not overwrite earlier evidence or follow an existing report symlink.
     try:
+        if not private_report_directory(args.report.parent):
+            report["checks"]["report_directory_private"] = False
+            raise OSError
         fd = os.open(args.report, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(fd, "w") as output:
             json.dump(report, output, indent=2)

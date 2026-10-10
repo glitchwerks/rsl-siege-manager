@@ -54,6 +54,11 @@ services:
 
   backend:
     <<: *backend
+    # Caddy uses this alias only on its fixed-address proxy network.
+    networks:
+      application: {}
+      database: {}
+      proxy: {aliases: [api-proxy]}
     command: [uvicorn, app.main:app, --no-access-log, --host, 0.0.0.0, --port, "8000", --proxy-headers, --forwarded-allow-ips, "${PROXY_IP:?Set the proxy's fixed private IP}"]
     depends_on:
       postgres: {condition: service_healthy}

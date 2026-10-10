@@ -9,7 +9,9 @@ Use this configuration instead of layering `docker-compose.prod.yml` on the
 development file: that older path inherits builds and public service ports.
 Only Caddy publishes host ports (80/443). API requests go directly from Caddy to
 the backend, preserving public HTTPS/Host and avoiding a second proxy rewriting
-forwarded headers. Uvicorn trusts only Caddy's fixed private address; it does not
+forwarded headers. The API upstream alias `api-proxy` exists only on the fixed-address proxy network,
+so Caddy cannot accidentally connect over the shared application network.
+Uvicorn trusts only Caddy's fixed private address; it does not
 trust arbitrary caller headers. Access logging is disabled on this API entrypoint
 so OAuth callback query credentials are not written into access logs.
 
@@ -121,7 +123,8 @@ python3 scripts/portable-preflight.py --topology mom \
 ```
 
 Select `--topology bundled` for the reference bot. The report directory must already
-exist and be protected. Before rendering, the gate checks private directories (0700) and regular credential
+exist, be owned by the invoking operator, have mode 0700 or stricter, and be a
+real directory rather than a symlink. Before rendering, the gate checks private directories (0700) and regular credential
 files (0600 or stricter), rejecting symlinks and group/other access. Reports are
 created exclusively at mode 0600; an existing
 report is never overwritten. A STOP requires diagnosis before any next phase.

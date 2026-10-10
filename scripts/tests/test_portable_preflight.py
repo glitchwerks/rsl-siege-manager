@@ -73,10 +73,11 @@ def model():
             "logging": {"driver": "json-file", "options": {"max-size": "10m", "max-file": "3"}},
         }
     services = result["services"]
+    services["backend"]["networks"] = {"application": {}, "database": {}, "proxy": {"aliases": ["api-proxy"]}}
     services["backend"].update(environment=env, entrypoint=[], command=["--proxy-headers", "--forwarded-allow-ips", "172.30.60.2"])
     services["migrate-siege"].update(environment=copy.deepcopy(env), entrypoint=[], command=["alembic", "upgrade", "head"], profiles=["maintenance"], restart="no")
     services["proxy"].update(environment={"PUBLIC_HOST": "pilot.fixture-domain.net",
-        "ROLE_SYNC_UPSTREAM": "backend:8000", "ROLE_SYNC_PATH": "/api/internal/role-sync"},
+        "ROLE_SYNC_UPSTREAM": "api-proxy:8000", "ROLE_SYNC_PATH": "/api/internal/role-sync"},
         networks={"application": {}, "proxy": {"ipv4_address": "172.30.60.2"}}, ports=[
             {"published": "80", "target": 80}, {"published": "443", "target": 443}])
     services["postgres"].update(networks={"database": {}}, environment={
@@ -148,6 +149,16 @@ class SafetyTests(unittest.TestCase):
                 bad = factory()
                 bad["services"][name]["networks"].pop("application")
                 self.assertFalse(preflight.validate(bad, topology)["role_sync_receiver_route"])
+
+    def test_rejects_ambiguous_proxy_alias(self):
+        for topology, factory in (("bundled", model), ("mom", mom_model)):
+            for name, network in (("backend", "application"), ("migrate-siege", "proxy")):
+                data = factory()
+                data["services"][name].setdefault("networks", {})[network] = {"aliases": ["api-proxy"]}
+                self.assertFalse(preflight.validate(data, topology)["backend_proxy_alias_unambiguous"])
+            data = factory()
+            data["services"]["backend"]["networks"]["proxy"] = {}
+            self.assertFalse(preflight.validate(data, topology)["backend_proxy_alias_unambiguous"])
 
     def test_rejects_reserved_hostnames_even_with_matching_oauth(self):
         for host in ("siege-pilot.example.com", "EXAMPLE.NET", "pilot.example.org",
@@ -293,6 +304,25 @@ class ReportTests(unittest.TestCase):
             status = preflight.main()
         return status, json.loads(stdout.getvalue())
 
+    def test_report_directory_must_be_private_owned_and_not_symlinked(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for mode in (0o777, 0o770, 0o755):
+                root.chmod(mode)
+                status, report = self.run_preflight(root / "report.json")
+                self.assertEqual(status, 1)
+                self.assertFalse(report["checks"]["report_directory_private"])
+                self.assertFalse((root / "report.json").exists())
+            root.chmod(0o700)
+            link = root / "linked"
+            link.symlink_to(root, target_is_directory=True)
+            self.assertFalse(preflight.private_report_directory(link))
+            metadata = root.stat()
+            with patch.object(Path, "lstat") as mocked:
+                mocked.return_value = type("Metadata", (), {
+                    "st_mode": metadata.st_mode, "st_uid": os.geteuid() + 1})()
+                self.assertFalse(preflight.private_report_directory(root))
+
     def test_existing_report_is_preserved_and_stops(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "report.json"
@@ -424,7 +454,7 @@ class AdministratorSecretTests(unittest.TestCase):
 @unittest.skipUnless(os.environ.get("PORTABLE_COMPOSE_TEST") == "1", "Compose rendering runs in CI")
 class ComposeTests(unittest.TestCase):
     def test_caddy_routes_only_role_sync_post_before_backend(self):
-        for bot, path in (("mom", "/api/internal/role-sync"), ("backend", "/api/internal/role-sync")):
+        for bot, path in (("mom", "/api/internal/role-sync"), ("api-proxy", "/api/internal/role-sync")):
             with self.subTest(bot=bot):
                 result = subprocess.run([
                     "docker", "run", "--rm", "--network", "none",
@@ -451,7 +481,7 @@ class ComposeTests(unittest.TestCase):
                             for handler in route["handle"]]
                 self.assertEqual(handlers[0], {"handler": "rewrite", "uri": path})
                 self.assertEqual(handlers[1]["upstreams"], [{"dial": f"{bot}:{8001 if bot == 'mom' else 8000}"}])
-                self.assertIn("backend:8000", json.dumps(ordered[1]))
+                self.assertIn("api-proxy:8000", json.dumps(ordered[1]))
                 # No other route reaches either bot's sidecar.
                 all_config = json.dumps(config)
                 self.assertEqual(all_config.count("mom:8001"), 1 if bot == "mom" else 0)
