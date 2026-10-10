@@ -378,7 +378,8 @@ class ComposeTests(unittest.TestCase):
                 ordered = next(group for group in routes(config) if len(group) == 3
                                and group[0].get("match") == [{
                                    "method": ["POST"], "path": ["/api/internal/role-sync"]}])
-                handlers = ordered[0]["handle"][0]["routes"][0]["handle"]
+                handlers = [handler for route in ordered[0]["handle"][0]["routes"]
+                            for handler in route["handle"]]
                 self.assertEqual(handlers[0], {"handler": "rewrite", "uri": path})
                 self.assertEqual(handlers[1]["upstreams"], [{"dial": f"{bot}:8001"}])
                 self.assertIn("backend:8000", json.dumps(ordered[1]))
