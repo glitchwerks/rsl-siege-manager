@@ -44,7 +44,9 @@ services:
     cpus: 1.0
     pids_limit: 128
     healthcheck:
-      test: [CMD-SHELL, "pg_isready -U postgres -d postgres"]
+      # Initialization uses a temporary socket-only server. Require final TCP
+      # readiness so dependents cannot start halfway through database bootstrap.
+      test: [CMD-SHELL, "pg_isready -h 127.0.0.1 -U postgres -d postgres"]
       interval: 15s
       timeout: 5s
       retries: 5
