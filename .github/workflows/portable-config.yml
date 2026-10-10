@@ -1,0 +1,52 @@
+name: Portable configuration
+on:
+  pull_request:
+    paths: ["deploy/portable/**", "scripts/portable-preflight.py", "scripts/tests/test_portable_preflight.py", ".github/workflows/portable-config.yml"]
+  push:
+    branches: [main]
+    paths: ["deploy/portable/**", "scripts/portable-preflight.py", "scripts/tests/test_portable_preflight.py", ".github/workflows/portable-config.yml"]
+permissions:
+  contents: read
+jobs:
+  configuration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate both topologies without activating services
+        env:
+          PORTABLE_COMPOSE_TEST: "1"
+        run: python3 -m unittest discover -s scripts/tests -p test_portable_preflight.py -v
+      - name: Verify database bootstrap and separate application roles
+        # Disposable CI runner only; never invokes application/bot containers.
+        shell: bash
+        run: |
+          set -euo pipefail
+          container="portable-db-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          trap 'docker rm -f "$container" >/dev/null 2>&1 || true' EXIT
+          docker run -d --name "$container" \
+            -e POSTGRES_PASSWORD=synthetic-admin-password-long-enough \
+            -e SIEGE_DB_PASSWORD=synthetic-siege-password-long-enough \
+            -e MOM_DB_PASSWORD=synthetic-mom-password-long-enough \
+            -v "$PWD/deploy/portable/init-databases.sql:/docker-entrypoint-initdb.d/10-applications.sql:ro" \
+            postgres:16 >/dev/null
+          ready=false
+          for attempt in {1..60}; do
+            if docker exec -e PGPASSWORD=synthetic-admin-password-long-enough "$container" psql -h 127.0.0.1 -U postgres -d postgres -tAc \
+              "SELECT count(*) FROM pg_database WHERE datname IN ('siege','mom_bot')" 2>/dev/null | grep -qx '2'; then
+              ready=true
+              break
+            fi
+            sleep 1
+          done
+          test "$ready" = true
+          for spec in 'siege_app siege synthetic-siege-password-long-enough mom_bot' 'mom_app mom_bot synthetic-mom-password-long-enough siege'; do
+            read -r role database password other <<< "$spec"
+            test "$(docker exec -e PGPASSWORD="$password" "$container" psql -h 127.0.0.1 -U "$role" -d "$database" -tAc 'SELECT 1')" = 1
+            test "$(docker exec "$container" psql -U postgres -d postgres -tAc "SELECT NOT rolsuper AND NOT rolcreatedb AND NOT rolcreaterole FROM pg_roles WHERE rolname='$role'")" = t
+            if docker exec -e PGPASSWORD="$password" "$container" psql -h 127.0.0.1 -U "$role" -d "$other" -tAc 'SELECT 1' >/dev/null 2>&1; then
+              echo 'Cross-application database isolation failed'
+              exit 1
+            fi
+          done

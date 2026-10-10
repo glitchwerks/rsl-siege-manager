@@ -1,0 +1,27 @@
+{
+    email {$ACME_EMAIL}
+    admin off
+}
+
+{$PUBLIC_HOST} {
+    # Caddy replaces forwarded headers from untrusted Internet callers.
+    # Route API directly to preserve HTTPS and the public Host at the backend.
+    route {
+        # Publish only the authenticated webhook, never the general sidecar API.
+        @role_sync {
+            method POST
+            path /api/internal/role-sync
+        }
+        handle @role_sync {
+            rewrite * {$ROLE_SYNC_PATH}
+            reverse_proxy {$ROLE_SYNC_UPSTREAM}
+        }
+        @api path /api /api/*
+        handle @api {
+            reverse_proxy api-proxy:8000
+        }
+        handle {
+            reverse_proxy frontend:80
+        }
+    }
+}

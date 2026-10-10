@@ -1,0 +1,127 @@
+# Standalone production stack. Do not layer over the development Compose file.
+name: ${COMPOSE_PROJECT_NAME:?Set a unique project name}
+
+x-runtime: &runtime
+  restart: unless-stopped
+  security_opt: [no-new-privileges:true]
+  logging:
+    driver: json-file
+    options: {max-size: 10m, max-file: "3"}
+
+x-backend: &backend
+  <<: *runtime
+  image: ${BACKEND_IMAGE:?Set an immutable backend image}
+  # CI's API image otherwise runs migrations and ignores Compose command.
+  # Explicit maintenance services own migrations; runtime starts Uvicorn only.
+  entrypoint: []
+  env_file: ./runtime/backend.env
+  environment:
+    ENVIRONMENT: production
+    AUTH_DISABLED: "false"
+  networks: [application, database, proxy]
+  mem_limit: 1280m
+  cpus: 1.5
+  pids_limit: 256
+  shm_size: 256m
+  init: true
+
+services:
+  postgres:
+    <<: *runtime
+    image: ${POSTGRES_IMAGE:?Set a PostgreSQL 16 digest}
+    env_file: ./runtime/database.env
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_DB: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres-admin
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+    secrets: [postgres-admin]
+    volumes:
+      - database-data:/var/lib/postgresql/data
+      - ./init-databases.sql:/docker-entrypoint-initdb.d/10-applications.sql:ro
+    networks: [database]
+    mem_limit: 768m
+    cpus: 1.0
+    pids_limit: 128
+    healthcheck:
+      # Initialization uses a temporary socket-only server. Require final TCP
+      # readiness so dependents cannot start halfway through database bootstrap.
+      test: [CMD-SHELL, "pg_isready -h 127.0.0.1 -U postgres -d postgres"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  backend:
+    <<: *backend
+    # Caddy uses this alias only on its fixed-address proxy network.
+    networks:
+      application: {}
+      database: {}
+      proxy: {aliases: [api-proxy]}
+    command: [uvicorn, app.main:app, --no-access-log, --host, 0.0.0.0, --port, "8000", --proxy-headers, --forwarded-allow-ips, "${PROXY_IP:?Set the proxy's fixed private IP}"]
+    depends_on:
+      postgres: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=4)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+  migrate-siege:
+    <<: *backend
+    restart: "no"
+    profiles: [maintenance]
+    command: [alembic, upgrade, head]
+    depends_on:
+      postgres: {condition: service_healthy}
+
+  frontend:
+    <<: *runtime
+    image: ${FRONTEND_IMAGE:?Set an immutable frontend image}
+    environment: {API_UPSTREAM: "http://backend:8000"}
+    networks: [proxy]
+    mem_limit: 128m
+    cpus: 0.25
+    pids_limit: 64
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, "http://127.0.0.1/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  proxy:
+    <<: *runtime
+    image: ${CADDY_IMAGE:?Set a Caddy image digest}
+    environment:
+      PUBLIC_HOST: ${PUBLIC_HOST:?Set the public DNS hostname}
+      ACME_EMAIL: ${ACME_EMAIL:?Set the certificate contact}
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - tls-data:/data
+      - tls-config:/config
+    networks:
+      application: {}
+      proxy: {ipv4_address: "${PROXY_IP:?Set the proxy's fixed private IP}"}
+    mem_limit: 128m
+    cpus: 0.25
+    pids_limit: 64
+
+networks:
+  application: {}
+  database: {internal: true}
+  proxy:
+    ipam:
+      config:
+        - subnet: "${PROXY_SUBNET:?Choose a non-conflicting private subnet}"
+          ip_range: "${PROXY_DYNAMIC_RANGE:?Choose a dynamic range excluding PROXY_IP}"
+
+volumes:
+  database-data: {}
+  tls-data: {}
+  tls-config: {}
+
+secrets:
+  postgres-admin: {file: ./runtime/postgres-admin}

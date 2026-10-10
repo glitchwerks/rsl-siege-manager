@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Infrastructure
+
+- **Portable production preparation** — add standalone Compose with digest-pinned images, private database/sidecar ports, HTTPS proxy trust, explicit bundled/mom-bot topologies, resource/log bounds, a sanitized configuration preflight, and recovery gates. Pilot activation, backup automation, and production cutover remain separately gated (#557).
+
 ## [1.5.0] - 2026-10-04
 
 Selected-member highlighting, reproducible builds, reliable release promotion, and lower Azure operating costs ahead of the portable VPS transition.
