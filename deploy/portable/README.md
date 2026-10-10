@@ -82,7 +82,8 @@ Runtime starts Uvicorn with the reviewed proxy trust settings; only the opt-in
 maintenance service invokes Alembic. This override is confined to these files.
 
 For mom-bot migrations use the `migrate-mom` service's direct Alembic command. Its
-Azure-only `migrate.sh` entrypoint is deliberately bypassed. `migrate-siege` and
+image entrypoint is explicitly cleared so an inherited entrypoint cannot invoke
+the Azure-only `migrate.sh` script. `migrate-siege` and
 `migrate-mom` belong to the opt-in `maintenance` profile; they are not started by
 normal service activation. Migrations do not start Discord. Apply them only to the
 intended reviewed database, with verified backup/recovery first.
@@ -108,6 +109,10 @@ exist and be protected. Reports are created exclusively at mode 0600; an existin
 report is never overwritten. A STOP requires diagnosis before any next phase.
 The command renders configuration only: no pull, build, service/container creation,
 network creation, database access, Discord traffic, or host configuration change.
+It rejects OAuth credential placeholders and requires distinct raw application
+database passwords, including when both connection URLs match their configured
+passwords. The database roles are created in either topology, so password
+separation is required even in bundled mode.
 Keep Compose diagnostics private; the sanitized report intentionally suppresses
 raw stderr. This report does not validate host suitability or live identity access.
 

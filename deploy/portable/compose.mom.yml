@@ -35,7 +35,8 @@ services:
     <<: *mom
     profiles: [maintenance]
     restart: "no"
-    # Skip Azure-only migrate.sh; portable authentication is handled by Alembic.
+    # Clear any image entrypoint; invoke Alembic without Azure-only migrate.sh.
+    entrypoint: []
     command: [/app/.venv/bin/alembic, upgrade, head]
     depends_on:
       postgres: {condition: service_healthy}

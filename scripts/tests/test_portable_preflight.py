@@ -18,15 +18,16 @@ def fixture(directory):
     runtime = directory / "runtime"
     runtime.mkdir()
     replacements = {
-        "REPLACE_URL_ENCODED_PASSWORD": "synthetic-password-long-enough",
-        "REPLACE_SIEGE_PASSWORD": "synthetic-password-long-enough",
-        "REPLACE_MOM_PASSWORD": "synthetic-password-long-enough",
+        "REPLACE_SIEGE_PASSWORD": "synthetic-siege-password-long-enough",
+        "REPLACE_MOM_PASSWORD": "synthetic-mom-password-long-enough",
         "REPLACE_SHARED_SIDECAR_KEY": "synthetic-sidecar-key-" + "x" * 32,
         "REPLACE_REVERSE_CALL_KEY": "synthetic-reverse-key-" + "x" * 32,
         "REPLACE_RANDOM_SIGNING_KEY": "synthetic-signing-key-" + "x" * 32,
     }
     for name in ("backend", "database", "bundled", "mom"):
         content = (preflight.PORTABLE / f"{name}.env.example").read_text()
+        content = content.replace("REPLACE_URL_ENCODED_PASSWORD",
+                                  f"synthetic-{'mom' if name == 'mom' else 'siege'}-password-long-enough")
         for old, new in replacements.items():
             content = content.replace(old, new)
         content = content.replace("REPLACE", "synthetic")
@@ -64,14 +65,68 @@ def model():
         networks={"proxy": {"ipv4_address": "172.30.60.2"}}, ports=[
             {"published": "80", "target": 80}, {"published": "443", "target": 443}])
     services["postgres"].update(networks={"database": {}}, environment={
-        "SIEGE_DB_PASSWORD": "synthetic-password-long-enough"})
+        "SIEGE_DB_PASSWORD": "synthetic-password-long-enough",
+        "MOM_DB_PASSWORD": "synthetic-mom-password-long-enough"})
     services["bot"]["environment"] = {"BOT_API_KEY": "k" * 32}
     return result
+
+
+def mom_model():
+    data = model()
+    services = data["services"]
+    mom = services.pop("bot")
+    env = services["backend"]["environment"]
+    env["DISCORD_BOT_API_URL"] = "http://mom:8001"
+    services["migrate-siege"]["environment"] = copy.deepcopy(env)
+    mom["environment"] = {
+        "MOM_BOT_DATABASE_URL": "postgresql+psycopg://mom_app:synthetic-mom-password-long-enough@postgres:5432/mom_bot",
+        "MOM_BOT_SECRET_DISCORD_BOT_API_KEY": env["DISCORD_BOT_API_KEY"],
+        "MOM_BOT_SECRET_SOURCE": "environment", "MOM_BOT_DATABASE_AUTH": "password",
+        "MOM_BOT_ENV": "prod", "MOM_BOT_SECRET_SIEGE_WEB_URL": "http://backend:8000",
+        "MOM_BOT_SECRET_SIEGE_WEB_BOT_TOKEN": env["BOT_SERVICE_TOKEN"],
+    }
+    services["mom"] = mom
+    services["migrate-mom"] = copy.deepcopy(mom)
+    services["migrate-mom"].update(profiles=["maintenance"], restart="no", entrypoint=[],
+                                command=["/app/.venv/bin/alembic", "upgrade", "head"])
+    return data
 
 
 class SafetyTests(unittest.TestCase):
     def test_valid_configuration(self):
         self.assertTrue(all(preflight.validate(model(), "bundled").values()))
+        self.assertTrue(all(preflight.validate(mom_model(), "mom").values()))
+
+    def test_mom_migration_requires_cleared_entrypoint(self):
+        for entrypoint in (None, ["/app/migrate.sh"]):
+            with self.subTest(entrypoint=entrypoint):
+                data = mom_model()
+                data["services"]["migrate-mom"]["entrypoint"] = entrypoint
+                self.assertFalse(preflight.validate(data, "mom")["mom_migration_clears_entrypoint"])
+
+    def test_rejects_missing_and_placeholder_oauth_credentials(self):
+        for key in ("DISCORD_CLIENT_ID", "DISCORD_CLIENT_SECRET"):
+            for value in (None, "", " ", "REPLACE", "replace_client_secret"):
+                with self.subTest(key=key, value=value):
+                    data = model()
+                    data["services"]["backend"]["environment"][key] = value
+                    self.assertFalse(preflight.validate(data, "bundled")["oauth_public_origin"])
+
+    def test_rejects_equal_database_passwords_even_when_urls_match(self):
+        for topology, data in (("bundled", model()), ("mom", mom_model())):
+            with self.subTest(topology=topology):
+                password = data["services"]["postgres"]["environment"]["SIEGE_DB_PASSWORD"]
+                data["services"]["postgres"]["environment"]["MOM_DB_PASSWORD"] = password
+                if topology == "mom":
+                    for service in ("mom", "migrate-mom"):
+                        data["services"][service]["environment"]["MOM_BOT_DATABASE_URL"] = (
+                            f"postgresql+psycopg://mom_app:{password}@postgres:5432/mom_bot")
+                checks = preflight.validate(data, topology)
+                self.assertTrue(checks["siege_database_credentials_match"])
+                if topology == "mom":
+                    self.assertTrue(checks["mom_database_credentials_match"])
+                self.assertFalse(checks["distinct_application_database_passwords"])
+                self.assertNotIn(password, json.dumps(checks))
 
     def test_rejects_security_regressions(self):
         changes = [

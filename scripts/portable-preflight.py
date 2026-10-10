@@ -70,9 +70,12 @@ def validate(model, topology):
           and env["AUTH_DISABLED"] == "false"
           and all(len(env.get(k, "")) >= 32 and "REPLACE" not in env[k]
                   for k in ("SESSION_SECRET", "DISCORD_BOT_API_KEY", "BOT_SERVICE_TOKEN")))
+    def configured_oauth(value):
+        return isinstance(value, str) and bool(value.strip()) and "REPLACE" not in value.upper()
+
     check("oauth_public_origin", lambda: env["DISCORD_REDIRECT_URI"] == f"https://{host}/api/auth/callback"
           and env["ALLOWED_ORIGINS"] == f"https://{host}"
-          and bool(env.get("DISCORD_CLIENT_ID")) and bool(env.get("DISCORD_CLIENT_SECRET")))
+          and all(configured_oauth(env.get(k)) for k in ("DISCORD_CLIENT_ID", "DISCORD_CLIENT_SECRET")))
     check("private_sidecar_url", lambda: env["DISCORD_BOT_API_URL"] == f"http://{bot}:8001")
 
     def proxy_trust():
@@ -87,6 +90,12 @@ def validate(model, topology):
     check("trust_only_fixed_proxy", proxy_trust)
 
     database_env = services.get("postgres", {}).get("environment", {})
+    # Both roles are initialized in either topology; one compromised password
+    # must not authenticate as the other application's publicly known role.
+    check("distinct_application_database_passwords", lambda:
+          len(database_env["MOM_DB_PASSWORD"]) >= 16
+          and "REPLACE" not in database_env["MOM_DB_PASSWORD"]
+          and database_env["SIEGE_DB_PASSWORD"] != database_env["MOM_DB_PASSWORD"])
     def database_url(service, variable, scheme, username, database, password_key):
         url = urlsplit(services[service]["environment"][variable])
         return (url.scheme == scheme and url.hostname == "postgres" and url.port == 5432
@@ -112,6 +121,7 @@ def validate(model, topology):
               and bot_env["MOM_BOT_SECRET_SIEGE_WEB_BOT_TOKEN"] == env["BOT_SERVICE_TOKEN"])
         check("mom_migration_matches_runtime", lambda: services["migrate-mom"]["environment"] == bot_env
               and services["migrate-mom"]["command"] == ["/app/.venv/bin/alembic", "upgrade", "head"])
+        check("mom_migration_clears_entrypoint", lambda: services["migrate-mom"].get("entrypoint") == [])
     return checks
 
 
