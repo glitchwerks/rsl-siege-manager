@@ -150,6 +150,16 @@ class SafetyTests(unittest.TestCase):
                 bad["services"][name]["networks"].pop("application")
                 self.assertFalse(preflight.validate(bad, topology)["role_sync_receiver_route"])
 
+    def test_required_login_role_cannot_be_explicitly_blank(self):
+        for topology, factory in (("bundled", model), ("mom", mom_model)):
+            data = factory()
+            env = data["services"]["backend"]["environment"]
+            self.assertTrue(preflight.validate(data, topology)["required_login_role_configured"])
+            for value in (None, "", "  ", "REPLACE_ROLE", "Clan Deputies"):
+                env["DISCORD_REQUIRED_ROLE"] = value
+                self.assertEqual(preflight.validate(data, topology)["required_login_role_configured"],
+                                 value == "Clan Deputies")
+
     def test_dynamic_proxy_range_cannot_allocate_fixed_proxy_address(self):
         for topology, factory in (("bundled", model), ("mom", mom_model)):
             for dynamic in (None, "172.30.60.0/28", "172.30.60.0/29",

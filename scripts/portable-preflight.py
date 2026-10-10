@@ -105,6 +105,8 @@ def validate(model, topology):
     def configured_value(value):
         return isinstance(value, str) and bool(value.strip()) and "REPLACE" not in value.upper()
 
+    check("required_login_role_configured", lambda:
+          configured_value(env.get("DISCORD_REQUIRED_ROLE", "Clan Deputies")))
     check("oauth_public_origin", lambda: env["DISCORD_REDIRECT_URI"] == f"https://{host}/api/auth/callback"
           and env["ALLOWED_ORIGINS"] == f"https://{host}"
           and all(configured_value(env.get(k)) for k in ("DISCORD_CLIENT_ID", "DISCORD_CLIENT_SECRET")))
