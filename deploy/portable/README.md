@@ -42,7 +42,8 @@ Choose a unique Compose project name and non-conflicting private proxy subnet
 with a `PROXY_DYNAMIC_RANGE` contained in `PROXY_SUBNET` and excluding `PROXY_IP`
 **after** reviewing the approved target host's routes, containers, services, port
 usage, storage capacity, remote access, and recovery path. Example subnets are not
-universal defaults. Never install/change Docker, firewall, networks, DNS, or mounts
+universal defaults. Keep `PROXY_IP` clear of the subnet's network, broadcast,
+and first usable (inferred gateway) addresses. Never install/change Docker, firewall, networks, DNS, or mounts
 on an existing infrastructure host as a side effect of preparing this stack.
 
 Pin PostgreSQL 16 and Caddy by digest, along with application images. Siege images
@@ -74,6 +75,8 @@ POST described below; the general sidecar API remains private.
 The reverse-call key, forward sidecar key, and session-signing key must all be
 distinct; preflight rejects reuse in either topology. Match both service ends according
 to the examples. Environment values are deployment-scoped, not dev/prod-prefixed.
+Preflight checks Discord ID format and populated mom notification recipients;
+live guild/channel/role membership still requires pilot acceptance.
 Use a dedicated test guild/token/recipient set during pilot work. Never start a
 second process with a production Discord token.
 

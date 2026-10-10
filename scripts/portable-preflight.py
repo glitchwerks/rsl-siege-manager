@@ -105,11 +105,16 @@ def validate(model, topology):
     def configured_value(value):
         return isinstance(value, str) and bool(value.strip()) and "REPLACE" not in value.upper()
 
+    def snowflake(value):
+        return (isinstance(value, str) and re.fullmatch(r"[0-9]{17,20}", value)
+                and 0 < int(value) < 2**64)
+
     check("required_login_role_configured", lambda:
           configured_value(env.get("DISCORD_REQUIRED_ROLE", "Clan Deputies")))
     check("oauth_public_origin", lambda: env["DISCORD_REDIRECT_URI"] == f"https://{host}/api/auth/callback"
           and env["ALLOWED_ORIGINS"] == f"https://{host}"
-          and all(configured_value(env.get(k)) for k in ("DISCORD_CLIENT_ID", "DISCORD_CLIENT_SECRET")))
+          and snowflake(env.get("DISCORD_CLIENT_ID"))
+          and configured_value(env.get("DISCORD_CLIENT_SECRET")))
     check("private_sidecar_url", lambda: env["DISCORD_BOT_API_URL"] == f"http://{bot}:8001")
 
     check("role_sync_https_configuration", lambda:
@@ -118,8 +123,7 @@ def validate(model, topology):
                or (topology == "mom" and env.get("DAY_ROLE_SYNC_URL") ==
                    f"https://{host}/api/internal/role-sync")))
     check("optional_day_role_ids_valid", lambda: all(
-          k not in env or (isinstance(env[k], str) and re.fullmatch(r"[0-9]{17,20}", env[k])
-                          and 0 < int(env[k]) < 2**64)
+          k not in env or snowflake(env[k])
           for k in ("DISCORD_DAY_1_ROLE_ID", "DISCORD_DAY_2_ROLE_ID")))
     check("role_sync_receiver_route", lambda:
           proxy_env["ROLE_SYNC_UPSTREAM"] ==
@@ -136,7 +140,7 @@ def validate(model, topology):
         dynamic = ipaddress.ip_network(model["networks"]["proxy"]["ipam"]["config"][0]["ip_range"])
         ip = ipaddress.ip_address(address)
         return (trusted == address and ip in subnet and ip.is_private
-                and ip not in (subnet.network_address, subnet.broadcast_address)
+                and ip not in (subnet.network_address, subnet.network_address + 1, subnet.broadcast_address)
                 and dynamic.subnet_of(subnet) and dynamic.num_addresses >= 4 and ip not in dynamic
                 and "--proxy-headers" in command)
     check("trust_only_fixed_proxy", proxy_trust)
@@ -185,11 +189,14 @@ def validate(model, topology):
     guild_key = "MOM_BOT_SECRET_GUILD_ID" if topology == "mom" else "DISCORD_GUILD_ID"
     check("discord_bot_identity_configured", lambda: configured_value(bot_env.get(token_key))
           and configured_value(bot_env.get(guild_key))
-          and bot_env[guild_key].isascii() and bot_env[guild_key].isdigit()
-          and int(bot_env[guild_key]) > 0 and env.get("DISCORD_GUILD_ID") == bot_env[guild_key])
+          and snowflake(bot_env[guild_key]) and env.get("DISCORD_GUILD_ID") == bot_env[guild_key])
     check("sidecar_auth_matches", lambda: env["DISCORD_BOT_API_KEY"] == bot_env[
         "MOM_BOT_SECRET_DISCORD_BOT_API_KEY" if topology == "mom" else "BOT_API_KEY"])
     if topology == "mom":
+        check("mom_notification_recipients_configured", lambda:
+              snowflake(bot_env.get("MOM_BOT_SECRET_NEW_MEMBERS_CHANNEL_ID"))
+              and all(configured_value(bot_env.get(k)) for k in
+                      ("MOM_BOT_SECRET_REMINDER_CHANNEL_NAME", "MOM_BOT_SECRET_REMINDER_MENTION_ROLE_NAME")))
         check("mom_database_credentials_match", lambda: database_url(
             "mom", "MOM_BOT_DATABASE_URL", "postgresql+psycopg", "mom_app", "mom_bot", "MOM_DB_PASSWORD"))
         check("mom_portable_auth_explicit", lambda: bot_env["MOM_BOT_SECRET_SOURCE"] == "environment"

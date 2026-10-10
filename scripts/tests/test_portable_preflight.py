@@ -30,6 +30,9 @@ def fixture(directory):
         "REPLACE_REVERSE_CALL_KEY": "synthetic-reverse-key-" + "x" * 32,
         "REPLACE_RANDOM_SIGNING_KEY": "synthetic-signing-key-" + "x" * 32,
         "REPLACE_TEST_GUILD": "123456789012345678",
+        "REPLACE_TEST_CHANNEL_NAME": "synthetic-reminders",
+        "REPLACE_TEST_CHANNEL": "123456789012345679",
+        "REPLACE_TEST_ROLE_NAME": "synthetic-reminder-role",
     }
     for name in ("backend", "database", "bundled", "mom"):
         content = (preflight.PORTABLE / f"{name}.env.example").read_text()
@@ -38,6 +41,7 @@ def fixture(directory):
                                   f"synthetic-{'mom' if name == 'mom' else 'siege'}-password-long-enough")
         for old, new in replacements.items():
             content = content.replace(old, new)
+        content = content.replace("DISCORD_CLIENT_ID=REPLACE\n", "DISCORD_CLIENT_ID=123456789012345678\n")
         content = content.replace("REPLACE", "synthetic")
         content = content.replace("siege-pilot.example.com", "siege-ci.fixture-domain.net")
         (runtime / f"{name}.env").write_text(content)
@@ -55,7 +59,7 @@ def model():
     env = {
         "ENVIRONMENT": "production", "AUTH_DISABLED": "false",
         "SESSION_SECRET": "s" * 32, "DISCORD_BOT_API_KEY": "k" * 32,
-        "BOT_SERVICE_TOKEN": "r" * 32, "DISCORD_CLIENT_ID": "123",
+        "BOT_SERVICE_TOKEN": "r" * 32, "DISCORD_CLIENT_ID": "123456789012345678",
         "DISCORD_GUILD_ID": "123456789012345678",
         "DISCORD_CLIENT_SECRET": "synthetic", "DISCORD_BOT_API_URL": "http://bot:8001",
         "DISCORD_REDIRECT_URI": "https://pilot.fixture-domain.net/api/auth/callback",
@@ -107,6 +111,9 @@ def mom_model():
         "MOM_BOT_SECRET_DISCORD_TOKEN": "synthetic-test-token",
         "MOM_BOT_SECRET_GUILD_ID": "123456789012345678",
         "MOM_BOT_SECRET_SIEGE_WEB_BOT_TOKEN": env["BOT_SERVICE_TOKEN"],
+        "MOM_BOT_SECRET_NEW_MEMBERS_CHANNEL_ID": "123456789012345679",
+        "MOM_BOT_SECRET_REMINDER_CHANNEL_NAME": "synthetic-reminders",
+        "MOM_BOT_SECRET_REMINDER_MENTION_ROLE_NAME": "synthetic-reminder-role",
     }
     services["proxy"]["environment"].update(ROLE_SYNC_UPSTREAM="mom:8001",
         ROLE_SYNC_PATH="/api/internal/role-sync")
@@ -149,6 +156,33 @@ class SafetyTests(unittest.TestCase):
                 bad = factory()
                 bad["services"][name]["networks"].pop("application")
                 self.assertFalse(preflight.validate(bad, topology)["role_sync_receiver_route"])
+
+    def test_proxy_cannot_claim_the_inferred_gateway(self):
+        for topology, factory in (("bundled", model), ("mom", mom_model)):
+            data = factory()
+            data["services"]["proxy"]["networks"]["proxy"]["ipv4_address"] = "172.30.60.1"
+            data["services"]["backend"]["command"][-1] = "172.30.60.1"
+            self.assertFalse(preflight.validate(data, topology)["trust_only_fixed_proxy"])
+
+    def test_oauth_client_requires_numeric_snowflake(self):
+        for topology, factory in (("bundled", model), ("mom", mom_model)):
+            for value in ("not-a-snowflake", "123", "0" * 17, str(2**64), "123456789012345678"):
+                data = factory()
+                data["services"]["backend"]["environment"]["DISCORD_CLIENT_ID"] = value
+                self.assertEqual(preflight.validate(data, topology)["oauth_public_origin"],
+                                 value == "123456789012345678")
+
+    def test_mom_notification_recipients_cannot_be_placeholders(self):
+        for key in ("MOM_BOT_SECRET_NEW_MEMBERS_CHANNEL_ID", "MOM_BOT_SECRET_REMINDER_CHANNEL_NAME",
+                    "MOM_BOT_SECRET_REMINDER_MENTION_ROLE_NAME"):
+            for value in (None, "", "  ", "REPLACE_TEST_CHANNEL", "replace_test_role"):
+                data = mom_model()
+                data["services"]["mom"]["environment"][key] = value
+                self.assertFalse(preflight.validate(data, "mom")["mom_notification_recipients_configured"])
+        for value in ("synthetic", "123", "0" * 17, str(2**64)):
+            data = mom_model()
+            data["services"]["mom"]["environment"]["MOM_BOT_SECRET_NEW_MEMBERS_CHANNEL_ID"] = value
+            self.assertFalse(preflight.validate(data, "mom")["mom_notification_recipients_configured"])
 
     def test_required_login_role_cannot_be_explicitly_blank(self):
         for topology, factory in (("bundled", model), ("mom", mom_model)):
