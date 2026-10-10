@@ -36,9 +36,12 @@ def fixture(directory):
         for old, new in replacements.items():
             content = content.replace(old, new)
         content = content.replace("REPLACE", "synthetic")
+        content = content.replace("siege-pilot.example.com", "siege-ci.fixture-domain.net")
         (runtime / f"{name}.env").write_text(content)
     (runtime / "postgres-admin").write_text("synthetic-admin-password-long-enough")
+    (runtime / "postgres-admin").chmod(0o600)
     stack = (preflight.PORTABLE / "stack.env.example").read_text().replace("REPLACE", "a" * 64)
+    stack = stack.replace("siege-pilot.example.com", "siege-ci.fixture-domain.net")
     (directory / "stack.env").write_text(stack)
     return directory / "stack.env"
 
@@ -50,8 +53,8 @@ def model():
         "BOT_SERVICE_TOKEN": "r" * 32, "DISCORD_CLIENT_ID": "123",
         "DISCORD_GUILD_ID": "123456789012345678",
         "DISCORD_CLIENT_SECRET": "synthetic", "DISCORD_BOT_API_URL": "http://bot:8001",
-        "DISCORD_REDIRECT_URI": "https://pilot.example.com/api/auth/callback",
-        "ALLOWED_ORIGINS": "https://pilot.example.com",
+        "DISCORD_REDIRECT_URI": "https://pilot.fixture-domain.net/api/auth/callback",
+        "ALLOWED_ORIGINS": "https://pilot.fixture-domain.net",
         "DATABASE_URL": "postgresql+asyncpg://siege_app:synthetic-password-long-enough@postgres:5432/siege",
     }
     result = {"services": {}, "networks": {
@@ -67,12 +70,15 @@ def model():
     services = result["services"]
     services["backend"].update(environment=env, entrypoint=[], command=["--proxy-headers", "--forwarded-allow-ips", "172.30.60.2"])
     services["migrate-siege"].update(environment=copy.deepcopy(env), entrypoint=[], command=["alembic", "upgrade", "head"], profiles=["maintenance"], restart="no")
-    services["proxy"].update(environment={"PUBLIC_HOST": "pilot.example.com"},
+    services["proxy"].update(environment={"PUBLIC_HOST": "pilot.fixture-domain.net"},
         networks={"proxy": {"ipv4_address": "172.30.60.2"}}, ports=[
             {"published": "80", "target": 80}, {"published": "443", "target": 443}])
     services["postgres"].update(networks={"database": {}}, environment={
         "SIEGE_DB_PASSWORD": "synthetic-password-long-enough",
-        "MOM_DB_PASSWORD": "synthetic-mom-password-long-enough"})
+        "MOM_DB_PASSWORD": "synthetic-mom-password-long-enough",
+        "POSTGRES_PASSWORD_FILE": "/run/secrets/postgres-admin"},
+        secrets=[{"source": "postgres-admin", "target": "postgres-admin"}])
+    result["secrets"] = {"postgres-admin": {"file": "/synthetic/postgres-admin"}}
     services["bot"]["environment"] = {"BOT_API_KEY": "k" * 32,
         "DISCORD_TOKEN": "synthetic-test-token", "DISCORD_GUILD_ID": "123456789012345678"}
     return result
@@ -102,6 +108,25 @@ def mom_model():
 
 
 class SafetyTests(unittest.TestCase):
+    def setUp(self):
+        reader = patch.object(preflight, "read_secret_file", return_value="synthetic-admin-password-long-enough")
+        reader.start()
+        self.addCleanup(reader.stop)
+
+    def test_rejects_reserved_hostnames_even_with_matching_oauth(self):
+        for host in ("siege-pilot.example.com", "EXAMPLE.NET", "pilot.example.org",
+                     "site.example", "site.invalid", "site.test", "site.localhost",
+                     "127.0.0.1", "broken..hostname.net", "-bad.hostname.net"):
+            with self.subTest(host=host):
+                data = model()
+                data["services"]["proxy"]["environment"]["PUBLIC_HOST"] = host
+                env = data["services"]["backend"]["environment"]
+                env["DISCORD_REDIRECT_URI"] = f"https://{host}/api/auth/callback"
+                env["ALLOWED_ORIGINS"] = f"https://{host}"
+                checks = preflight.validate(data, "bundled")
+                self.assertTrue(checks["oauth_public_origin"])
+                self.assertFalse(checks["public_hostname"])
+
     def test_rejects_unconfigured_bot_identity_for_both_topologies(self):
         for topology, factory, keys in (
             ("bundled", model, ("DISCORD_TOKEN", "DISCORD_GUILD_ID")),
@@ -191,6 +216,11 @@ class SafetyTests(unittest.TestCase):
 
 
 class ReportTests(unittest.TestCase):
+    def setUp(self):
+        reader = patch.object(preflight, "read_secret_file", return_value="synthetic-admin-password-long-enough")
+        reader.start()
+        self.addCleanup(reader.stop)
+
     def run_preflight(self, report_path):
         stdout = io.StringIO()
         with patch("sys.argv", ["portable-preflight", "--topology", "bundled",
@@ -232,6 +262,38 @@ class ReportTests(unittest.TestCase):
             self.assertEqual(status, 0)
             self.assertEqual(report, json.loads(path.read_text()))
             self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+
+
+class AdministratorSecretTests(unittest.TestCase):
+    def test_admin_file_must_be_usable_and_separate_without_disclosure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "postgres-admin"
+            data = model()
+            data["secrets"]["postgres-admin"]["file"] = str(path)
+            self.assertFalse(preflight.validate(data, "bundled")["postgres_admin_secret_valid"])
+            for value, valid in (("", False), (" \n", False), ("REPLACE_ADMIN_PASSWORD", False),
+                                 ("synthetic-password-long-enough", False),
+                                 ("synthetic-mom-password-long-enough", False),
+                                 ("unique-private-admin-password\n", True)):
+                with self.subTest(valid=valid):
+                    path.write_text(value)
+                    path.chmod(0o600)
+                    checks = preflight.validate(data, "bundled")
+                    self.assertEqual(checks["postgres_admin_secret_valid"], valid)
+                    if value.strip():
+                        self.assertNotIn(value.strip(), json.dumps(checks))
+            path.chmod(0o644)
+            self.assertFalse(preflight.validate(data, "bundled")["postgres_admin_secret_valid"])
+
+    def test_admin_file_reader_rejects_directory_symlink_and_oversize(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "admin"
+            path.write_text("x" * 4097)
+            path.chmod(0o600)
+            link = Path(directory) / "link"
+            link.symlink_to(path)
+            for invalid in (Path(directory), path, link):
+                self.assertIsNone(preflight.read_secret_file(invalid))
 
 
 @unittest.skipUnless(os.environ.get("PORTABLE_COMPOSE_TEST") == "1", "Compose rendering runs in CI")

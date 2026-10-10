@@ -11,11 +11,30 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import stat
 from datetime import datetime, timezone
 from urllib.parse import unquote, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 PORTABLE = ROOT / "deploy" / "portable"
+
+
+def read_secret_file(path):
+    """Read a small private regular file; suppress paths, values, and OS errors."""
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
+        with os.fdopen(fd, "rb") as source:
+            metadata = os.fstat(source.fileno())
+            if not stat.S_ISREG(metadata.st_mode) or metadata.st_mode & 0o077:
+                return None
+            content = source.read(4097)
+        if len(content) > 4096:
+            return None
+        # The PostgreSQL image reads this with shell command substitution,
+        # which strips terminal LF characters but preserves other whitespace.
+        return content.decode("utf-8").rstrip("\n")
+    except (OSError, UnicodeError):
+        return None
 
 
 def validate(model, topology):
@@ -63,9 +82,19 @@ def validate(model, topology):
     env = backend.get("environment", {})
     proxy_env = services.get("proxy", {}).get("environment", {})
     host = proxy_env.get("PUBLIC_HOST", "")
-    check("public_hostname", lambda: bool(re.fullmatch(
-        r"(?=.{1,253}$)[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?", host))
-        and "." in host)
+    def public_hostname():
+        if not isinstance(host, str) or not 1 <= len(host) <= 253:
+            return False
+        labels = host.lower().split(".")
+        reserved = ("example.com", "example.net", "example.org")
+        return (len(labels) >= 2
+                and all(re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", label)
+                        for label in labels)
+                and not labels[-1].isdigit()
+                and labels[-1] not in {"test", "example", "invalid", "localhost", "local", "internal"}
+                and not any(host.lower() == name or host.lower().endswith("." + name)
+                            for name in reserved))
+    check("public_hostname", public_hostname)
     check("secure_auth_configuration", lambda: env["ENVIRONMENT"] == "production"
           and env["AUTH_DISABLED"] == "false"
           and all(len(env.get(k, "")) >= 32 and "REPLACE" not in env[k]
@@ -90,6 +119,19 @@ def validate(model, topology):
     check("trust_only_fixed_proxy", proxy_trust)
 
     database_env = services.get("postgres", {}).get("environment", {})
+    def administrator_secret():
+        postgres = services["postgres"]
+        mounts = postgres.get("secrets", [])
+        if not any(mount.get("source") == "postgres-admin"
+                   and mount.get("target", "postgres-admin") in
+                   {"postgres-admin", "/run/secrets/postgres-admin"} for mount in mounts):
+            return False
+        if database_env.get("POSTGRES_PASSWORD_FILE") != "/run/secrets/postgres-admin":
+            return False
+        value = read_secret_file(model["secrets"]["postgres-admin"]["file"])
+        return (configured_value(value) and len(value) >= 16
+                and value not in (database_env["SIEGE_DB_PASSWORD"], database_env["MOM_DB_PASSWORD"]))
+    check("postgres_admin_secret_valid", administrator_secret)
     # Both roles are initialized in either topology; one compromised password
     # must not authenticate as the other application's publicly known role.
     check("distinct_application_database_passwords", lambda:

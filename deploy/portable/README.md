@@ -112,6 +112,11 @@ sanitized `STOP` with `report_write_failed`, without a traceback or raw filesyst
 diagnostics. Preserve any existing/partial file and retry with a new report path
 after correcting the directory/access issue; never treat incomplete evidence as
 acceptance.
+The administrator secret must be a readable regular file with no group/other
+permissions, no symlink, at most 4 KiB, and a non-placeholder value of at least
+16 characters distinct from both application passwords. Its value stays in memory
+for comparison and never appears in the report. Terminal LF characters are
+handled as the PostgreSQL image handles them.
 The command renders configuration only: no pull, build, service/container creation,
 network creation, database access, Discord traffic, or host configuration change.
 It rejects OAuth credential placeholders and requires distinct raw application
@@ -121,6 +126,10 @@ separation is required even in bundled mode.
 The selected bot must have a nonblank, non-placeholder Discord token and a positive
 numeric guild ID matching the backend. This checks configuration shape and
 consistency only; live token validity remains a separate pilot check.
+Use an operator-controlled public hostname; reserved example/test hostnames are
+rejected even when OAuth URLs match. CI uses a synthetic non-reserved hostname
+without performing DNS, certificate, or network validation. Domain ownership,
+DNS readiness, and TLS issuance remain pilot gates.
 Keep Compose diagnostics private; the sanitized report intentionally suppresses
 raw stderr. This report does not validate host suitability or live identity access.
 
