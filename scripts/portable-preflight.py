@@ -97,7 +97,8 @@ def validate(model, topology):
     check("public_hostname", public_hostname)
     check("secure_auth_configuration", lambda: env["ENVIRONMENT"] == "production"
           and env["AUTH_DISABLED"] == "false"
-          and all(len(env.get(k, "")) >= 32 and "REPLACE" not in env[k]
+          and "changeme" not in env.get("SESSION_SECRET", "").lower()
+          and all(len(env.get(k, "").strip()) >= 32 and "REPLACE" not in env[k].upper()
                   for k in ("SESSION_SECRET", "DISCORD_BOT_API_KEY", "BOT_SERVICE_TOKEN")))
     check("authentication_keys_distinct", lambda: len({env[k] for k in
           ("SESSION_SECRET", "DISCORD_BOT_API_KEY", "BOT_SERVICE_TOKEN")}) == 3)
@@ -114,6 +115,10 @@ def validate(model, topology):
           and (env.get("DAY_ROLE_SYNC_ENABLED", "false") == "false"
                or (topology == "mom" and env.get("DAY_ROLE_SYNC_URL") ==
                    f"https://{host}/api/internal/role-sync")))
+    check("optional_day_role_ids_valid", lambda: all(
+          k not in env or (isinstance(env[k], str) and re.fullmatch(r"[0-9]{17,20}", env[k])
+                          and 0 < int(env[k]) < 2**64)
+          for k in ("DISCORD_DAY_1_ROLE_ID", "DISCORD_DAY_2_ROLE_ID")))
     check("role_sync_receiver_route", lambda:
           proxy_env["ROLE_SYNC_UPSTREAM"] ==
               ("mom:8001" if topology == "mom" else "api-proxy:8000")

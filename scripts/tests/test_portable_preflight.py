@@ -150,6 +150,25 @@ class SafetyTests(unittest.TestCase):
                 bad["services"][name]["networks"].pop("application")
                 self.assertFalse(preflight.validate(bad, topology)["role_sync_receiver_route"])
 
+    def test_runtime_session_placeholders_are_rejected(self):
+        for topology, factory in (("bundled", model), ("mom", mom_model)):
+            for value in ("changeme-use-a-long-random-string-in-production",
+                          "CHANGEME-use-a-long-random-string-in-production", " " * 40):
+                data = factory()
+                data["services"]["backend"]["environment"]["SESSION_SECRET"] = value
+                self.assertFalse(preflight.validate(data, topology)["secure_auth_configuration"])
+
+    def test_supplied_day_role_ids_are_numeric_snowflakes_even_when_sync_disabled(self):
+        for topology, factory in (("bundled", model), ("mom", mom_model)):
+            for key in ("DISCORD_DAY_1_ROLE_ID", "DISCORD_DAY_2_ROLE_ID"):
+                for value in (None, "", "abc", "-1", "0", "123", "0" * 17, str(2**64),
+                              "123456789012345678"):
+                    with self.subTest(topology=topology, key=key, value=value):
+                        data = factory()
+                        data["services"]["backend"]["environment"][key] = value
+                        self.assertEqual(preflight.validate(data, topology)["optional_day_role_ids_valid"],
+                                         value == "123456789012345678")
+
     def test_rejects_ambiguous_proxy_alias(self):
         for topology, factory in (("bundled", model), ("mom", mom_model)):
             for name, network in (("backend", "application"), ("migrate-siege", "proxy")):

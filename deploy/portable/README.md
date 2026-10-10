@@ -103,7 +103,8 @@ public TLS and forwards only this POST to the selected receiver on the applicati
 network. The receiver verifies
 the existing sidecar bearer key. No other sidecar endpoint is exposed. Preflight
 rejects an enabled configuration with a missing, HTTP, or mismatched webhook URL,
-and verifies the overlay's receiver route and network connectivity.
+and rejects supplied malformed day-role IDs or runtime signing-key placeholders.
+It verifies the overlay's receiver route and network connectivity.
 The bundled receiver currently cannot apply the producer's unassign payload;
 preflight blocks enabled role sync in that topology, and its proxy does not route
 to the bot. If production role sync is enabled, use the mom topology and preserve
