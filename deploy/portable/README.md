@@ -201,8 +201,10 @@ Required before pilot acceptance:
 
 ## Backup, restore, and cutover gates
 
-This configuration prepares the stack; automatic backups and restore scripts are
-still required before activation. Never treat the named database volume or a VM
+The [recovery runner](recovery/README.md) now supplies explicitly gated backup,
+offline archive verification, and isolated restore phases with sanitized evidence.
+Automatic scheduling, encrypted off-host copies, and independent backup monitoring
+remain required before activation. Never treat the named database volume or a VM
 snapshot as the only backup. Complete these independent reviewed phases:
 
 1. **Preparation:** preserve Azure resource/configuration/identity/image inventory;

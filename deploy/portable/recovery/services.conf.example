@@ -1,0 +1,19 @@
+# Copy to a private (0700), operator-owned directory; file mode must be 0600.
+# Service labels are fixed. Populate actual reviewed endpoints and database names.
+# Keep credentials in a separate private pgpass file, never in this file or argv.
+# For Azure/remote TLS use verify-full and the approved sslrootcert where required.
+# sslmode=disable is allowed only for an explicitly approved private/local client
+# path; never publish the portable PostgreSQL port to make this runner work.
+[siege]
+host=REPLACE_REVIEWED_DATABASE_HOST
+port=5432
+dbname=siege
+user=siege_app
+sslmode=verify-full
+
+[mom]
+host=REPLACE_REVIEWED_DATABASE_HOST
+port=5432
+dbname=mom_bot
+user=mom_app
+sslmode=verify-full
