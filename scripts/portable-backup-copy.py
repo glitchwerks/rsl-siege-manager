@@ -89,6 +89,8 @@ def cipher_check(path, value):
     protected(path)
     require(path.stat().st_size == value["bytes"] and hash_file(path) == value["sha256"],
             "ciphertext_integrity_failed")
+    with path.open("rb") as source:
+        require(source.read(22) == b"age-encryption.org/v1\n", "age_ciphertext_required")
 
 
 def remote(config, prefix, copy_id):
@@ -151,6 +153,19 @@ def seal(args, checks):
         with tarfile.open(fileobj=output, mode="w") as tar:
             for name in sorted(NAMES):
                 tar.add(args.bundle / name, arcname=name, recursive=False)
+    # Compare the packaged bytes with the verified snapshot manifest, detecting
+    # source edits during packaging before any encryption/publication acceptance.
+    with tarfile.open(archive, "r:") as tar:
+        with tar.extractfile("manifest.json") as source:
+            require(json.loads(source.read(recovery.MAX_METADATA + 1)) == manifest, "source_changed_during_seal")
+        for app in recovery.APPS:
+            member = tar.getmember(f"{app}.dump")
+            digest = hashlib.sha256()
+            with tar.extractfile(member) as source:
+                for block in iter(lambda: source.read(1024 * 1024), b""):
+                    digest.update(block)
+            require(member.size == manifest["databases"][app]["bytes"]
+                    and digest.hexdigest() == manifest["databases"][app]["sha256"], "source_changed_during_seal")
     ciphertext = args.work / "bundle.tar.age"
     with recovery.create_private(ciphertext) as output:
         command(["age", "--encrypt", "--recipients-file", str(args.recipients.absolute()),
@@ -252,7 +267,7 @@ def main(argv=None):
                 args.work.mkdir(mode=0o700)
                 value = globals()[args.phase](args, report["checks"])
                 report.update(result="PASS", copy_id=value["copy_id"], bundle_id=value["bundle_id"])
-            except (Stop, OSError, ValueError, KeyError, TypeError, UnicodeError, tarfile.TarError, KeyboardInterrupt) as error:
+            except (Stop, OSError, ValueError, KeyError, TypeError, UnicodeError, configparser.Error, tarfile.TarError, KeyboardInterrupt) as error:
                 report["error"] = str(error) if isinstance(error, Stop) else "operation_failed"
             report["elapsed_seconds"] = round(time.monotonic() - started, 3)
             output.seek(0)

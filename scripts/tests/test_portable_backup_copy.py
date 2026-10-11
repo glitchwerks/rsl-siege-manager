@@ -93,6 +93,19 @@ class SafetyTests(unittest.TestCase):
             with self.assertRaises(runner.Stop):
                 runner.remote(config, prefix, str(uuid.uuid4()))
 
+    def test_malformed_config_diagnostic_is_sanitized(self):
+        config = private(self.root / "config", "[backup]\ntype=s3\ncredential_without_equals_secret\n")
+        sealed = self.root / "sealed"
+        sealed.mkdir(mode=0o700)
+        cipher = private(sealed / "bundle.tar.age", b"age-encryption.org/v1\nsynthetic")
+        runner.recovery.write_json(sealed / "receipt.json", {
+            "schema": 1, "copy_id": str(uuid.uuid4()), "bundle_id": str(uuid.uuid4()),
+            "created_at": "2026-10-11T00:00:00+00:00", "sha256": runner.hash_file(cipher), "bytes": cipher.stat().st_size})
+        code, report = self.invoke("publish", "--confirm-publish", "--package", sealed, "--config", config, "--prefix", "bucket")
+        self.assertEqual(code, 1)
+        self.assertEqual(report["error"], "operation_failed")
+        self.assertNotIn("credential", json.dumps(report))
+
     def test_native_age_keys_only(self):
         path = self.root / "key"
         for content in ("", "ssh-ed25519 AAA", "age-plugin-test", "AGE-SECRET-KEY-1TEST"):
@@ -193,8 +206,9 @@ class RealCopyTests(unittest.TestCase):
                         ("recover", ["--receipt", root / "publish" / "receipt.json", "--identity", identity, "--config", config, "--prefix", "backups"]),
                     ):
                         with redirect_stdout(io.StringIO()):
-                            self.assertEqual(runner.main([phase, "--work", str(root / phase), "--report", str(root / f"{phase}.json"),
-                                                         *map(str, extra)]), 0)
+                            code = runner.main([phase, "--work", str(root / phase), "--report", str(root / f"{phase}.json"),
+                                                *map(str, extra)])
+                        self.assertEqual(code, 0, (root / f"{phase}.json").read_text())
                     self.assertEqual((root / "recover/bundle/siege.dump").read_bytes(), (source / "siege.dump").read_bytes())
                     # Restore only the decrypted remote copy into fresh, least-privilege CI databases.
                     run_id = uuid.uuid4()
