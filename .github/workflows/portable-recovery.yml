@@ -1,10 +1,10 @@
 name: Portable recovery
 on:
   pull_request:
-    paths: ["scripts/portable-recovery.py", "scripts/tests/test_portable_recovery.py", "deploy/portable/recovery/**", ".github/workflows/portable-recovery.yml"]
+    paths: ["scripts/portable-recovery.py", "scripts/tests/test_portable_recovery.py", "scripts/portable-backup-copy.py", "scripts/tests/test_portable_backup_copy.py", "deploy/portable/recovery/**", ".github/workflows/portable-recovery.yml"]
   push:
     branches: [main]
-    paths: ["scripts/portable-recovery.py", "scripts/tests/test_portable_recovery.py", "deploy/portable/recovery/**", ".github/workflows/portable-recovery.yml"]
+    paths: ["scripts/portable-recovery.py", "scripts/tests/test_portable_recovery.py", "scripts/portable-backup-copy.py", "scripts/tests/test_portable_backup_copy.py", "deploy/portable/recovery/**", ".github/workflows/portable-recovery.yml"]
 permissions:
   contents: read
 jobs:
@@ -26,7 +26,7 @@ jobs:
       - name: Prepare PostgreSQL 16 clients on disposable CI runner
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y postgresql-client-16
+          sudo apt-get install -y postgresql-client-16 age rclone
       - name: Rehearse phase gates and real backup/restore without apps or Discord
         env:
           PORTABLE_RECOVERY_TEST: "1"
@@ -34,3 +34,10 @@ jobs:
         run: |
           export PATH="/usr/lib/postgresql/16/bin:$PATH"
           python3 -m unittest discover -s scripts/tests -p test_portable_recovery.py -v
+      - name: Rehearse encrypted SFTP copy, readback, key recovery and isolated restore
+        env:
+          PORTABLE_COPY_TEST: "1"
+          PG_TEST_PORT: ${{ job.services.postgres.ports[5432] }}
+        run: |
+          export PATH="/usr/lib/postgresql/16/bin:$PATH"
+          python3 -m unittest discover -s scripts/tests -p test_portable_backup_copy.py -v
