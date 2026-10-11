@@ -150,9 +150,19 @@ class SafetyTests(unittest.TestCase):
             services, passwords = files(Path(directory))
             original = services.read_text()
             for extra in ("  host=other", "  options=-c role=postgres", "  other-host",
-                          "host:other", "host = other", "host= other", "[DEFAULT]\nport=5432", "[mom]\nhost=other"):
+                          "host:other", "[DEFAULT]\nport=5432", "[mom]\nhost=other"):
                 with self.subTest(extra=extra):
                     services.write_text(original + extra + "\n")
+                    with self.assertRaises(recovery.Stop):
+                        recovery.Client(services, passwords)
+            for host in ("host = other", "host= other"):
+                with self.subTest(host=host):
+                    changed = original.replace("[mom]\nhost=127.0.0.1", f"[mom]\n{host}")
+                    services.write_text(changed)
+                    # Exercise the parser directly: an unknown-key or duplicate
+                    # check in Client must not mask a missing spacing guard.
+                    with self.assertRaises(recovery.Stop):
+                        recovery.service_settings(changed)
                     with self.assertRaises(recovery.Stop):
                         recovery.Client(services, passwords)
             # Libpq ignores leading whitespace, so a single approved indented
