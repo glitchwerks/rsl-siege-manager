@@ -115,7 +115,7 @@ def remote(config, prefix, copy_id):
     allowed = {
         "s3": {"provider", "access_key_id", "secret_access_key", "region", "endpoint", "location_constraint"},
         "azureblob": {"account", "key", "sas_url"},
-        "sftp": {"host", "user", "port", "pass", "key_file", "known_hosts_file", "disable_hashcheck"},
+        "sftp": {"host", "user", "port", "pass", "key_file", "known_hosts_file", "disable_hashcheck", "shell_type"},
     }
     kind = values["type"]
     require(set(values) <= common | allowed[kind], "unapproved_remote_setting")
@@ -126,6 +126,8 @@ def remote(config, prefix, copy_id):
         require((values.get("account") and values.get("key")) or values.get("sas_url", "").startswith("https://"),
                 "explicit_credentials_required")
     else:
+        require(values.get("shell_type") == "none" and values.get("disable_hashcheck") == "true",
+                "sftp_shell_execution_must_be_disabled")
         require(values.get("host") and values.get("user") and values.get("known_hosts_file")
                 and (values.get("pass") or values.get("key_file")), "explicit_sftp_trust_required")
         require(Path(values["known_hosts_file"]).is_absolute(), "absolute_trust_path_required")

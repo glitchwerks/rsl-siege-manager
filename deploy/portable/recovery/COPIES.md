@@ -44,7 +44,9 @@ Allowed backend settings are deliberately narrow:
   use HTTPS. Default service endpoints use rclone's normal HTTPS behavior.
 - `azureblob`: `account`, `key`, `sas_url`. Supply account/key or an HTTPS SAS URL.
 - `sftp`: `host`, `user`, `port`, `pass`, `key_file`, `known_hosts_file`,
-  `disable_hashcheck`. Supply password (in rclone's obscured format) or private key,
+  `disable_hashcheck`, `shell_type`. Require `disable_hashcheck = true` and
+  `shell_type = none` to prevent remote shell execution and autodetection/config
+  rewriting; the full local SHA-256 readback supplies integrity checks. Supply password (in rclone's obscured format) or private key,
   and a protected, pre-reviewed known-hosts file. Key/known-hosts paths must be
   absolute and private. Never accept an unknown host key merely to pass validation.
 
@@ -98,7 +100,8 @@ python3 scripts/portable-backup-copy.py publish \
 Confirmation records the operator's independently approved upload intent; merging
 this code does not authorize publication. The runner checks local ciphertext,
 uploads only that object, downloads it into the private workspace, then checks
-exact size/SHA-256. A matching download proves transport integrity, not key recovery
+exact size/SHA-256. Direct readback is bounded to the expected size plus one byte
+so oversized objects are refused without an unbounded download. A matching download proves transport integrity, not key recovery
 or database recovery. Preserve the receipt independently after PASS. A failed
 readback may leave an uploaded object; do not delete it or overwrite evidence
 implicitly. Diagnose privately and use a fresh workspace/report for a controlled

@@ -4,7 +4,6 @@ import importlib.util
 import io
 import json
 import os
-import re
 from pathlib import Path
 import socket
 import subprocess
@@ -150,6 +149,33 @@ class SafetyTests(unittest.TestCase):
         env = run.call_args.kwargs["env"]
         self.assertFalse(any(k.startswith(("RCLONE", "AWS", "SSH_AUTH_SOCK", "PG")) for k in env))
 
+    def test_source_edit_during_packaging_stops_before_encryption(self):
+        source = bundle(self.root)
+        recipients = private(self.root / "recipients", "age1synthetic")
+        original = runner.recovery.verified_manifest
+        def changed(directory, checks):
+            manifest = original(directory, checks)
+            private(directory / "siege.dump", "PGDMPchanged")
+            return manifest
+        with patch.object(runner.recovery, "archive_readable"), \
+                patch.object(runner.recovery, "verified_manifest", side_effect=changed), \
+                patch.object(runner, "command") as command:
+            code, report = self.invoke("seal", "--bundle", source, "--recipients", recipients)
+        self.assertEqual(code, 1)
+        self.assertEqual(report["error"], "source_changed_during_seal")
+        command.assert_not_called()
+
+    def test_download_is_exclusive_private_and_bounded(self):
+        destination = self.root / "download"
+        with patch.object(runner, "command") as command:
+            runner.download(self.root / "config", "backup:prefix/id.tar.age", destination, 100)
+        args = command.call_args.args[0]
+        self.assertEqual(args[:2], ["rclone", "cat"])
+        self.assertEqual(args[args.index("--count") + 1], "101")
+        self.assertEqual(destination.stat().st_mode & 0o777, 0o600)
+        with self.assertRaises(FileExistsError):
+            runner.download(self.root / "config", "backup:prefix/id.tar.age", destination, 100)
+
     def test_seal_rejects_extra_files_before_encrypting(self):
         source = bundle(self.root)
         private(source / "credentials", "secret")
@@ -194,26 +220,14 @@ class RealCopyTests(unittest.TestCase):
                 known = private(root / "known_hosts", f"[127.0.0.1]:{port} {key[0]} {key[1]}\n")
                 password = subprocess.run(["rclone", "obscure", "synthetic"], check=True, capture_output=True).stdout.decode().strip()
                 config = private(root / "rclone.conf", f"[backup]\ntype=sftp\nhost=127.0.0.1\nport={port}\nuser=ci\n"
-                                 f"pass={password}\nknown_hosts_file={known}\ndisable_hashcheck=true\n")
+                                 f"pass={password}\nknown_hosts_file={known}\ndisable_hashcheck=true\nshell_type=none\n")
                 from test_portable_recovery import files
                 port_pg = os.environ["PG_TEST_PORT"]
                 services, passwords = files(root, port=port_pg)
                 source = root / "source"
                 runner.recovery.backup(runner.recovery.Client(services, passwords), source, {}, {})
-                original_run = subprocess.run
-                def diagnosed_run(command, **kwargs):
-                    result = original_run(command, **kwargs)
-                    if command[0] == "rclone" and result.returncode:
-                        # Emit only a fixed diagnostic vocabulary, never raw paths/credentials.
-                        allowed = {"failed", "copy", "hash", "read", "unexpected", "eof", "size", "changed", "checksum",
-                                   "corrupted", "invalid", "filter", "file", "source", "creating", "fs", "destination",
-                                   "max", "mtime", "modification", "ssh", "sftp", "config", "remote", "closed",
-                                   "connection", "timeout", "stat", "open", "check", "immutable", "directory", "parse",
-                                   "suffix", "byte", "bytes", "unknown", "flag", "error", "seek", "stream", "truncated"}
-                        terms = [word for word in re.findall(r"[a-z]+", result.stderr.decode().lower()) if word in allowed]
-                        self.fail(f"disposable rclone exit={result.returncode}, stderr_bytes={len(result.stderr)}, terms=" + ",".join(terms))
-                    return result
-                with patch.object(runner.subprocess, "run", side_effect=diagnosed_run):
+                approved_config = config.read_bytes()
+                with nullcontext():
                     for phase, extra in (
                         ("seal", ["--bundle", source, "--recipients", recipients]),
                         ("publish", ["--package", root / "seal", "--config", config, "--prefix", "backups", "--confirm-publish"]),
@@ -223,6 +237,7 @@ class RealCopyTests(unittest.TestCase):
                             code = runner.main([phase, "--work", str(root / phase), "--report", str(root / f"{phase}.json"),
                                                 *map(str, extra)])
                         self.assertEqual(code, 0, (root / f"{phase}.json").read_text())
+                        self.assertEqual(config.read_bytes(), approved_config)
                     self.assertEqual((root / "recover/bundle/siege.dump").read_bytes(), (source / "siege.dump").read_bytes())
                     # Restore only the decrypted remote copy into fresh, least-privilege CI databases.
                     run_id = uuid.uuid4()
