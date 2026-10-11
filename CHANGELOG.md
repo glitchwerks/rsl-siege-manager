@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Infrastructure
 
+- **Portable pilot observation** — prepare bounded read-only health/resource evidence, an inert independent-monitoring policy and provisional VPS sizing guidance. Live pilot activation, scheduler/watchdog acceptance and alert delivery remain separate (#557, #430).
+
 - **Portable recovery validation** — reject duplicate database endpoints and ambiguous service-file parameters before connecting, and reject reports inside backup bundles before creating any evidence (#557).
 
 - **Portable backup automation preparation** — add an explicitly gated hourly job with process-group timeouts and overlap prevention, independent receipt readback/monitor signals, inert systemd templates, and separately reviewed local retention protecting restore-tested copies. Live activation and remote expiry remain separate (#557).

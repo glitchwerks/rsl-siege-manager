@@ -199,12 +199,17 @@ Required before pilot acceptance:
   destination and test outage/recovery separately; do not assume provider VM SLA
   includes application support.
 
+See [monitoring and pilot observation](monitoring/README.md) for provisional VPS
+requirements, an inert independent-monitoring contract and the bounded read-only
+observer. Observation PASS does not replace the acceptance gates below.
+
 ## Backup, restore, and cutover gates
 
 The [recovery runner](recovery/README.md) now supplies explicitly gated backup,
 offline archive verification, and isolated restore phases with sanitized evidence.
-Automatic scheduling, encrypted off-host copies, and independent backup monitoring
-remain required before activation. Never treat the named database volume or a VM
+The encrypted copy runner and hourly job templates are also available; actual
+scheduling, destination/channel acceptance and independent backup monitoring
+remain separately approved before activation. Never treat the named database volume or a VM
 snapshot as the only backup. Complete these independent reviewed phases:
 
 1. **Preparation:** preserve Azure resource/configuration/identity/image inventory;

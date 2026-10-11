@@ -1,0 +1,20 @@
+{
+  "activation": "separately-approved",
+  "public_origin": "https://siege-pilot.example.com",
+  "independent_probes": {
+    "database_health": {"method": "GET", "path": "/api/health", "expected_status": 200, "expected_json": {"status": "healthy"}, "interval_seconds": 300, "timeout_seconds": 5, "failure_threshold": 2},
+    "release_identity": {"method": "GET", "path": "/api/version", "expected_status": 200, "compare": "exact-reviewed-component-versions", "interval_seconds": 300, "timeout_seconds": 5},
+    "certificate_expiry": {"minimum_remaining_days": 14},
+    "backup_completion": {"outside_vm": true, "interval_seconds": 3600, "grace_seconds": 2400, "success_requires": "encrypted-object-and-independent-receipt-readback", "failure_signal": "empty-post-to-fail"},
+    "local_observation_delivery": {"outside_vm": true, "required_before_activation": true, "missed_signal_alert": true}
+  },
+  "local_signals": {
+    "bot_gateway": "container-health-requires-bot_connected",
+    "scheduler_progress": "not-implemented-pilot-blocker",
+    "restart_or_oom": "fail-observation",
+    "memory": "less-than-85-percent-of-service-limit",
+    "disk": "reviewed-database-filesystem-reserve",
+    "watchdog": "not-implemented-separate-restart-approval"
+  },
+  "notifications": {"operator_channel": "REPLACE-approved-independent-channel", "outage_and_recovery_delivery_test": "separate-approval-required"}
+}

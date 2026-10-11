@@ -1,10 +1,10 @@
 name: Portable configuration
 on:
   pull_request:
-    paths: ["deploy/portable/**", "scripts/portable-preflight.py", "scripts/tests/test_portable_preflight.py", ".github/workflows/portable-config.yml"]
+    paths: ["deploy/portable/**", "scripts/portable-preflight.py", "scripts/tests/test_portable_preflight.py", "scripts/portable-pilot.py", "scripts/tests/test_portable_pilot.py", ".github/workflows/portable-config.yml"]
   push:
     branches: [main]
-    paths: ["deploy/portable/**", "scripts/portable-preflight.py", "scripts/tests/test_portable_preflight.py", ".github/workflows/portable-config.yml"]
+    paths: ["deploy/portable/**", "scripts/portable-preflight.py", "scripts/tests/test_portable_preflight.py", "scripts/portable-pilot.py", "scripts/tests/test_portable_pilot.py", ".github/workflows/portable-config.yml"]
 permissions:
   contents: read
 jobs:
@@ -18,6 +18,10 @@ jobs:
         env:
           PORTABLE_COMPOSE_TEST: "1"
         run: python3 -m unittest discover -s scripts/tests -p test_portable_preflight.py -v
+      - name: Verify read-only pilot observation with synthetic containers and mocked HTTPS
+        env:
+          PORTABLE_PILOT_TEST: "1"
+        run: python3 -m unittest discover -s scripts/tests -p test_portable_pilot.py -v
       - name: Verify database bootstrap and separate application roles
         # Disposable CI runner only; never invokes application/bot containers.
         shell: bash
