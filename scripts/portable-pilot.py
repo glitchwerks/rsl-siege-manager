@@ -20,7 +20,7 @@ from urllib.parse import urlsplit
 
 MAX_JSON = 65536
 DOCKER = ["docker", "--host", "unix:///var/run/docker.sock"]
-INSPECT = '{"id":{{json .Id}},"project":{{json (index .Config.Labels "com.docker.compose.project")}},"service":{{json (index .Config.Labels "com.docker.compose.service")}},"image":{{json .Config.Image}},"running":{{json .State.Running}},"oom":{{json .State.OOMKilled}},"restarts":{{json .RestartCount}},"memory_limit":{{json .HostConfig.Memory}},"health":{{if .State.Health}}{{json .State.Health.Status}}{{else}}"none"{{end}}}'
+INSPECT = '{"id":{{json .Id}},"project":{{json (index .Config.Labels "com.docker.compose.project")}},"service":{{json (index .Config.Labels "com.docker.compose.service")}},"image":{{json .Config.Image}},"running":{{json .State.Running}},"oom":{{json .State.OOMKilled}},"restarts":{{json .RestartCount}},"memory_limit":{{json .HostConfig.Memory}},"health":{{if .State.Health}}{{json .State.Health.Status}}{{else}}"none"{{end}},"public_host":{{if eq (index .Config.Labels "com.docker.compose.service") "proxy"}}{{range .Config.Env}}{{if eq (index (split . "=") 0) "PUBLIC_HOST"}}{{json (index (split . "=") 1)}}{{end}}{{end}}{{else}}null{{end}}}'
 DEADLINE = None
 STATS = '{"id":{{json .ID}},"memory":{{json .MemUsage}},"cpu":{{json .CPUPerc}}}'
 
@@ -176,6 +176,9 @@ def observe(cfg, report):
     first = None
     for number in range(cfg["samples"]):
         rows = inventory(cfg)
+        require(rows["proxy"]["public_host"] == urlsplit(cfg["origin"]).hostname,
+                "origin_proxy_mismatch")
+        checks["https_origin_matches_proxy"] = True
         identity = {name: (row["id"], row["restarts"]) for name, row in rows.items()}
         if first is None:
             first = identity

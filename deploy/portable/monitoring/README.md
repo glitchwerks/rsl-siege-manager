@@ -77,6 +77,12 @@ container health can lag its underlying probe interval. It does not prove the
 scheduler is progressing or health-command integrity; configuration preflight
 and scheduler acceptance remain separate gates.
 
+Before any HTTPS request, the origin hostname must match the selected project's
+proxy `PUBLIC_HOST`. The inspector extracts only that environment value, never
+credentials or the full environment; missing/duplicate/mismatched values stop the
+observation. This binds the configured hostname to the selected proxy, but DNS
+resolution/ownership and actual routing still need pilot review.
+
 Read-only public GETs check `/api/health` database health and exact `/api/version`
 identity. System trust verifies HTTPS; ambient proxies and redirects are refused.
 No authentication headers, secret URLs or monitor callbacks are used. Version

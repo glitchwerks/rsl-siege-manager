@@ -27,6 +27,7 @@ def config(root):
 def rows(cfg):
     return {name: {"id": format(index, "064x"), "project": cfg["project"], "service": name,
                    "image": cfg["images"][name], "running": True, "oom": False, "restarts": 0,
+                   "public_host": "pilot.fixture-domain.net" if name == "proxy" else None,
                    "memory_limit": 1024 ** 3, "health": "healthy" if name != "proxy" else "none"}
             for index, name in enumerate(cfg["images"], 1)}
 
@@ -175,6 +176,18 @@ class PilotTests(unittest.TestCase):
         with self.assertRaises(pilot.Stop):
             pilot.budget(15)
 
+    def test_wrong_proxy_hostname_stops_before_https_probe(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = config(Path(tmp)); cfg["services"] = list(cfg["images"])
+            current = rows(cfg)
+            current["proxy"]["public_host"] = "other.fixture-domain.net"
+            with patch.object(pilot, "inventory", return_value=current), \
+                 patch.object(pilot, "endpoint") as endpoint:
+                with self.assertRaises(pilot.Stop) as error:
+                    pilot.observe(cfg, {"checks": {}, "result": "STOP"})
+            self.assertEqual(str(error.exception), "origin_proxy_mismatch")
+            endpoint.assert_not_called()
+
     def test_http_protocol_failure_saves_sanitized_stop_report(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -222,6 +235,7 @@ class DisposableDockerTests(unittest.TestCase):
             root = Path(tmp).resolve()
             project = "observer-ci-" + uuid.uuid4().hex
             container = None
+            proxy_container = None
             try:
                 container = subprocess.run([*pilot.DOCKER, "run", "--detach", "--label",
                     "com.docker.compose.project=" + project, "--label", "com.docker.compose.service=postgres",
@@ -243,7 +257,18 @@ class DisposableDockerTests(unittest.TestCase):
                 self.assertGreater(host["host_memory_bytes"], 0)
                 self.assertFalse(current["postgres"]["oom"])
                 self.assertEqual(current["postgres"]["restarts"], 0)
+                proxy_container = subprocess.run([*pilot.DOCKER, "run", "--detach", "--label",
+                    "com.docker.compose.project=" + project, "--label", "com.docker.compose.service=proxy",
+                    "--memory", "128m", "--env", "PUBLIC_HOST=pilot.fixture-domain.net",
+                    "--env", "SECRET=synthetic-private-credential", "alpine:3.21", "sleep", "300"],
+                    check=True, capture_output=True, text=True, timeout=90).stdout.strip()
+                current = pilot.inventory({**cfg, "services": ["postgres", "proxy"]})
+                self.assertEqual(current["proxy"]["public_host"], "pilot.fixture-domain.net")
+                self.assertNotIn("synthetic-private-credential", json.dumps(current))
             finally:
+                if proxy_container:
+                    subprocess.run([*pilot.DOCKER, "rm", "--force", proxy_container], check=True,
+                                   capture_output=True, timeout=30)
                 if container:
                     subprocess.run([*pilot.DOCKER, "rm", "--force", container], check=True,
                                    capture_output=True, timeout=30)
