@@ -83,6 +83,7 @@ def digest(path):
 def service_settings(content):
     # Accept a deliberately narrow libpq service-file grammar. In particular,
     # leading whitespace starts another parameter, never an INI continuation.
+    require("\x00" not in content, "invalid_service")
     sections = {}
     values = None
     for raw in content.splitlines():

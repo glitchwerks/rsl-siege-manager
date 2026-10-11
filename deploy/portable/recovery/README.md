@@ -26,7 +26,7 @@ Service files accept only the two named sections, whole-line `#` comments, blank
 lines and one `key=value` parameter per line, without spaces around `=`. Leading line
 whitespace and trailing line whitespace are permitted. Each service must name a
 single host; comma-separated host lists are rejected.
-Duplicate keys/sections, multiline continuations, INI defaults and parameters
+Null characters, duplicate keys/sections, multiline continuations, INI defaults and parameters
 outside the approved allowlist are rejected before any connection. Populate a separate `.pgpass` file in libpq's `host:port:database:user:password`
 format; escape colons/backslashes as libpq requires. Never paste credentials into
 commands, logs, reports, Git, or CI artifacts. Do not use shell tracing.

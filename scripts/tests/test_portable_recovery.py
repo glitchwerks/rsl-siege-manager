@@ -177,6 +177,21 @@ class SafetyTests(unittest.TestCase):
             command.assert_not_called()
             self.assertFalse((root / "new").exists())
 
+    def test_nul_in_service_file_stops_before_database_commands(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            services, passwords = files(root, {"siege": "shared_source", "mom": "shared_source"})
+            services.write_text(services.read_text().replace("[mom]\nhost=127.0.0.1",
+                                                            "[mom]\nhost=127.0.0.1\x00alias"))
+            with patch.object(subprocess, "run") as command:
+                status, report = self.run_phase(["backup", "--confirm-backup",
+                    "--bundle", str(root / "new"), "--report", str(root / "report.json"),
+                    "--services", str(services), "--passwords", str(passwords)])
+            self.assertEqual(status, 1)
+            self.assertEqual(report["error"], "invalid_service")
+            command.assert_not_called()
+            self.assertFalse((root / "new").exists())
+
     def test_reports_inside_bundle_are_rejected_without_mutating_artifacts(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
