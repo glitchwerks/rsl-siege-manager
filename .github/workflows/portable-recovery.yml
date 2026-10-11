@@ -1,10 +1,10 @@
 name: Portable recovery
 on:
   pull_request:
-    paths: ["scripts/portable-recovery.py", "scripts/tests/test_portable_recovery.py", "scripts/portable-backup-copy.py", "scripts/tests/test_portable_backup_copy.py", "deploy/portable/recovery/**", ".github/workflows/portable-recovery.yml"]
+    paths: ["scripts/portable-recovery.py", "scripts/tests/test_portable_recovery.py", "scripts/portable-backup-copy.py", "scripts/tests/test_portable_backup_copy.py", "scripts/portable-backup-job.py", "scripts/tests/test_portable_backup_job.py", "deploy/portable/recovery/**", ".github/workflows/portable-recovery.yml"]
   push:
     branches: [main]
-    paths: ["scripts/portable-recovery.py", "scripts/tests/test_portable_recovery.py", "scripts/portable-backup-copy.py", "scripts/tests/test_portable_backup_copy.py", "deploy/portable/recovery/**", ".github/workflows/portable-recovery.yml"]
+    paths: ["scripts/portable-recovery.py", "scripts/tests/test_portable_recovery.py", "scripts/portable-backup-copy.py", "scripts/tests/test_portable_backup_copy.py", "scripts/portable-backup-job.py", "scripts/tests/test_portable_backup_job.py", "deploy/portable/recovery/**", ".github/workflows/portable-recovery.yml"]
 permissions:
   contents: read
 jobs:
@@ -40,4 +40,11 @@ jobs:
           PG_TEST_PORT: ${{ job.services.postgres.ports[5432] }}
         run: |
           export PATH="/usr/lib/postgresql/16/bin:$PATH"
+          python3 -m unittest discover -s scripts/tests -p test_portable_backup_job.py -v
           python3 -m unittest discover -s scripts/tests -p test_portable_backup_copy.py -v
+      - name: Validate hourly timer and service syntax without activation
+        run: |
+          systemd-analyze calendar hourly
+          sed "s|/opt/rsl-siege-manager|$PWD|g" deploy/portable/recovery/automation/rsl-backup.service > /tmp/rsl-backup.service
+          cp deploy/portable/recovery/automation/rsl-backup.timer /tmp/rsl-backup.timer
+          systemd-analyze verify /tmp/rsl-backup.service /tmp/rsl-backup.timer

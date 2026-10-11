@@ -273,6 +273,24 @@ class RealCopyTests(unittest.TestCase):
                             "--receipt", str(root / "seal/receipt.json"), "--identity", str(identity), "--config", str(config),
                             "--prefix", "backups"]), 1)
                     self.assertEqual(json.loads((root / "bad.json").read_text())["error"], "ciphertext_integrity_failed")
+                    # Rehearse the complete hourly job (no real external notification).
+                    from test_portable_backup_job import job, configuration
+                    job_config_path, job_config = configuration(root)
+                    services, passwords = files(root, port=port_pg)
+                    values = json.loads(job_config_path.read_text())
+                    values.update(services=str(services), passwords=str(passwords), recipients=str(recipients),
+                                  remote_config=str(config), prefix="backups")
+                    private(job_config_path, json.dumps(values))
+                    with patch.object(job, "ping") as notify, redirect_stdout(io.StringIO()):
+                        self.assertEqual(job.main(["run", "--config", str(job_config_path), "--confirm-run"]), 0)
+                    notify.assert_called_once_with(job_config["heartbeat_file"], True)
+                    scheduled = list((job_config["root"] / "runs").iterdir())
+                    self.assertEqual(len(scheduled), 1)
+                    result = json.loads((scheduled[0] / "job.json").read_text())
+                    self.assertEqual(result["result"], "PASS")
+                    self.assertTrue(result["checks"]["remote_receipt_readback"])
+                    self.assertEqual((store / "backups" / f'{result["copy_id"]}.receipt.json').read_bytes(),
+                                     (scheduled[0] / "publish/receipt.json").read_bytes())
             finally:
                 server.terminate()
                 server.wait(timeout=10)
