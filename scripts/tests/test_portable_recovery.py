@@ -125,6 +125,129 @@ class SafetyTests(unittest.TestCase):
                 with self.assertRaises(recovery.Stop):
                     recovery.Client(services, passwords)
 
+    def test_duplicate_database_sources_stop_before_database_commands(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            services, passwords = files(root, {"siege": "shared_source", "mom": "shared_source"})
+            # Different users (or cosmetic host/port spelling) cannot make two
+            # archives of one database count as two application backups.
+            original = services.read_text()
+            for changed in (original, original.replace("[mom]\nhost=127.0.0.1\nport=5432",
+                                                        "[mom]\nhost=127.0.0.1.\nport=05432")):
+                services.write_text(changed)
+                with patch.object(subprocess, "run") as command:
+                    status, report = self.run_phase(["backup", "--confirm-backup",
+                        "--bundle", str(root / "new"), "--report", str(root / "report.json"),
+                        "--services", str(services), "--passwords", str(passwords)])
+                self.assertEqual(status, 1)
+                self.assertEqual(report["error"], "duplicate_database_endpoint")
+                command.assert_not_called()
+                self.assertFalse((root / "new").exists())
+                (root / "report.json").unlink()
+
+    def test_service_parser_rejects_indented_overrides_and_ambiguous_ini_syntax(self):
+        with tempfile.TemporaryDirectory() as directory:
+            services, passwords = files(Path(directory))
+            original = services.read_text()
+            for extra in ("  host=other", "  options=-c role=postgres", "  other-host",
+                          "host:other", "[DEFAULT]\nport=5432", "[mom]\nhost=other"):
+                with self.subTest(extra=extra):
+                    services.write_text(original + extra + "\n")
+                    with self.assertRaises(recovery.Stop):
+                        recovery.Client(services, passwords)
+            for host in ("host = other", "host= other"):
+                with self.subTest(host=host):
+                    changed = original.replace("[mom]\nhost=127.0.0.1", f"[mom]\n{host}")
+                    services.write_text(changed)
+                    # Exercise the parser directly: an unknown-key or duplicate
+                    # check in Client must not mask a missing spacing guard.
+                    with self.assertRaises(recovery.Stop):
+                        recovery.service_settings(changed)
+                    with self.assertRaises(recovery.Stop):
+                        recovery.Client(services, passwords)
+            # Libpq ignores leading whitespace, so a single approved indented
+            # parameter must be parsed as its own setting.
+            services.write_text(original.replace("host=", "  host=").replace("port=", "  port="))
+            client = recovery.Client(services, passwords)
+            self.assertEqual(client.settings["mom"]["host"], "127.0.0.1")
+            self.assertEqual(client.settings["mom"]["port"], "5432")
+
+    def test_multi_host_source_stops_before_database_commands(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            services, passwords = files(root, {"siege": "shared_source", "mom": "shared_source"})
+            services.write_text(services.read_text().replace("[mom]\nhost=127.0.0.1",
+                                                            "[mom]\nhost=127.0.0.1,127.0.0.2"))
+            with patch.object(subprocess, "run") as command:
+                status, report = self.run_phase(["backup", "--confirm-backup",
+                    "--bundle", str(root / "new"), "--report", str(root / "report.json"),
+                    "--services", str(services), "--passwords", str(passwords)])
+            self.assertEqual(status, 1)
+            self.assertEqual(report["error"], "single_database_host_required")
+            command.assert_not_called()
+            self.assertFalse((root / "new").exists())
+
+    def test_nul_in_service_file_stops_before_database_commands(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            services, passwords = files(root, {"siege": "shared_source", "mom": "shared_source"})
+            services.write_text(services.read_text().replace("[mom]\nhost=127.0.0.1",
+                                                            "[mom]\nhost=127.0.0.1\x00alias"))
+            with patch.object(subprocess, "run") as command:
+                status, report = self.run_phase(["backup", "--confirm-backup",
+                    "--bundle", str(root / "new"), "--report", str(root / "report.json"),
+                    "--services", str(services), "--passwords", str(passwords)])
+            self.assertEqual(status, 1)
+            self.assertEqual(report["error"], "invalid_service")
+            command.assert_not_called()
+            self.assertFalse((root / "new").exists())
+
+    def test_only_libpq_physical_lines_are_accepted(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            services, passwords = files(root)
+            original = services.read_text()
+            for separator in ("\v", "\f", "\r", "\x1c", "\x85", "\u2028", "\u2029"):
+                with self.subTest(separator=repr(separator)):
+                    changed = original.replace("[mom]\nhost=127.0.0.1",
+                                               f"[mom]{separator}host=other")
+                    services.write_text(changed)
+                    with self.assertRaises(recovery.Stop):
+                        recovery.service_settings(changed)
+                    with patch.object(subprocess, "run") as command:
+                        with self.assertRaises(recovery.Stop):
+                            recovery.Client(services, passwords)
+                    command.assert_not_called()
+            services.write_bytes(original.replace("\n", "\r\n").encode())
+            self.assertEqual(recovery.Client(services, passwords).settings["mom"]["host"], "127.0.0.1")
+            with self.assertRaises(recovery.Stop):
+                recovery.service_settings(original + "#" + "x" * 1022)
+
+    def test_reports_inside_bundle_are_rejected_without_mutating_artifacts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, _ = bundle(root)
+            evidence = source / "evidence"
+            evidence.mkdir(mode=0o700)
+            alias = root / "alias"
+            alias.symlink_to(evidence, target_is_directory=True)
+            original = {path.relative_to(source): path.read_bytes()
+                        for path in source.rglob("*") if path.is_file()}
+            for phase in ("backup", "verify", "restore"):
+                for report_path in (source / "report.json", evidence / "report.json",
+                                    alias / "report.json", source):
+                    with self.subTest(phase=phase, report=str(report_path)):
+                        with patch.object(recovery, "Client") as client, \
+                             patch.object(recovery, "verified_manifest") as verify:
+                            status, report = self.run_phase([phase, "--bundle", str(source),
+                                                            "--report", str(report_path)])
+                        self.assertEqual(status, 1)
+                        self.assertEqual(report["error"], "report_outside_bundle_required")
+                        client.assert_not_called()
+                        verify.assert_not_called()
+                        self.assertEqual({path.relative_to(source): path.read_bytes()
+                                          for path in source.rglob("*") if path.is_file()}, original)
+
     def test_corrupt_bundle_stops_before_any_restore_connection(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

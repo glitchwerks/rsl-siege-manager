@@ -17,7 +17,19 @@ Use a deployment-operator-owned 0700 directory and 0600 files for libpq service
 and password configuration. Copy the shape of `services.conf.example`; exactly
 `siege` and `mom` services are required. Database names may match the reviewed
 Azure source or portable source. Point each service at the intended endpoint and
-role. Populate a separate `.pgpass` file in libpq's `host:port:database:user:password`
+role. The two services must use distinct host/port/database identities; a different
+user does not make a duplicate source safe. This check normalizes host casing,
+trailing dots and numeric port spelling, but does not resolve DNS aliases: review
+that both endpoints actually identify the intended distinct application databases.
+
+Service files use ASCII text with newline or CRLF endings and lines shorter than
+1023 bytes (including the ending); other control separators are rejected.
+They accept only the two named sections, whole-line `#` comments, blank
+lines and one `key=value` parameter per line, without spaces around `=`. Leading line
+whitespace and trailing line whitespace are permitted. Each service must name a
+single host; comma-separated host lists are rejected.
+Null characters, duplicate keys/sections, multiline continuations, INI defaults and parameters
+outside the approved allowlist are rejected before any connection. Populate a separate `.pgpass` file in libpq's `host:port:database:user:password`
 format; escape colons/backslashes as libpq requires. Never paste credentials into
 commands, logs, reports, Git, or CI artifacts. Do not use shell tracing.
 
@@ -31,7 +43,9 @@ connection/password material; this runner does not acquire Azure tokens.
 
 The runner clears ambient `PG*` connection overrides, uses only the two service
 entries, sets connection/query/lock timeouts, and suppresses raw PostgreSQL output.
-Reports require a private operator-owned directory and a fresh filename. Evidence
+Reports require a private operator-owned directory and a fresh filename outside
+the bundle and every descendant, including paths through symlink aliases. This
+separation is checked before any report file is created. Evidence
 is reserved before any database work; interrupted runs leave `INCOMPLETE`/`STOP`,
 which are never acceptance. Existing reports/bundles are never overwritten.
 

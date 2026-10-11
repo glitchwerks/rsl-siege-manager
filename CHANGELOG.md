@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Infrastructure
 
+- **Portable recovery validation** — reject duplicate database endpoints and ambiguous service-file parameters before connecting, and reject reports inside backup bundles before creating any evidence (#557).
+
 - **Portable backup automation preparation** — add an explicitly gated hourly job with process-group timeouts and overlap prevention, independent receipt readback/monitor signals, inert systemd templates, and separately reviewed local retention protecting restore-tested copies. Live activation and remote expiry remain separate (#557).
 
 - **Encrypted portable backup copies** — add separate local encryption, approved remote publication/readback, and recovered-key verification phases for S3-compatible, Azure Blob or SFTP storage. Disposable CI restores from the decrypted remote copy; hourly scheduling, retention, alerts and live activation remain separate (#557).

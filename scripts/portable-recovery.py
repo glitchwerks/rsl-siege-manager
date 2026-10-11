@@ -6,7 +6,6 @@ installs software, activates Compose, changes roles, drops databases, or starts 
 Raw command output, archive contents, and connection details stay out of reports.
 """
 import argparse
-import configparser
 from contextlib import contextmanager
 from datetime import datetime, timezone
 import hashlib
@@ -81,24 +80,57 @@ def digest(path):
     return result.hexdigest()
 
 
+def service_settings(content):
+    # Accept a deliberately narrow libpq service-file grammar. In particular,
+    # leading whitespace starts another parameter, never an INI continuation.
+    require(content.isascii(), "invalid_service")
+    sections = {}
+    values = None
+    # libpq uses fgets, not Python's broader Unicode/control splitlines.
+    for raw in content.split("\n"):
+        require(len(raw.encode()) + 1 < 1023, "invalid_service")
+        if raw.endswith("\r"):
+            raw = raw[:-1]  # permit conventional CRLF files
+        require(all(character == "\t" or 32 <= ord(character) < 127
+                    for character in raw), "invalid_service")
+        line = raw.strip(" \t")
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("["):
+            require(re.fullmatch(r"\[(siege|mom)\]", line), "invalid_services")
+            name = line[1:-1]
+            require(name not in sections, "invalid_services")
+            values = sections[name] = {}
+        else:
+            require(values is not None and "=" in line, "invalid_service")
+            key, value = line.split("=", 1)
+            require(key == key.strip() and value == value.lstrip(), "invalid_service")
+            require(key not in values, "invalid_service")
+            values[key] = value
+    require(set(sections) == set(APPS), "invalid_services")
+    return sections
+
+
 class Client:
     def __init__(self, services, passwords):
         private_path(services.parent, directory=True)
         private_path(passwords.parent, directory=True)
-        parser = configparser.ConfigParser(interpolation=None)
-        parser.read_string(read_private(services).decode())
-        require(set(parser.sections()) == set(APPS) and not parser.defaults(), "invalid_services")
+        parsed = service_settings(read_private(services).decode())
         self.settings = {}
         allowed = {"host", "port", "dbname", "user", "sslmode", "sslrootcert"}
         for app in APPS:
-            values = dict(parser[app])
+            values = parsed[app]
             require(set(values) <= allowed and all(values.get(k, "").strip()
                     for k in ("host", "port", "dbname", "user", "sslmode")), "invalid_service")
             require(re.fullmatch(r"[a-zA-Z0-9_]{1,63}", values["dbname"])
                     and values["dbname"] not in {"postgres", "template0", "template1"}, "invalid_database")
             require(values["sslmode"] in {"verify-full", "disable"}
                     and values["port"].isdigit() and 0 < int(values["port"]) < 65536, "invalid_connection")
+            require("," not in values["host"], "single_database_host_required")
             self.settings[app] = values
+        endpoints = {(values["host"].casefold().rstrip("."), int(values["port"]), values["dbname"])
+                     for values in self.settings.values()}
+        require(len(endpoints) == len(APPS), "duplicate_database_endpoint")
         read_private(passwords)
         # Ambient PGHOST/PGOPTIONS/PGDATABASE must not override reviewed targets.
         self.env = {k: v for k, v in os.environ.items() if not k.startswith("PG")}
@@ -301,6 +333,15 @@ def main(argv=None):
     checks = {}
     report = {"schema": 1, "phase": args.phase, "timestamp": datetime.now(timezone.utc).isoformat(),
               "checks": checks, "result": "STOP"}
+    # Check containment before reserving evidence: even a failed invocation
+    # must not add files to an existing backup or a descendant directory.
+    try:
+        require(not args.report.resolve().is_relative_to(args.bundle.resolve()),
+                "report_outside_bundle_required")
+    except (Stop, OSError, RuntimeError) as error:
+        report["error"] = str(error) if isinstance(error, Stop) else "report_write_failed"
+        print(json.dumps(report))
+        return 1
     # Reserve evidence before any DB operation; never overwrite old reports.
     try:
         private_path(args.report.parent, directory=True)
@@ -309,7 +350,6 @@ def main(argv=None):
             output.flush()
             os.fsync(output.fileno())
             try:
-                require(args.report.parent.resolve() != args.bundle.resolve(), "report_outside_bundle_required")
                 if args.phase == "backup":
                     require(args.confirm_backup, "backup_confirmation_required")
                     require(args.services and args.passwords, "connection_files_required")
