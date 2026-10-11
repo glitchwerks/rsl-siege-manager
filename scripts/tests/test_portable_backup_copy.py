@@ -267,7 +267,7 @@ class RealCopyTests(unittest.TestCase):
                     receipt = json.loads((root / "seal/receipt.json").read_text())
                     remote = store / "backups" / f'{receipt["copy_id"]}.tar.age'
                     self.assertNotIn(b"private-workload", remote.read_bytes())
-                    remote.write_bytes(b"tampered")
+                    remote.write_bytes(b"X" * remote.stat().st_size)
                     with redirect_stdout(io.StringIO()):
                         self.assertEqual(runner.main(["recover", "--work", str(root / "bad"), "--report", str(root / "bad.json"),
                             "--receipt", str(root / "seal/receipt.json"), "--identity", str(identity), "--config", str(config),
