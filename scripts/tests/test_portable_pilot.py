@@ -175,6 +175,30 @@ class PilotTests(unittest.TestCase):
         with self.assertRaises(pilot.Stop):
             pilot.budget(15)
 
+    def test_http_protocol_failure_saves_sanitized_stop_report(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            cfg = root / "pilot.json"
+            cfg.write_text(json.dumps(config(root))); cfg.chmod(0o600)
+            for index, error in enumerate((pilot.http.client.IncompleteRead(b"sensitive-body", 100),
+                                           pilot.http.client.BadStatusLine("sensitive-header"))):
+                response = unittest.mock.MagicMock()
+                response.__enter__.return_value = response
+                response.status = 200
+                response.read1.side_effect = error
+                report_path = root / f"report-{index}.json"
+                with patch.object(pilot.urllib.request, "build_opener") as opener, \
+                     patch.object(pilot, "observe", side_effect=lambda cfg, report:
+                                  pilot.endpoint(cfg["origin"], "/api/health")):
+                    opener.return_value.open.return_value = response
+                    code, report = self.run_main(["--config", str(cfg), "--report", str(report_path),
+                                                  "--confirm-readonly-pilot"])
+                self.assertEqual(code, 1)
+                self.assertEqual(report["result"], "STOP")
+                self.assertEqual(report["error"], "observation_failed")
+                self.assertNotIn("sensitive", json.dumps(report))
+                self.assertEqual(json.loads(report_path.read_text()), report)
+
     def test_https_rejects_redirects_and_oversized_json(self):
         with self.assertRaises(pilot.Stop):
             pilot.NoRedirect().redirect_request(None, None, None, None, None, None)

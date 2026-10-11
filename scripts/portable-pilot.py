@@ -6,6 +6,7 @@ Discord writes. PASS covers this observation only, never full pilot acceptance.
 """
 import argparse
 from datetime import datetime, timezone
+import http.client
 import json
 import math
 import os
@@ -222,7 +223,7 @@ def main(argv=None):
             try:
                 require(args.confirm_readonly_pilot, "readonly_pilot_confirmation_required")
                 observe(settings(args.config), report)
-            except (Stop, OSError, ValueError, KeyError, TypeError, AttributeError, ArithmeticError, subprocess.SubprocessError, KeyboardInterrupt) as error:
+            except (Stop, OSError, ValueError, KeyError, TypeError, AttributeError, ArithmeticError, subprocess.SubprocessError, http.client.HTTPException, KeyboardInterrupt) as error:
                 report["error"] = str(error) if isinstance(error, Stop) else "observation_failed"
             report["elapsed_seconds"] = round(time.monotonic() - started, 3)
             output.seek(0)
