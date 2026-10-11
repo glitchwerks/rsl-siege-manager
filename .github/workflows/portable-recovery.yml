@@ -1,0 +1,36 @@
+name: Portable recovery
+on:
+  pull_request:
+    paths: ["scripts/portable-recovery.py", "scripts/tests/test_portable_recovery.py", "deploy/portable/recovery/**", ".github/workflows/portable-recovery.yml"]
+  push:
+    branches: [main]
+    paths: ["scripts/portable-recovery.py", "scripts/tests/test_portable_recovery.py", "deploy/portable/recovery/**", ".github/workflows/portable-recovery.yml"]
+permissions:
+  contents: read
+jobs:
+  rehearsal:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: synthetic-admin-password
+        ports: ["5432/tcp"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Prepare PostgreSQL 16 clients on disposable CI runner
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y postgresql-client-16
+      - name: Rehearse phase gates and real backup/restore without apps or Discord
+        env:
+          PORTABLE_RECOVERY_TEST: "1"
+          PG_TEST_PORT: ${{ job.services.postgres.ports[5432] }}
+        run: |
+          export PATH="/usr/lib/postgresql/16/bin:$PATH"
+          python3 -m unittest discover -s scripts/tests -p test_portable_recovery.py -v
