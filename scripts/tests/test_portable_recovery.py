@@ -202,6 +202,27 @@ class SafetyTests(unittest.TestCase):
             command.assert_not_called()
             self.assertFalse((root / "new").exists())
 
+    def test_only_libpq_physical_lines_are_accepted(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            services, passwords = files(root)
+            original = services.read_text()
+            for separator in ("\v", "\f", "\r", "\x1c", "\x85", "\u2028", "\u2029"):
+                with self.subTest(separator=repr(separator)):
+                    changed = original.replace("[mom]\nhost=127.0.0.1",
+                                               f"[mom]{separator}host=other")
+                    services.write_text(changed)
+                    with self.assertRaises(recovery.Stop):
+                        recovery.service_settings(changed)
+                    with patch.object(subprocess, "run") as command:
+                        with self.assertRaises(recovery.Stop):
+                            recovery.Client(services, passwords)
+                    command.assert_not_called()
+            services.write_bytes(original.replace("\n", "\r\n").encode())
+            self.assertEqual(recovery.Client(services, passwords).settings["mom"]["host"], "127.0.0.1")
+            with self.assertRaises(recovery.Stop):
+                recovery.service_settings(original + "#" + "x" * 1022)
+
     def test_reports_inside_bundle_are_rejected_without_mutating_artifacts(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

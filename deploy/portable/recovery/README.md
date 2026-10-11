@@ -22,7 +22,9 @@ user does not make a duplicate source safe. This check normalizes host casing,
 trailing dots and numeric port spelling, but does not resolve DNS aliases: review
 that both endpoints actually identify the intended distinct application databases.
 
-Service files accept only the two named sections, whole-line `#` comments, blank
+Service files use ASCII text with newline or CRLF endings and lines shorter than
+1023 bytes (including the ending); other control separators are rejected.
+They accept only the two named sections, whole-line `#` comments, blank
 lines and one `key=value` parameter per line, without spaces around `=`. Leading line
 whitespace and trailing line whitespace are permitted. Each service must name a
 single host; comma-separated host lists are rejected.

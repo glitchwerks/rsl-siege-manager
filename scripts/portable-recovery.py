@@ -83,11 +83,17 @@ def digest(path):
 def service_settings(content):
     # Accept a deliberately narrow libpq service-file grammar. In particular,
     # leading whitespace starts another parameter, never an INI continuation.
-    require("\x00" not in content, "invalid_service")
+    require(content.isascii(), "invalid_service")
     sections = {}
     values = None
-    for raw in content.splitlines():
-        line = raw.strip()
+    # libpq uses fgets, not Python's broader Unicode/control splitlines.
+    for raw in content.split("\n"):
+        require(len(raw.encode()) + 1 < 1023, "invalid_service")
+        if raw.endswith("\r"):
+            raw = raw[:-1]  # permit conventional CRLF files
+        require(all(character == "\t" or 32 <= ord(character) < 127
+                    for character in raw), "invalid_service")
+        line = raw.strip(" \t")
         if not line or line.startswith("#"):
             continue
         if line.startswith("["):
