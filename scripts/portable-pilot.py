@@ -168,6 +168,12 @@ def host_sample(cfg, rows):
             "host_memory_bytes": int(mem["MemTotal"].split()[0]) * 1024, "logical_cpus": os.cpu_count()}
 
 
+def runtime_healthy(cfg, name, row):
+    return (row["running"] is True and row["oom"] is False and row["image"] == cfg["images"][name]
+            and type(row["memory_limit"]) is int and row["memory_limit"] > 0
+            and (row["health"] == "healthy" if name != "proxy" else True))
+
+
 def observe(cfg, report):
     checks = report["checks"]
     peaks = report["observed_maximums"] = {name: {"memory_bytes": 0, "cpu_percent": 0.0} for name in cfg["services"]}
@@ -184,9 +190,7 @@ def observe(cfg, report):
             first = identity
         checks["stable_containers"] = checks.get("stable_containers", True) and first == identity
         for name, row in rows.items():
-            good = (row["running"] is True and row["oom"] is False and row["image"] == cfg["images"][name]
-                    and type(row["memory_limit"]) is int and row["memory_limit"] > 0
-                    and (row["health"] == "healthy" if name != "proxy" else True))
+            good = runtime_healthy(cfg, name, row)
             checks[name + "_runtime"] = checks.get(name + "_runtime", True) and good
         resources = resource_sample(rows)
         for name, values in resources.items():
@@ -203,6 +207,12 @@ def observe(cfg, report):
         report["samples_completed"] = number + 1
         if number + 1 < cfg["samples"]:
             time.sleep(cfg["interval_seconds"])
+    final = inventory(cfg)
+    require(final["proxy"]["public_host"] == urlsplit(cfg["origin"]).hostname, "origin_proxy_mismatch")
+    checks["stable_containers"] = checks["stable_containers"] and first == {
+        name: (row["id"], row["restarts"]) for name, row in final.items()}
+    for name, row in final.items():
+        checks[name + "_runtime"] = checks[name + "_runtime"] and runtime_healthy(cfg, name, row)
     report["result"] = "PASS" if checks and all(checks.values()) else "STOP"
 
 

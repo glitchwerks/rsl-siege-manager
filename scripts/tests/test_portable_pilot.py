@@ -132,7 +132,10 @@ class PilotTests(unittest.TestCase):
         host = {"available_memory_bytes": 1024 ** 3, "disk_available_bytes": 20 * 1024 ** 3,
                 "host_memory_bytes": 4 * 1024 ** 3, "logical_cpus": 2}
         report = {"checks": {}, "result": "STOP", "pilot_accepted": False}
-        with patch.object(pilot, "inventory", side_effect=inventories or [current, copy.deepcopy(current)]), \
+        inventories = inventories or [current, copy.deepcopy(current)]
+        if len(inventories) == cfg["samples"]:
+            inventories = [*inventories, copy.deepcopy(inventories[-1])]
+        with patch.object(pilot, "inventory", side_effect=inventories), \
              patch.object(pilot, "resource_sample", return_value=resources or sample), \
              patch.object(pilot, "host_sample", return_value=host), \
              patch.object(pilot, "endpoint", side_effect=health or [{"status": "healthy"}, cfg["versions"]] * 2), \
@@ -175,6 +178,16 @@ class PilotTests(unittest.TestCase):
         pilot.DEADLINE = pilot.time.monotonic() - 1
         with self.assertRaises(pilot.Stop):
             pilot.budget(15)
+
+    def test_final_inventory_detects_restart_replacement_and_oom_during_last_probes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = config(Path(tmp)); first = rows(cfg)
+            for key, value in (("restarts", 1), ("id", "f" * 64), ("oom", True), ("health", "unhealthy")):
+                with self.subTest(key=key):
+                    final = copy.deepcopy(first); final["backend"][key] = value
+                    report = self.observe_fixture(cfg, [first, copy.deepcopy(first), final])
+                    self.assertEqual(report["samples_completed"], 2)
+                    self.assertEqual(report["result"], "STOP")
 
     def test_wrong_proxy_hostname_stops_before_https_probe(self):
         with tempfile.TemporaryDirectory() as tmp:

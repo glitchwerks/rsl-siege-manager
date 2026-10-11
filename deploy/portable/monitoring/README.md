@@ -66,7 +66,7 @@ allows 2–30 samples, 1–10 seconds between samples and a ten-minute total exe
 budget, with bounded Docker commands and HTTPS responses. Preserve failed or
 incomplete evidence and use a new report filename after diagnosis.
 
-Each sample checks the project-scoped inventory, exact digest references, running
+Each sample and a final inventory recheck after the last probes check the project-scoped inventory, exact digest references, running
 state, container health except proxy (which has no health check), OOM flags and
 stable container IDs/restart counts. Running maintenance services, duplicate
 services, missing or unexpected runtime services stop observation. Stopped
