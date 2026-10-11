@@ -138,11 +138,21 @@ def remote(config, prefix, copy_id):
     return f"backup:{prefix}/{copy_id}.tar.age"
 
 
-def transfer(config, source, destination, limit=None):
+def transfer(config, source, destination):
     command(["rclone", "copyto", source, destination, "--config", str(config.absolute()),
              "--immutable", "--log-level", "ERROR", "--retries", "1",
-             "--low-level-retries", "1", "--contimeout", "10s", "--timeout", "60s"]
-            + (["--max-size", str(limit)] if limit else []))
+             "--low-level-retries", "1", "--contimeout", "10s", "--timeout", "60s"])
+
+
+def download(config, target, destination, size):
+    # Stream directly into an exclusive private file; bound readback to the expected
+    # size plus one byte so an oversized remote object cannot silently pass.
+    with recovery.create_private(destination) as output:
+        command(["rclone", "cat", target, "--config", str(config.absolute()), "--count", str(size + 1),
+                 "--log-level", "ERROR", "--retries", "1", "--low-level-retries", "1",
+                 "--contimeout", "10s", "--timeout", "60s"], output)
+        output.flush()
+        os.fsync(output.fileno())
 
 
 def space(work, size):
@@ -203,8 +213,7 @@ def publish(args, checks):
     transfer(args.config, str(ciphertext.absolute()), target)
     checks["encrypted_object_uploaded"] = True
     downloaded = args.work / "download.tar.age"
-    transfer(args.config, target, str(downloaded.absolute()), limit=value["bytes"])
-    downloaded.chmod(0o600)
+    download(args.config, target, downloaded, value["bytes"])
     cipher_check(downloaded, value)
     checks["remote_readback_matches"] = True
     recovery.write_json(args.work / "receipt.json", value)
@@ -237,8 +246,7 @@ def recover(args, checks):
     target = remote(args.config, args.prefix, value["copy_id"])
     space(args.work, value["bytes"] * 4 + 64 * 1024 * 1024)
     downloaded = args.work / "download.tar.age"
-    transfer(args.config, target, str(downloaded.absolute()), limit=value["bytes"])
-    downloaded.chmod(0o600)
+    download(args.config, target, downloaded, value["bytes"])
     cipher_check(downloaded, value)
     checks["remote_readback_matches"] = True
     archive = args.work / "recovered.tar"

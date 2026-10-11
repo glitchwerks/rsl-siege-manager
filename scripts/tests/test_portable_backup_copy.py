@@ -211,7 +211,7 @@ class RealCopyTests(unittest.TestCase):
                                    "connection", "timeout", "stat", "open", "check", "immutable", "directory", "parse",
                                    "suffix", "byte", "bytes", "unknown", "flag", "error", "seek", "stream", "truncated"}
                         terms = [word for word in re.findall(r"[a-z]+", result.stderr.decode().lower()) if word in allowed]
-                        self.fail("disposable rclone diagnostic terms: " + ",".join(terms))
+                        self.fail(f"disposable rclone exit={result.returncode}, stderr_bytes={len(result.stderr)}, terms=" + ",".join(terms))
                     return result
                 with patch.object(runner.subprocess, "run", side_effect=diagnosed_run):
                     for phase, extra in (
