@@ -20,7 +20,7 @@ from urllib.parse import urlsplit
 
 MAX_JSON = 65536
 DOCKER = ["docker", "--host", "unix:///var/run/docker.sock"]
-INSPECT = '{"id":{{json .Id}},"project":{{json (index .Config.Labels "com.docker.compose.project")}},"service":{{json (index .Config.Labels "com.docker.compose.service")}},"image":{{json .Config.Image}},"running":{{json .State.Running}},"oom":{{json .State.OOMKilled}},"restarts":{{json .RestartCount}},"memory_limit":{{json .HostConfig.Memory}},"health":{{if index .State "Health"}}{{json .State.Health.Status}}{{else}}"none"{{end}},"public_host":{{if eq (index .Config.Labels "com.docker.compose.service") "proxy"}}{{range .Config.Env}}{{if eq (index (split . "=") 0) "PUBLIC_HOST"}}{{json (join (slice (split . "=") 1) "=")}}{{end}}{{end}}{{else}}null{{end}}}'
+INSPECT = '{"id":{{json .Id}},"project":{{json (index .Config.Labels "com.docker.compose.project")}},"service":{{json (index .Config.Labels "com.docker.compose.service")}},"image":{{json .Config.Image}},"running":{{json .State.Running}},"oom":{{json .State.OOMKilled}},"restarts":{{json .RestartCount}},"started_at":{{json .State.StartedAt}},"memory_limit":{{json .HostConfig.Memory}},"health":{{if index .State "Health"}}{{json .State.Health.Status}}{{else}}"none"{{end}},"public_host":{{if eq (index .Config.Labels "com.docker.compose.service") "proxy"}}{{range .Config.Env}}{{if eq (index (split . "=") 0) "PUBLIC_HOST"}}{{json (join (slice (split . "=") 1) "=")}}{{end}}{{end}}{{else}}null{{end}}}'
 DEADLINE = None
 STATS = '{"id":{{json .ID}},"memory":{{json .MemUsage}},"cpu":{{json .CPUPerc}}}'
 
@@ -185,7 +185,7 @@ def observe(cfg, report):
         require(rows["proxy"]["public_host"] == urlsplit(cfg["origin"]).hostname,
                 "origin_proxy_mismatch")
         checks["https_origin_matches_proxy"] = True
-        identity = {name: (row["id"], row["restarts"]) for name, row in rows.items()}
+        identity = {name: (row["id"], row["restarts"], row["started_at"]) for name, row in rows.items()}
         if first is None:
             first = identity
         checks["stable_containers"] = checks.get("stable_containers", True) and first == identity
@@ -210,7 +210,7 @@ def observe(cfg, report):
     final = inventory(cfg)
     require(final["proxy"]["public_host"] == urlsplit(cfg["origin"]).hostname, "origin_proxy_mismatch")
     checks["stable_containers"] = checks["stable_containers"] and first == {
-        name: (row["id"], row["restarts"]) for name, row in final.items()}
+        name: (row["id"], row["restarts"], row["started_at"]) for name, row in final.items()}
     for name, row in final.items():
         checks[name + "_runtime"] = checks[name + "_runtime"] and runtime_healthy(cfg, name, row)
     report["result"] = "PASS" if checks and all(checks.values()) else "STOP"

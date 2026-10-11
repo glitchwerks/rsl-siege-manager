@@ -68,7 +68,7 @@ incomplete evidence and use a new report filename after diagnosis.
 
 Each sample and a final inventory recheck after the last probes check the project-scoped inventory, exact digest references, running
 state, container health except proxy (which has no health check), OOM flags and
-stable container IDs/restart counts. Running maintenance services, duplicate
+stable container IDs/restart counts/start timestamps (including manual restarts). Running maintenance services, duplicate
 services, missing or unexpected runtime services stop observation. Stopped
 maintenance containers may remain from an approved migration. No `docker exec`,
 restart, stop, pull, build, Compose activation, database SQL, member lookup or

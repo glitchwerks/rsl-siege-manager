@@ -28,6 +28,7 @@ def rows(cfg):
     return {name: {"id": format(index, "064x"), "project": cfg["project"], "service": name,
                    "image": cfg["images"][name], "running": True, "oom": False, "restarts": 0,
                    "public_host": "pilot.fixture-domain.net" if name == "proxy" else None,
+                   "started_at": "2026-10-11T00:00:00Z",
                    "memory_limit": 1024 ** 3, "health": "healthy" if name != "proxy" else "none"}
             for index, name in enumerate(cfg["images"], 1)}
 
@@ -158,7 +159,7 @@ class PilotTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             cfg = config(Path(tmp)); first = rows(cfg)
             for key, value in (("oom", True), ("running", False), ("health", "unhealthy"),
-                               ("image", "unexpected"), ("restarts", 1)):
+                               ("image", "unexpected"), ("restarts", 1), ("started_at", "2026-10-11T01:00:00Z")):
                 second = copy.deepcopy(first); second["backend"][key] = value
                 self.assertEqual(self.observe_fixture(cfg, [first, second])["result"], "STOP")
             sample = {name: {"memory_bytes": 950 * 1024 ** 2, "cpu_percent": 5.0} for name in first}
@@ -182,7 +183,8 @@ class PilotTests(unittest.TestCase):
     def test_final_inventory_detects_restart_replacement_and_oom_during_last_probes(self):
         with tempfile.TemporaryDirectory() as tmp:
             cfg = config(Path(tmp)); first = rows(cfg)
-            for key, value in (("restarts", 1), ("id", "f" * 64), ("oom", True), ("health", "unhealthy")):
+            for key, value in (("restarts", 1), ("id", "f" * 64), ("oom", True), ("health", "unhealthy"),
+                               ("started_at", "2026-10-11T01:00:00Z")):
                 with self.subTest(key=key):
                     final = copy.deepcopy(first); final["backend"][key] = value
                     report = self.observe_fixture(cfg, [first, copy.deepcopy(first), final])
