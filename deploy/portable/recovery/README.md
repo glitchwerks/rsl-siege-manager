@@ -132,6 +132,12 @@ See [the copy runner](COPIES.md) for separately gated encryption, publication wi
 remote readback, and key recovery/offline verification. It does not activate
 scheduling or replace the independently approved database restore phase.
 
+## Optional hourly job and local retention
+
+See [automation preparation](automation/README.md) for the bounded job, independent
+receipt/monitor contract, inert timer/service templates, and separate local
+retention plan/apply gates. No schedule or destination is activated by merging.
+
 ## Remaining activation requirements
 
 This runner does not yet deliver automatic/off-host recovery. Before VPS activation:

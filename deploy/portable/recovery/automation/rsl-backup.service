@@ -1,0 +1,24 @@
+[Unit]
+Description=Approved portable database backup and independent verification
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=rsl-backup
+Group=rsl-backup
+UMask=0077
+WorkingDirectory=/opt/rsl-siege-manager
+ExecStart=/usr/bin/python3 /opt/rsl-siege-manager/scripts/portable-backup-job.py run --config /etc/rsl-backup/job.json --confirm-run
+TimeoutStartSec=35min
+TimeoutStopSec=45s
+KillMode=control-group
+Nice=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/rsl-backup
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+StandardOutput=journal
+StandardError=journal

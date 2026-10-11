@@ -1,0 +1,12 @@
+{
+  "root": "/var/lib/rsl-backup",
+  "services": "/etc/rsl-backup/source-services.conf",
+  "passwords": "/etc/rsl-backup/source.pgpass",
+  "recipients": "/etc/rsl-backup/recipients.txt",
+  "remote_config": "/etc/rsl-backup/upload.conf",
+  "prefix": "REVIEWED-BUCKET/rsl",
+  "heartbeat_file": "/etc/rsl-backup/heartbeat-url",
+  "timeout_seconds": 1800,
+  "keep_days": 7,
+  "keep_successful": 24
+}
