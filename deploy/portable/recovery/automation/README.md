@@ -93,7 +93,9 @@ approved pilot; a successful mock or local PASS file is insufficient.
 host with systemd. The timer is hourly, adds up to two minutes of jitter and catches
 up once after a missed interval; it does not replay every missed backup. The service
 runs under a dedicated pre-existing operator, private umask, restricted writes to
-its state directory, and a 35-minute outer timeout. A service sandbox is not proof
+its state directory, and a 35-minute outer timeout. Its 45-second stop allowance
+covers up to ten seconds of owned-child cleanup, the ten-second failure ping and
+final evidence writes before forced termination. A service sandbox is not proof
 that its private database route/TLS/root certificates or tools are available.
 Keep exact deployment paths/account/state/config consistent with the reviewed unit.
 
