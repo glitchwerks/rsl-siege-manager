@@ -4,6 +4,7 @@ import importlib.util
 import io
 import json
 import os
+import re
 from pathlib import Path
 import socket
 import subprocess
@@ -199,7 +200,20 @@ class RealCopyTests(unittest.TestCase):
                 services, passwords = files(root, port=port_pg)
                 source = root / "source"
                 runner.recovery.backup(runner.recovery.Client(services, passwords), source, {}, {})
-                with nullcontext():
+                original_run = subprocess.run
+                def diagnosed_run(command, **kwargs):
+                    result = original_run(command, **kwargs)
+                    if command[0] == "rclone" and result.returncode:
+                        # Emit only a fixed diagnostic vocabulary, never raw paths/credentials.
+                        allowed = {"failed", "copy", "hash", "read", "unexpected", "eof", "size", "changed", "checksum",
+                                   "corrupted", "invalid", "filter", "file", "source", "creating", "fs", "destination",
+                                   "max", "mtime", "modification", "ssh", "sftp", "config", "remote", "closed",
+                                   "connection", "timeout", "stat", "open", "check", "immutable", "directory", "parse",
+                                   "suffix", "byte", "bytes", "unknown", "flag", "error", "seek", "stream", "truncated"}
+                        terms = [word for word in re.findall(r"[a-z]+", result.stderr.decode().lower()) if word in allowed]
+                        self.fail("disposable rclone diagnostic terms: " + ",".join(terms))
+                    return result
+                with patch.object(runner.subprocess, "run", side_effect=diagnosed_run):
                     for phase, extra in (
                         ("seal", ["--bundle", source, "--recipients", recipients]),
                         ("publish", ["--package", root / "seal", "--config", config, "--prefix", "backups", "--confirm-publish"]),
