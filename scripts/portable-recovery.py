@@ -96,7 +96,8 @@ def service_settings(content):
             values = sections[name] = {}
         else:
             require(values is not None and "=" in line, "invalid_service")
-            key, value = (part.strip() for part in line.split("=", 1))
+            key, value = line.split("=", 1)
+            require(key == key.strip() and value == value.lstrip(), "invalid_service")
             require(key not in values, "invalid_service")
             values[key] = value
     require(set(sections) == set(APPS), "invalid_services")
@@ -118,6 +119,7 @@ class Client:
                     and values["dbname"] not in {"postgres", "template0", "template1"}, "invalid_database")
             require(values["sslmode"] in {"verify-full", "disable"}
                     and values["port"].isdigit() and 0 < int(values["port"]) < 65536, "invalid_connection")
+            require("," not in values["host"], "single_database_host_required")
             self.settings[app] = values
         endpoints = {(values["host"].casefold().rstrip("."), int(values["port"]), values["dbname"])
                      for values in self.settings.values()}

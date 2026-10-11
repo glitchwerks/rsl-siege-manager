@@ -150,17 +150,32 @@ class SafetyTests(unittest.TestCase):
             services, passwords = files(Path(directory))
             original = services.read_text()
             for extra in ("  host=other", "  options=-c role=postgres", "  other-host",
-                          "host:other", "[DEFAULT]\nport=5432", "[mom]\nhost=other"):
+                          "host:other", "host = other", "host= other", "[DEFAULT]\nport=5432", "[mom]\nhost=other"):
                 with self.subTest(extra=extra):
                     services.write_text(original + extra + "\n")
                     with self.assertRaises(recovery.Stop):
                         recovery.Client(services, passwords)
             # Libpq ignores leading whitespace, so a single approved indented
             # parameter must be parsed as its own setting.
-            services.write_text(original.replace("host=", "  host = ").replace("port=", "  port = "))
+            services.write_text(original.replace("host=", "  host=").replace("port=", "  port="))
             client = recovery.Client(services, passwords)
             self.assertEqual(client.settings["mom"]["host"], "127.0.0.1")
             self.assertEqual(client.settings["mom"]["port"], "5432")
+
+    def test_multi_host_source_stops_before_database_commands(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            services, passwords = files(root, {"siege": "shared_source", "mom": "shared_source"})
+            services.write_text(services.read_text().replace("[mom]\nhost=127.0.0.1",
+                                                            "[mom]\nhost=127.0.0.1,127.0.0.2"))
+            with patch.object(subprocess, "run") as command:
+                status, report = self.run_phase(["backup", "--confirm-backup",
+                    "--bundle", str(root / "new"), "--report", str(root / "report.json"),
+                    "--services", str(services), "--passwords", str(passwords)])
+            self.assertEqual(status, 1)
+            self.assertEqual(report["error"], "single_database_host_required")
+            command.assert_not_called()
+            self.assertFalse((root / "new").exists())
 
     def test_reports_inside_bundle_are_rejected_without_mutating_artifacts(self):
         with tempfile.TemporaryDirectory() as directory:
