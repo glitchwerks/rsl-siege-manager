@@ -60,7 +60,18 @@ def command(args, output=None):
                                 stderr=subprocess.PIPE, timeout=TIMEOUT, check=False)
     except (OSError, subprocess.TimeoutExpired):
         raise Stop("tool_failed") from None
-    require(result.returncode == 0, "tool_failed")
+    if result.returncode:
+        # Fixed categories aid diagnosis without exposing raw endpoint/credential output.
+        diagnostic = result.stderr.lower()
+        for marker, reason in ((b"unknown flag", "tool_option_unsupported"),
+                               (b"immutable", "immutable_transfer_refused"),
+                               (b"not found", "transfer_object_unavailable"),
+                               (b"does not exist", "transfer_object_unavailable"),
+                               (b"permission denied", "transfer_permission_denied"),
+                               (b"no such file", "transfer_object_unavailable")):
+            if marker in diagnostic:
+                raise Stop(reason)
+        raise Stop("tool_failed")
     # rclone progress/info is suppressed with --log-level ERROR; errors stay private.
     require(not result.stderr.strip(), "tool_warning")
 
