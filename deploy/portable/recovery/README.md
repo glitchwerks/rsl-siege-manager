@@ -126,6 +126,12 @@ approved rehearsal server. Preserve evidence first, confirm no app is using them
 and do not use `down -v`, broad prune, or any production database cleanup. GitHub
 cleans up the entire disposable CI server even if its rehearsal test fails.
 
+## Encrypted independent copies
+
+See [the copy runner](COPIES.md) for separately gated encryption, publication with
+remote readback, and key recovery/offline verification. It does not activate
+scheduling or replace the independently approved database restore phase.
+
 ## Remaining activation requirements
 
 This runner does not yet deliver automatic/off-host recovery. Before VPS activation:
