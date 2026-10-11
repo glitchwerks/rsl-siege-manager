@@ -50,6 +50,7 @@ def settings(path):
         copies.read(value[key])
     copies.remote(value["remote_config"], value["prefix"], str(uuid.uuid4()))
     heartbeat_url(value["heartbeat_file"])
+    value["config_sha256"] = copies.hash_file(path)
     return value
 
 
@@ -221,6 +222,7 @@ def retention_plan(config, anchor, now):
             continue
         entries[directory.name] = inventory(directory)
     return {"schema": 1, "created_at": now.isoformat(), "anchor_copy_id": anchor,
+            "root": str(config["root"]), "config_sha256": config["config_sha256"],
             "keep_days": config["keep_days"], "keep_successful": config["keep_successful"], "entries": entries}
 
 

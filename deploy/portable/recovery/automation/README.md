@@ -134,8 +134,9 @@ UUID identifies the protected anchor. That anchor must belong to a successful
 managed job. The newest complete backup must be no older than two hours. Preserve
 these proof reports outside the data folders scheduled for cleanup.
 
-One phase produces a private plan with exact UUID folders, fixed relative data
-filenames, sizes and hashes (no workload contents):
+One phase produces a private plan bound to the exact state root and job-profile
+file hash, with exact UUID folders, fixed relative data filenames, sizes and hashes
+(no workload contents):
 
 ```sh
 python3 scripts/portable-backup-job.py plan --config /protected/job.json \
@@ -157,7 +158,7 @@ python3 scripts/portable-backup-job.py apply --config /protected/job.json \
 ```
 
 Plans expire after one hour. Application rechecks policy, anchor, fresh backup and
-all candidate file hashes before any unlink. Changed plans/files/configuration,
+all candidate file hashes before any unlink. Changed plans/files/job-profile content,
 unknown artifacts or symlinks stop the whole preflight. A new run between plan and
 apply invalidates the plan; regenerate rather than widening scope. Only known
 `source`, `seal` and `publish` data files are removed; corresponding empty folders

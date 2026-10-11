@@ -217,6 +217,19 @@ class JobTests(unittest.TestCase):
         private(plan_path, json.dumps(plan))
         self.assertEqual(self.invoke("apply", *args, "--confirm-retention")[0], 1)
 
+    def test_retention_plan_binds_the_reviewed_root_and_configuration(self):
+        data, args, plan_path = self.prepare_retention()
+        self.assertEqual(self.invoke("plan", *args)[0], 0)
+        plan = json.loads(plan_path.read_text())
+        self.assertEqual(plan["root"], str(self.config["root"]))
+        config = json.loads(self.config_path.read_text())
+        config["prefix"] = "different-bucket/rsl"
+        private(self.config_path, json.dumps(config))
+        code, report = self.invoke("apply", *args, "--confirm-retention")
+        self.assertEqual(code, 1)
+        self.assertEqual(report["error"], "retention_plan_changed")
+        self.assertTrue(all((directory / "source/mom.dump").exists() for directory, _ in data))
+
     def test_unknown_artifacts_and_missing_restore_proof_stop_retention(self):
         data, args, plan_path = self.prepare_retention()
         private(data[1][0] / "source/credentials", "do not delete")
