@@ -1,0 +1,23 @@
+{
+  "project": "siege-pilot",
+  "topology": "mom",
+  "origin": "https://siege-pilot.example.com",
+  "images": {
+    "postgres": "postgres@sha256:REPLACE",
+    "backend": "registry.example/siege-backend@sha256:REPLACE",
+    "frontend": "registry.example/siege-frontend@sha256:REPLACE",
+    "proxy": "caddy@sha256:REPLACE",
+    "mom": "registry.example/mom-bot@sha256:REPLACE"
+  },
+  "versions": {
+    "backend_version": "REPLACE",
+    "frontend_version": "REPLACE",
+    "bot_version": "REPLACE",
+    "git_sha": "REPLACE"
+  },
+  "storage_path": "/protected/REPLACE-reviewed-postgres-volume-path",
+  "samples": 12,
+  "interval_seconds": 5,
+  "minimum_disk_bytes": 10737418240,
+  "minimum_available_memory_bytes": 536870912
+}
