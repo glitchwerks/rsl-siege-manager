@@ -275,7 +275,9 @@ class RealCopyTests(unittest.TestCase):
                     self.assertEqual(json.loads((root / "bad.json").read_text())["error"], "ciphertext_integrity_failed")
                     # Rehearse the complete hourly job (no real external notification).
                     from test_portable_backup_job import job, configuration
-                    job_config_path, job_config = configuration(root)
+                    preparation = root / "job-preparation"
+                    preparation.mkdir(mode=0o700)
+                    job_config_path, job_config = configuration(preparation)
                     services, passwords = files(root, port=port_pg)
                     values = json.loads(job_config_path.read_text())
                     values.update(services=str(services), passwords=str(passwords), recipients=str(recipients),
