@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Infrastructure
 
-- **Portable mom scheduler health** — require both Discord connection and successful scheduler progress in the mom-bot 1.6.0 candidate; preflight refuses a disabled or gateway-only probe. Independent Slack/missed-signal delivery and activation remain separate (#557).
+- **Portable mom scheduler health** — require both Discord connection and successful scheduler progress in the mom-bot 1.6.0 candidate; preflight refuses a disabled/gateway-only probe and requires a protected approved digest/capability record matching runtime and migrations. Independent Slack/missed-signal delivery and activation remain separate (#557).
 
 - **Portable pilot observation** — prepare bounded read-only health/resource evidence, an inert independent-monitoring policy and provisional VPS sizing guidance. Live pilot activation, scheduler/watchdog acceptance and alert delivery remain separate (#557, #430).
 

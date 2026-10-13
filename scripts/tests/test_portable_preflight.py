@@ -17,6 +17,11 @@ preflight = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(preflight)
 
 
+def mom_approval(image="registry.example/app@sha256:" + "a" * 64):
+    return {"schema": 1, "image": image, "source_commit": "b" * 40,
+            "capabilities": ["portable-auth-v1", "scheduler-progress-probe-v1"]}
+
+
 def fixture(directory):
     directory = Path(directory)
     for name in ("Caddyfile", "init-databases.sql"):
@@ -52,6 +57,9 @@ def fixture(directory):
     stack = stack.replace("siege-pilot.example.com", "siege-ci.fixture-domain.net")
     (directory / "stack.env").write_text(stack)
     (directory / "stack.env").chmod(0o600)
+    image = next(line.split("=", 1)[1] for line in stack.splitlines() if line.startswith("MOM_IMAGE="))
+    (runtime / "mom-image.json").write_text(json.dumps(mom_approval(image)))
+    (runtime / "mom-image.json").chmod(0o600)
     return directory / "stack.env"
 
 
@@ -158,6 +166,59 @@ class SafetyTests(unittest.TestCase):
                 bad = factory()
                 bad["services"][name]["networks"].pop("application")
                 self.assertFalse(preflight.validate(bad, topology)["role_sync_receiver_route"])
+
+    def test_mom_requires_approved_matching_runtime_and_migration_digest(self):
+        data = mom_model()
+        self.assertTrue(preflight.validate(data, "mom", mom_approval())["mom_image_capability_approved"])
+        for approval in (None, {**mom_approval(), "image": "registry.example/older@sha256:" + "c" * 64},
+                         {**mom_approval(), "capabilities": ["portable-auth-v1"]},
+                         {**mom_approval(), "source_commit": "REPLACE"},
+                         {**mom_approval(), "schema": True}):
+            self.assertFalse(preflight.validate(data, "mom", approval)["mom_image_capability_approved"])
+        data["services"]["migrate-mom"]["image"] = "registry.example/older@sha256:" + "c" * 64
+        self.assertFalse(preflight.validate(data, "mom", mom_approval())["mom_image_capability_approved"])
+
+    def test_approval_record_is_private_and_never_prints_metadata(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "mom-image.json"
+            path.write_text(json.dumps(mom_approval())); path.chmod(0o600)
+            self.assertEqual(preflight.read_mom_approval(path), mom_approval())
+            for content in ("private-diagnostic", json.dumps({**mom_approval(), "capabilities": []})):
+                path.write_text(content)
+                self.assertIsNone(preflight.read_mom_approval(path))
+            path.write_text(json.dumps(mom_approval())); path.chmod(0o644)
+            self.assertIsNone(preflight.read_mom_approval(path))
+            path.chmod(0o600)
+            link = root / "link"; link.symlink_to(path)
+            self.assertIsNone(preflight.read_mom_approval(link))
+            path.unlink()
+            self.assertIsNone(preflight.read_mom_approval(path))
+
+    def test_unapproved_mom_image_stops_before_render_and_sanitizes_report(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            stack = fixture(root)
+            approval_path = root / "runtime/mom-image.json"
+            for index, content in enumerate((None, "private-diagnostic", json.dumps(mom_approval()))):
+                if content is None:
+                    approval_path.unlink()
+                else:
+                    approval_path.write_text(content); approval_path.chmod(0o600)
+                stdout = io.StringIO()
+                with patch("sys.argv", ["portable-preflight", "--topology", "mom", "--stack-env", str(stack),
+                                        "--project-directory", str(root), "--report", str(root / f"report-{index}.json")]), \
+                     patch.object(preflight, "render", return_value=mom_model()) as render, redirect_stdout(stdout):
+                    status = preflight.main()
+                if content is None or content == "private-diagnostic":
+                    render.assert_not_called()
+                    self.assertEqual(status, 1)
+                else:
+                    self.assertEqual(status, 0)
+                    self.assertTrue(json.loads(stdout.getvalue())["checks"]["mom_image_capability_approved"])
+                self.assertNotIn("private-diagnostic", stdout.getvalue())
+                self.assertNotIn("b" * 40, stdout.getvalue())
+                self.assertNotIn(mom_approval()["image"], stdout.getvalue())
 
     def test_mom_health_cannot_ignore_scheduler_progress(self):
         data = mom_model()
@@ -350,7 +411,7 @@ class SafetyTests(unittest.TestCase):
 
     def test_valid_configuration(self):
         self.assertTrue(all(preflight.validate(model(), "bundled").values()))
-        self.assertTrue(all(preflight.validate(mom_model(), "mom").values()))
+        self.assertTrue(all(preflight.validate(mom_model(), "mom", mom_approval()).values()))
 
     def test_mom_migration_requires_cleared_entrypoint(self):
         for entrypoint in (None, ["/app/migrate.sh"]):
@@ -671,7 +732,8 @@ class ComposeTests(unittest.TestCase):
                         content = content.replace("# DAY_ROLE_SYNC_URL=", "DAY_ROLE_SYNC_URL=")
                         backend_file.write_text(content)
                     data = preflight.render(topology, stack, Path(directory))
-                    checks = preflight.validate(data, topology)
+                    approval = preflight.read_mom_approval(Path(directory) / "runtime/mom-image.json")
+                    checks = preflight.validate(data, topology, approval)
                     self.assertTrue(all(checks.values()), [k for k, v in checks.items() if not v])
 
 

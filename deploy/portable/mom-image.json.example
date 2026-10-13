@@ -1,0 +1,6 @@
+{
+  "schema": 1,
+  "image": "registry.example/mom-bot@sha256:REPLACE_VERIFIED_DIGEST",
+  "source_commit": "REPLACE_VERIFIED_FULL_SOURCE_COMMIT",
+  "capabilities": ["portable-auth-v1", "scheduler-progress-probe-v1"]
+}

@@ -31,6 +31,8 @@ reviewed repository versions; refresh them after updating this configuration:
 - `runtime/postgres-admin`: a separate administrator password, mounted as a
   Compose secret. Keep it out of application containers.
 - Exactly one of `runtime/mom.env` or `runtime/bundled.env`.
+- For mom topology, `runtime/mom-image.json`: a protected operator-reviewed image
+  approval record based on `mom-image.json.example`, as described below.
 
 The invoking deployment operator must own all deployment/runtime directories and
 credential files. Restrict directories to 0700 and credential files to 0600. These paths are ignored by Git. Never publish rendered `compose config`
@@ -68,8 +70,25 @@ Use `compose.yml` plus **one** overlay:
 - `compose.mom.yml`: mom-bot on `http://mom:8001`, using its explicit portable
   environment-secret/password-database mode. Requires the portable configuration
   change **and** `mom_bot.health.check` scheduler-progress probe in a tested
-  immutable candidate or mom-bot v1.6.0 or later. Older portable-auth-only
+  immutable producer image containing [mom-bot #379](https://github.com/glitchwerks/rsl-mom-bot/pull/379),
+  planned for v1.6.0. A version label alone is insufficient. Older portable-auth-only
   candidates are insufficient for this health check. No bundled bot.
+
+Before configuration preflight for mom topology, review the trusted producer's CI
+source/build metadata and registry digest. Confirm both portable authentication
+and `mom_bot.health.check` scheduler-progress capabilities are present in that
+exact image. Record the full source commit, complete immutable image reference and
+the two capability labels in operator-owned `runtime/mom-image.json` (0600 in the
+private runtime directory). Do not derive approval from a version label or copy
+the synthetic CI approval. Refresh the record when the image digest changes.
+
+Preflight requires this valid protected approval and matches its image reference
+against **both** mom runtime and migration services. Missing/unsafe/malformed
+records and unapproved digests stop the configuration report. This is an offline
+operator approval gate, not automatic image-content inspection or cryptographic
+provenance verification. The operator must validate the trusted source/build
+evidence before creating it; private file permissions alone do not establish
+capability. Preflight does not pull/run images or contact a container daemon.
 
 The two modes preserve existing wire contracts. Sidecar and database ports are
 private Docker-network endpoints. Caddy exposes only the authenticated role-sync

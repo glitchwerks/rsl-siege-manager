@@ -9,7 +9,7 @@
     "local_observation_delivery": {"outside_vm": true, "required_before_activation": true, "missed_signal_alert": true}
   },
   "local_signals": {
-    "bot_gateway": "container-health-requires-bot_connected",
+    "bot_gateway": "both-topologies-require-connection-mom-also-requires-scheduler-progress",
     "scheduler_progress": "mom-bot-1.6.0-private-progress-probe-required-bundled-not-covered",
     "restart_or_oom": "fail-observation",
     "memory": "less-than-85-percent-of-service-limit",
