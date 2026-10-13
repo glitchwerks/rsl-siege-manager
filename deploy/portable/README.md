@@ -67,7 +67,9 @@ Use `compose.yml` plus **one** overlay:
 - `compose.bundled.yml`: reference bundled bot on `http://bot:8001`; no mom-bot.
 - `compose.mom.yml`: mom-bot on `http://mom:8001`, using its explicit portable
   environment-secret/password-database mode. Requires the portable configuration
-  change in a tested immutable candidate or mom-bot v1.6.0 or later. No bundled bot.
+  change **and** `mom_bot.health.check` scheduler-progress probe in a tested
+  immutable candidate or mom-bot v1.6.0 or later. Older portable-auth-only
+  candidates are insufficient for this health check. No bundled bot.
 
 The two modes preserve existing wire contracts. Sidecar and database ports are
 private Docker-network endpoints. Caddy exposes only the authenticated role-sync
@@ -180,8 +182,9 @@ Measure peak RSS/CPU/disk for largest boards, concurrent image requests, member
 sync, reminders, and restore. Raise bounds or serialize work before accepting
 OOM/restart behavior. JSON container logs are capped at 3 × 10 MiB per service.
 
-Backend health checks database connectivity. Bot health checks verify
-`bot_connected`, rather than accepting HTTP 200 alone. `restart: unless-stopped`
+Backend health checks database connectivity. Both bot topologies check gateway connection. The mom topology additionally uses
+`mom_bot.health.check`, requiring successful reminder/member-sweep progress
+from the private health server before the container can be healthy. `restart: unless-stopped`
 recovers exited processes; it does **not** restart a running unhealthy process.
 Docker health status is a local signal, not an external uptime guarantee.
 
@@ -191,7 +194,9 @@ Required before pilot acceptance:
   this VM; HTTPS `/api/version` as a release-identity check, plus certificate expiry.
 - Private bot connection **and scheduler progress/heartbeat**, backup age/failure,
   disk capacity, and memory/OOM signals exported without secrets/member data.
-  The current bot health endpoint has no scheduler heartbeat, so this remains work.
+  Mom-bot's new private progress endpoint covers completed-cycle freshness; the
+  bundled topology does not provide scheduler progress. Independent missed-signal
+  export/delivery remains work.
 - A bounded service-specific watchdog with cooldown and escalation. Never restart
   PostgreSQL or the whole host merely because one endpoint is unhealthy. Avoid
   mounting the Docker socket into monitoring/application containers.

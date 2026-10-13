@@ -204,6 +204,10 @@ def validate(model, topology):
         check("mom_runtime_does_not_auto_migrate", lambda:
               services["mom"].get("entrypoint") == []
               and services["mom"].get("command") == ["/app/.venv/bin/python", "-m", "mom_bot"])
+        check("mom_gateway_and_scheduler_progress_probe", lambda:
+              services["mom"].get("healthcheck", {}).get("test") ==
+              ["CMD", "/app/.venv/bin/python", "-m", "mom_bot.health.check"]
+              and not services["mom"].get("healthcheck", {}).get("disable", False))
         check("mom_notification_recipients_configured", lambda:
               snowflake(bot_env.get("MOM_BOT_SECRET_NEW_MEMBERS_CHANNEL_ID"))
               and all(configured_value(bot_env.get(k)) for k in

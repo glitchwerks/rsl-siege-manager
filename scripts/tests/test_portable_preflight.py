@@ -122,6 +122,7 @@ def mom_model():
     services["migrate-mom"] = copy.deepcopy(mom)
     services["migrate-mom"].update(profiles=["maintenance"], restart="no", entrypoint=[],
                                 command=["/app/.venv/bin/alembic", "upgrade", "head"])
+    mom["healthcheck"] = {"test": ["CMD", "/app/.venv/bin/python", "-m", "mom_bot.health.check"]}
     return data
 
 
@@ -157,6 +158,15 @@ class SafetyTests(unittest.TestCase):
                 bad = factory()
                 bad["services"][name]["networks"].pop("application")
                 self.assertFalse(preflight.validate(bad, topology)["role_sync_receiver_route"])
+
+    def test_mom_health_cannot_ignore_scheduler_progress(self):
+        data = mom_model()
+        self.assertTrue(preflight.validate(data, "mom")["mom_gateway_and_scheduler_progress_probe"])
+        for healthcheck in ({}, {"test": ["CMD", "python", "-c", "gateway_only"]},
+                            {"test": data["services"]["mom"]["healthcheck"]["test"], "disable": True}):
+            changed = mom_model()
+            changed["services"]["mom"]["healthcheck"] = healthcheck
+            self.assertFalse(preflight.validate(changed, "mom")["mom_gateway_and_scheduler_progress_probe"])
 
     def test_mom_runtime_cannot_inherit_migration_entrypoint(self):
         for entrypoint in (None, ["/app/migrate.sh"]):

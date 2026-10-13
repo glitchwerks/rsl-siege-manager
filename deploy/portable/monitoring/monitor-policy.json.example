@@ -10,7 +10,7 @@
   },
   "local_signals": {
     "bot_gateway": "container-health-requires-bot_connected",
-    "scheduler_progress": "not-implemented-pilot-blocker",
+    "scheduler_progress": "mom-bot-1.6.0-private-progress-probe-required-bundled-not-covered",
     "restart_or_oom": "fail-observation",
     "memory": "less-than-85-percent-of-service-limit",
     "disk": "reviewed-database-filesystem-reserve",
