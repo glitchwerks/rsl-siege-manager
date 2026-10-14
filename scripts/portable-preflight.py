@@ -37,7 +37,7 @@ def read_secret_file(path):
         return None
 
 
-def validate(model, topology):
+def validate(model, topology, mom_approval=None):
     checks = {}
     services = model.get("services", {})
 
@@ -204,6 +204,14 @@ def validate(model, topology):
         check("mom_runtime_does_not_auto_migrate", lambda:
               services["mom"].get("entrypoint") == []
               and services["mom"].get("command") == ["/app/.venv/bin/python", "-m", "mom_bot"])
+        check("mom_image_capability_approved", lambda:
+              valid_mom_approval(mom_approval)
+              and all(services[name]["image"] == mom_approval["image"]
+                      for name in ("mom", "migrate-mom")))
+        check("mom_gateway_and_scheduler_progress_probe", lambda:
+              services["mom"].get("healthcheck", {}).get("test") ==
+              ["CMD", "/app/.venv/bin/python", "-m", "mom_bot.health.check"]
+              and not services["mom"].get("healthcheck", {}).get("disable", False))
         check("mom_notification_recipients_configured", lambda:
               snowflake(bot_env.get("MOM_BOT_SECRET_NEW_MEMBERS_CHANNEL_ID"))
               and all(configured_value(bot_env.get(k)) for k in
@@ -220,6 +228,41 @@ def validate(model, topology):
     return checks
 
 
+def valid_mom_approval(value):
+    """Validate an operator-reviewed digest record, never infer from version."""
+    try:
+        return (isinstance(value, dict)
+                and set(value) == {"schema", "image", "source_commit", "capabilities"}
+                and type(value["schema"]) is int and value["schema"] == 1
+                and re.fullmatch(r"[^\s@]+@sha256:[0-9a-f]{64}", value["image"]) is not None
+                and re.fullmatch(r"[0-9a-f]{40}", value["source_commit"]) is not None
+                and value["source_commit"] != "0" * 40
+                and isinstance(value["capabilities"], list) and len(value["capabilities"]) == 2
+                and set(value["capabilities"]) == {"portable-auth-v1", "scheduler-progress-probe-v1"})
+    except (KeyError, TypeError):
+        return False
+
+
+def read_mom_approval(path):
+    """Read private owned approval metadata without diagnostics or daemon access."""
+    try:
+        if not private_report_directory(path.parent):
+            return None
+        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
+        with os.fdopen(fd, "rb") as source:
+            meta = os.fstat(source.fileno())
+            if (not stat.S_ISREG(meta.st_mode) or meta.st_uid != os.geteuid()
+                    or meta.st_mode & 0o077 or meta.st_size > 16384):
+                return None
+            raw = source.read(16385)
+        if len(raw) > 16384:
+            return None
+        value = json.loads(raw)
+        return value if valid_mom_approval(value) else None
+    except (OSError, ValueError, UnicodeError):
+        return None
+
+
 def private_runtime_files(topology, stack_env, project_directory):
     """Check modes without reading credentials or following final symlinks."""
     runtime = project_directory / "runtime"
@@ -227,6 +270,8 @@ def private_runtime_files(topology, stack_env, project_directory):
     files = {stack_env, runtime / "backend.env", runtime / "database.env",
              runtime / ("mom.env" if topology == "mom" else "bundled.env"),
              runtime / "postgres-admin"}
+    if topology == "mom":
+        files.add(runtime / "mom-image.json")
     try:
         for path in directories | files:
             metadata = path.lstat()
@@ -289,8 +334,13 @@ def main():
                 args.topology, args.stack_env, args.project_directory),
             "deployment_bind_sources_current": deployment_bind_sources_current(args.project_directory),
         }
+        approval = None
+        if args.topology == "mom" and all(checks.values()):
+            approval = read_mom_approval(args.project_directory / "runtime" / "mom-image.json")
+            checks["mom_image_approval_record"] = approval is not None
         if all(checks.values()):
-            checks.update(validate(render(args.topology, args.stack_env, args.project_directory), args.topology))
+            checks.update(validate(render(args.topology, args.stack_env, args.project_directory),
+                                   args.topology, approval))
     except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired):
         # Compose stderr, exception messages, and rendered values may contain secrets.
         checks = {"compose_render": False}

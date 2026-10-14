@@ -31,6 +31,8 @@ reviewed repository versions; refresh them after updating this configuration:
 - `runtime/postgres-admin`: a separate administrator password, mounted as a
   Compose secret. Keep it out of application containers.
 - Exactly one of `runtime/mom.env` or `runtime/bundled.env`.
+- For mom topology, `runtime/mom-image.json`: a protected operator-reviewed image
+  approval record based on `mom-image.json.example`, as described below.
 
 The invoking deployment operator must own all deployment/runtime directories and
 credential files. Restrict directories to 0700 and credential files to 0600. These paths are ignored by Git. Never publish rendered `compose config`
@@ -67,7 +69,26 @@ Use `compose.yml` plus **one** overlay:
 - `compose.bundled.yml`: reference bundled bot on `http://bot:8001`; no mom-bot.
 - `compose.mom.yml`: mom-bot on `http://mom:8001`, using its explicit portable
   environment-secret/password-database mode. Requires the portable configuration
-  change in a tested immutable candidate or mom-bot v1.6.0 or later. No bundled bot.
+  change **and** `mom_bot.health.check` scheduler-progress probe in a tested
+  immutable producer image containing [mom-bot #379](https://github.com/glitchwerks/rsl-mom-bot/pull/379),
+  planned for v1.6.0. A version label alone is insufficient. Older portable-auth-only
+  candidates are insufficient for this health check. No bundled bot.
+
+Before configuration preflight for mom topology, review the trusted producer's CI
+source/build metadata and registry digest. Confirm both portable authentication
+and `mom_bot.health.check` scheduler-progress capabilities are present in that
+exact image. Record the full source commit, complete immutable image reference and
+the two capability labels in operator-owned `runtime/mom-image.json` (0600 in the
+private runtime directory). Do not derive approval from a version label or copy
+the synthetic CI approval. Refresh the record when the image digest changes.
+
+Preflight requires this valid protected approval and matches its image reference
+against **both** mom runtime and migration services. Missing/unsafe/malformed
+records and unapproved digests stop the configuration report. This is an offline
+operator approval gate, not automatic image-content inspection or cryptographic
+provenance verification. The operator must validate the trusted source/build
+evidence before creating it; private file permissions alone do not establish
+capability. Preflight does not pull/run images or contact a container daemon.
 
 The two modes preserve existing wire contracts. Sidecar and database ports are
 private Docker-network endpoints. Caddy exposes only the authenticated role-sync
@@ -180,8 +201,9 @@ Measure peak RSS/CPU/disk for largest boards, concurrent image requests, member
 sync, reminders, and restore. Raise bounds or serialize work before accepting
 OOM/restart behavior. JSON container logs are capped at 3 × 10 MiB per service.
 
-Backend health checks database connectivity. Bot health checks verify
-`bot_connected`, rather than accepting HTTP 200 alone. `restart: unless-stopped`
+Backend health checks database connectivity. Both bot topologies check gateway connection. The mom topology additionally uses
+`mom_bot.health.check`, requiring successful reminder/member-sweep progress
+from the private health server before the container can be healthy. `restart: unless-stopped`
 recovers exited processes; it does **not** restart a running unhealthy process.
 Docker health status is a local signal, not an external uptime guarantee.
 
@@ -191,7 +213,9 @@ Required before pilot acceptance:
   this VM; HTTPS `/api/version` as a release-identity check, plus certificate expiry.
 - Private bot connection **and scheduler progress/heartbeat**, backup age/failure,
   disk capacity, and memory/OOM signals exported without secrets/member data.
-  The current bot health endpoint has no scheduler heartbeat, so this remains work.
+  Mom-bot's new private progress endpoint covers completed-cycle freshness; the
+  bundled topology does not provide scheduler progress. Independent missed-signal
+  export/delivery remains work.
 - A bounded service-specific watchdog with cooldown and escalation. Never restart
   PostgreSQL or the whole host merely because one endpoint is unhealthy. Avoid
   mounting the Docker socket into monitoring/application containers.

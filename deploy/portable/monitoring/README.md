@@ -72,10 +72,12 @@ stable container IDs/restart counts/start timestamps (including manual restarts)
 services, missing or unexpected runtime services stop observation. Stopped
 maintenance containers may remain from an approved migration. No `docker exec`,
 restart, stop, pull, build, Compose activation, database SQL, member lookup or
-Discord write is performed. The current bot health command checks connection;
-container health can lag its underlying probe interval. It does not prove the
-scheduler is progressing or health-command integrity; configuration preflight
-and scheduler acceptance remain separate gates.
+Discord write is performed. The mom health command checks connection and scheduler
+progress; the bundled health command checks connection only. Container health can
+lag its underlying probe interval. The mom probe requires the new mom-bot
+scheduler-progress candidate; it does not prove business notification delivery or
+health-command integrity. Configuration preflight and scheduler acceptance remain
+separate gates.
 
 Before any HTTPS request, the origin hostname must match the selected project's
 proxy `PUBLIC_HOST`. The inspector extracts only that environment value, never
@@ -116,7 +118,8 @@ An unchosen channel or same-host observer alone is not sufficient monitoring.
 Private runtime observation must eventually export a sanitized result to an
 independent missed-signal monitor; this runner does **not** send that signal.
 An observer that stops with the VM cannot notify about its own disappearance.
-Scheduler progress instrumentation, a service-specific watchdog with cooldown/
+Scheduler progress is available in the mom-bot 1.6.0 candidate; the bundled bot
+needs separate progress acceptance. A service-specific watchdog with cooldown/
 escalation and independent runtime signal delivery remain implementation and
 activation gates. No broad host/database restart is approved by this template.
 Do not expose unauthenticated sidecar endpoints or mount a Docker socket into an
