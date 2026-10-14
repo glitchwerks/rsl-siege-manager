@@ -1,0 +1,7 @@
+{
+  "schema": 1,
+  "hostname": "REPLACE-reviewed-infrastructure-host",
+  "image_fingerprint": "REPLACE-official-Debian-13-VM-sha256-fingerprint",
+  "image_source_reviewed": false,
+  "baseline_file": "/protected/evidence/fresh-host-baseline.json"
+}
