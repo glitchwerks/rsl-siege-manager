@@ -115,8 +115,10 @@ channel. The observer validates TLS today but does not measure expiry. Configure
 backup success/failure and overdue signals using the separate backup job runbook.
 An unchosen channel or same-host observer alone is not sufficient monitoring.
 
-Private runtime observation must eventually export a sanitized result to an
-independent missed-signal monitor; this runner does **not** send that signal.
+The separately gated [runtime signal exporter](signals.md) runs a fresh
+observation and sends an empty success/failure signal to an independent
+missed-signal receiver. The observer itself does **not** send notifications.
+Receiver/Slack setup, scheduling and delivered-alert evidence remain unactivated.
 An observer that stops with the VM cannot notify about its own disappearance.
 Scheduler progress is available in the mom-bot 1.6.0 candidate; the bundled bot
 needs separate progress acceptance. A service-specific watchdog with cooldown/

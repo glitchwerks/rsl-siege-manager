@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Infrastructure
 
+- **Portable independent monitoring preparation** — add a separately gated fresh-observation exporter with empty HTTPS success/failure signals, private endpoint handling, and independent missed-signal/Slack activation guidance. No schedules, monitor accounts, notifications or live services are activated by this preparation (#557).
+
 - **Portable mom scheduler health** — require both Discord connection and successful scheduler progress in the mom-bot 1.6.0 candidate; preflight refuses a disabled/gateway-only probe and requires a protected approved digest/capability record matching runtime and migrations. Independent Slack/missed-signal delivery and activation remain separate (#557).
 
 - **Portable pilot observation** — prepare bounded read-only health/resource evidence, an inert independent-monitoring policy and provisional VPS sizing guidance. Live pilot activation, scheduler/watchdog acceptance and alert delivery remain separate (#557, #430).

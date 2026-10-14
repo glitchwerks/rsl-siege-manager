@@ -6,7 +6,7 @@
     "release_identity": {"method": "GET", "path": "/api/version", "expected_status": 200, "compare": "exact-reviewed-component-versions", "interval_seconds": 300, "timeout_seconds": 5},
     "certificate_expiry": {"minimum_remaining_days": 14},
     "backup_completion": {"outside_vm": true, "interval_seconds": 3600, "grace_seconds": 2400, "success_requires": "encrypted-object-and-independent-receipt-readback", "failure_signal": "empty-post-to-fail"},
-    "local_observation_delivery": {"outside_vm": true, "required_before_activation": true, "missed_signal_alert": true}
+    "local_observation_delivery": {"outside_vm": true, "required_before_activation": true, "missed_signal_alert": true, "sender": "scripts/portable-monitor.py", "interval_seconds": 900, "grace_seconds": 600, "activation": "separately-approved"}
   },
   "local_signals": {
     "bot_gateway": "both-topologies-require-connection-mom-also-requires-scheduler-progress",
