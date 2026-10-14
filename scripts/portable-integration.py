@@ -21,6 +21,10 @@ SPEC = importlib.util.spec_from_file_location("signal_helpers", Path(__file__).w
 helpers = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(helpers)
 Stop, require = helpers.Stop, helpers.require
+LOCAL_SPEC = importlib.util.spec_from_file_location("local_pilot_helpers", Path(__file__).with_name("local-pilot.py"))
+local = importlib.util.module_from_spec(LOCAL_SPEC)
+LOCAL_SPEC.loader.exec_module(local)
+
 MAX_RESPONSE = 1024 * 1024
 def png_chunk(kind, data):
     return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xffffffff)
@@ -42,11 +46,11 @@ def read_private(path, limit):
     return value
 
 
-def origin(value, sidecar=False):
+def origin(value, sidecar=False, local_pilot=False):
     require(isinstance(value, str), "invalid_target")
     url = urllib.parse.urlsplit(value)
-    local = sidecar and value == "http://127.0.0.1:8001"
-    require(local or (url.scheme == "https" and url.netloc == url.hostname
+    local_target = sidecar and value == "http://127.0.0.1:8001"
+    require(local_target or (local_pilot and value == "https://localhost") or (not local_pilot and url.scheme == "https" and url.netloc == url.hostname
                      and re.fullmatch(r"[a-z0-9.-]+", url.hostname or "")
                      and "." in url.hostname and not url.path and not url.query and not url.fragment
                      and not url.hostname.endswith((".invalid", ".localhost", ".test"))
@@ -55,14 +59,15 @@ def origin(value, sidecar=False):
     return value
 
 
-def settings(path, token_path):
+def settings(path, token_path, local_pilot=False):
     cfg = json.loads(read_private(path, 16384))
     require(isinstance(cfg, dict) and set(cfg) == {"schema", "dedicated_test_identity", "origin",
             "sidecar_origin", "versions", "member_id", "username", "channel_name"}, "invalid_configuration")
     require(type(cfg["schema"]) is int and cfg["schema"] == 1
             and cfg["dedicated_test_identity"] is True, "dedicated_identity_required")
-    origin(cfg["origin"])
+    origin(cfg["origin"], local_pilot=local_pilot)
     origin(cfg["sidecar_origin"], True)
+    require(not local_pilot or cfg["sidecar_origin"] == "http://127.0.0.1:8001", "local_sidecar_required")
     keys = {"backend_version", "frontend_version", "bot_version", "git_sha"}
     require(isinstance(cfg["versions"], dict) and set(cfg["versions"]) == keys
             and all(isinstance(value, str) and re.fullmatch(r"[a-zA-Z0-9.+_-]{1,100}", value)
@@ -79,7 +84,7 @@ def settings(path, token_path):
 class Client:
     def __init__(self, cfg, token):
         self.cfg, self.token = cfg, token
-        self.opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), helpers.NoRedirect())
+        self.opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), helpers.NoRedirect(), urllib.request.HTTPSHandler(context=cfg.get("tls_context")))
         self.deadline = time.monotonic() + 150
 
     def request(self, target, path, expected=200, auth=True, data=None, content_type=None):
@@ -183,6 +188,8 @@ def main(argv=None):
         parser.add_argument("--" + name, type=Path, required=True)
     parser.add_argument("--confirm-isolated-target", action="store_true")
     parser.add_argument("--confirm-discord-writes", action="store_true")
+    parser.add_argument("--local-pilot", action="store_true")
+    parser.add_argument("--ca-file", type=Path)
     args = parser.parse_args(argv)
     report = {"schema": 1, "phase": "integration-smoke", "mode": args.mode,
               "timestamp": datetime.now(timezone.utc).isoformat(), "correlation_id": str(uuid.uuid4()),
@@ -200,7 +207,10 @@ def main(argv=None):
                 require(args.mode != "full" or args.confirm_discord_writes, "discord_write_confirmation_required")
                 require(len({p.resolve() for p in (args.config, args.token_file, args.report)}) == 3,
                         "distinct_paths_required")
-                cfg, token = settings(args.config, args.token_file)
+                require(args.local_pilot or args.ca_file is None, "local_ca_requires_local_mode")
+                cfg, token = settings(args.config, args.token_file, args.local_pilot)
+                if args.local_pilot:
+                    cfg["tls_context"] = local.tls_context(args.ca_file)
                 lock = args.config.parent / ".integration-smoke.lock"
                 fd = os.open(lock, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600)
                 try:
@@ -218,8 +228,8 @@ def main(argv=None):
                     report["result"] = "PASS"
                 finally:
                     os.close(fd)
-            except (Stop, OSError, ValueError, KeyError, TypeError, KeyboardInterrupt) as error:
-                report["error"] = str(error) if isinstance(error, Stop) else "integration_failed"
+            except (Stop, local.Stop, OSError, ValueError, KeyError, TypeError, KeyboardInterrupt) as error:
+                report["error"] = str(error) if isinstance(error, (Stop, local.Stop)) else "integration_failed"
             output.seek(0)
             output.truncate()
             json.dump(report, output, indent=2)

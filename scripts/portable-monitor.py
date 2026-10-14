@@ -106,6 +106,8 @@ def main(argv=None):
     parser.add_argument("--report", type=Path, required=True)
     parser.add_argument("--confirm-readonly-pilot", action="store_true")
     parser.add_argument("--confirm-notification", action="store_true")
+    parser.add_argument("--local-pilot", action="store_true")
+    parser.add_argument("--ca-file", type=Path)
     args = parser.parse_args(argv)
     report = {"schema": 1, "phase": "monitor-signal", "timestamp": datetime.now(timezone.utc).isoformat(),
               "observation_passed": False, "delivery_acknowledged": False,
@@ -129,9 +131,12 @@ def main(argv=None):
                 with locked(args.endpoint_file.parent):
                     # Reuse the reviewed observation, not an operator-supplied PASS file.
                     # Suppress its stdout so only this fixed summary reaches the caller.
+                    local_args = ["--local-pilot", "--ca-file", str(args.ca_file)] if args.local_pilot and args.ca_file else []
+                    require(not args.local_pilot or args.ca_file is not None, "local_ca_required")
+                    require(args.local_pilot or args.ca_file is None, "local_ca_requires_local_mode")
                     with redirect_stdout(io.StringIO()):
                         code = pilot.main(["--config", str(args.config), "--report", str(args.observation_report),
-                                           "--confirm-readonly-pilot"])
+                                           "--confirm-readonly-pilot", *local_args])
                     report["observation_passed"] = code == 0
                     deliver(url, code == 0)
                     report["delivery_acknowledged"] = True

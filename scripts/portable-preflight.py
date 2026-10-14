@@ -37,7 +37,7 @@ def read_secret_file(path):
         return None
 
 
-def validate(model, topology, mom_approval=None):
+def validate(model, topology, mom_approval=None, local_pilot=False):
     checks = {}
     services = model.get("services", {})
 
@@ -94,7 +94,11 @@ def validate(model, topology, mom_approval=None):
                 and labels[-1] not in {"test", "example", "invalid", "localhost", "local", "internal"}
                 and not any(host.lower() == name or host.lower().endswith("." + name)
                             for name in reserved))
-    check("public_hostname", public_hostname)
+    check("public_hostname", (lambda: host == "localhost") if local_pilot else public_hostname)
+    if local_pilot:
+        check("local_pilot_topology", lambda: topology == "mom" and model.get("name") == "rsl-siege-pilot")
+        check("local_pilot_loopback_ports", lambda: all(p.get("host_ip") == "127.0.0.1" for p in services["proxy"]["ports"]))
+        check("local_pilot_role_sync_disabled", lambda: env.get("DAY_ROLE_SYNC_ENABLED") == "false")
     check("secure_auth_configuration", lambda: env["ENVIRONMENT"] == "production"
           and env["AUTH_DISABLED"] == "false"
           and "changeme" not in env.get("SESSION_SECRET", "").lower()
@@ -115,8 +119,9 @@ def validate(model, topology, mom_approval=None):
           configured_value(env.get(k, default)) for k, default in (
               ("DISCORD_SIEGE_CHANNEL", "clan-siege-assignments"),
               ("DISCORD_SIEGE_IMAGES_CHANNEL", "clan-siege-assignment-images"))))
-    check("oauth_public_origin", lambda: env["DISCORD_REDIRECT_URI"] == f"https://{host}/api/auth/callback"
-          and env["ALLOWED_ORIGINS"] == f"https://{host}"
+    oauth_origin = "https://localhost:18443" if local_pilot else f"https://{host}"
+    check("oauth_public_origin", lambda: env["DISCORD_REDIRECT_URI"] == f"{oauth_origin}/api/auth/callback"
+          and env["ALLOWED_ORIGINS"] == oauth_origin
           and snowflake(env.get("DISCORD_CLIENT_ID"))
           and configured_value(env.get("DISCORD_CLIENT_SECRET")))
     check("private_sidecar_url", lambda: env["DISCORD_BOT_API_URL"] == f"http://{bot}:8001")
@@ -284,7 +289,7 @@ def private_runtime_files(topology, stack_env, project_directory):
         return False
 
 
-def deployment_bind_sources_current(project_directory):
+def deployment_bind_sources_current(project_directory, local_pilot=False):
     """Require reviewed non-secret bind files, never container-created directories."""
     try:
         for name in ("Caddyfile", "init-databases.sql"):
@@ -294,18 +299,21 @@ def deployment_bind_sources_current(project_directory):
                 metadata = os.fstat(source.fileno())
                 if not stat.S_ISREG(metadata.st_mode) or metadata.st_size > 65536:
                     return False
-                if source.read(65537) != (PORTABLE / name).read_bytes():
+                expected = PORTABLE / "local" / name if local_pilot and name == "Caddyfile" else PORTABLE / name
+                if source.read(65537) != expected.read_bytes():
                     return False
         return True
     except OSError:
         return False
 
 
-def render(topology, stack_env, project_directory):
+def render(topology, stack_env, project_directory, local_pilot=False):
     command = ["docker", "compose", "--env-file", str(stack_env), "--project-directory",
                str(project_directory), "-f", str(PORTABLE / "compose.yml"), "-f",
                str(PORTABLE / f"compose.{topology}.yml"), "--profile", "maintenance",
                "config", "--format", "json"]
+    if local_pilot:
+        command[-5:-5] = ["-f", str(PORTABLE / "local" / "compose.yml")]
     result = subprocess.run(command, capture_output=True, text=True, timeout=30, check=False)
     if result.returncode:
         raise RuntimeError("compose_render_failed")
@@ -327,24 +335,29 @@ def main():
     parser.add_argument("--stack-env", type=Path, required=True)
     parser.add_argument("--project-directory", type=Path, default=PORTABLE)
     parser.add_argument("--report", type=Path, required=True)
+    parser.add_argument("--local-pilot", action="store_true")
     args = parser.parse_args()
     try:
         checks = {
             "runtime_credentials_private": private_runtime_files(
                 args.topology, args.stack_env, args.project_directory),
-            "deployment_bind_sources_current": deployment_bind_sources_current(args.project_directory),
+            "deployment_bind_sources_current": deployment_bind_sources_current(args.project_directory, args.local_pilot),
         }
         approval = None
         if args.topology == "mom" and all(checks.values()):
             approval = read_mom_approval(args.project_directory / "runtime" / "mom-image.json")
             checks["mom_image_approval_record"] = approval is not None
         if all(checks.values()):
-            checks.update(validate(render(args.topology, args.stack_env, args.project_directory),
-                                   args.topology, approval))
+            if args.local_pilot:
+                checks.update(validate(render(args.topology, args.stack_env, args.project_directory, True),
+                                       args.topology, approval, True))
+            else:
+                checks.update(validate(render(args.topology, args.stack_env, args.project_directory),
+                                       args.topology, approval))
     except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired):
         # Compose stderr, exception messages, and rendered values may contain secrets.
         checks = {"compose_render": False}
-    report = {"schema": 1, "phase": "configuration", "topology": args.topology,
+    report = {"schema": 1, "phase": "configuration", "topology": args.topology, "local_pilot": args.local_pilot,
               "timestamp": datetime.now(timezone.utc).isoformat(), "checks": checks,
               "result": "PASS" if checks and all(checks.values()) else "STOP"}
     # Do not overwrite earlier evidence or follow an existing report symlink.
