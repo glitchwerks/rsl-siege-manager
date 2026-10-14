@@ -106,7 +106,9 @@ never stop a similarly named foreign instance.
 
 After separate approval of guest database/runtime configuration, copy the
 reviewed local Caddyfile as the private deployment directory's `Caddyfile` and
-the standard `init-databases.sql` unchanged. Render/preflight with the existing
+the standard `init-databases.sql` unchanged. Set `COMPOSE_PROJECT_NAME=rsl-siege-pilot`
+in the private stack env file; a different environment-provided project name
+is rejected rather than silently adopted. Render/preflight with the existing
 mom overlay plus the reviewed local overlay, using `--local-pilot`. Preflight
 requires the correct bind bytes, all existing secret/auth/image checks and the
 approved mom capability record; a changed file is not a bypass. The root public

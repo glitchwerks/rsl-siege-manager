@@ -310,6 +310,7 @@ class ActualLocalRender(unittest.TestCase):
     def test_local_overlay_and_caddy(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);stack=fixtures.fixture(root)
+            stack.write_text(stack.read_text().replace('COMPOSE_PROJECT_NAME=siege-pilot','COMPOSE_PROJECT_NAME=rsl-siege-pilot'))
             (root/'Caddyfile').write_bytes((preflight.PORTABLE/'local/Caddyfile').read_bytes())
             model=preflight.render('mom',stack,root,True)
             approval=preflight.read_mom_approval(root/'runtime/mom-image.json')
