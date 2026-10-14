@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "dedicated_test_identity": false,
+  "origin": "https://siege-pilot.example.com",
+  "sidecar_origin": "http://127.0.0.1:8001",
+  "versions": {
+    "backend_version": "REPLACE-exact-reviewed-version",
+    "frontend_version": "REPLACE-exact-reviewed-version",
+    "bot_version": "REPLACE-exact-reviewed-version-with-build",
+    "git_sha": "REPLACE-reviewed-build-sha"
+  },
+  "member_id": "REPLACE-dedicated-test-recipient-id",
+  "username": "REPLACE-dedicated-test-recipient-username",
+  "channel_name": "rsl-smoke-REPLACE-dedicated-channel"
+}
