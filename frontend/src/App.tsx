@@ -15,6 +15,7 @@ import SiegeMembersPage from "./pages/SiegeMembersPage";
 import ComparisonPage from "./pages/ComparisonPage";
 import PostPrioritiesPage from "./pages/PostPrioritiesPage";
 import SystemPage from "./pages/SystemPage";
+import GuidePage from "./pages/GuidePage";
 
 function App() {
   return (
@@ -22,6 +23,7 @@ function App() {
       {/* Public routes — no auth required */}
       <Route path="/" element={<LandingOrSieges />} />
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/guide" element={<GuidePage />} />
       <Route
         element={
           <RequireAuth>

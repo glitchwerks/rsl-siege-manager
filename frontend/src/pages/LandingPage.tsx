@@ -190,6 +190,9 @@ export default function LandingPage() {
 
           {/* GitHub icon + Sign in */}
           <div className="flex items-center gap-3">
+            <a href="/guide" className="text-sm font-medium text-violet-700 hover:underline">
+              Clan guide
+            </a>
             <a
               href="https://github.com/glitchwerks/rsl-siege-manager"
               target="_blank"

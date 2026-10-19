@@ -55,6 +55,9 @@ export default function Layout() {
               <NavLink to="/post-priorities" className={navLinkClass}>
                 Posts
               </NavLink>
+              <NavLink to="/guide" className={navLinkClass}>
+                Guide
+              </NavLink>
               {/* System link and user info pushed to the far right */}
               <div className="ml-auto flex items-center gap-2">
                 <NavLink
