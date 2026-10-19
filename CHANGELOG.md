@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### siege-frontend 1.6.0
+
+- Added a public clan guide at `/guide` with plain-language website and mom-bot instructions, member and officer workflows, troubleshooting, and direct links to each topic. The guide requires no sign-in and is linked from the home page, sign-in page, and application menu.
+
 ### Infrastructure
 
 - **Portable sidecar acceptance preparation** — add separately gated read-only/full integration checks with fresh private evidence, strict target/authentication checks, bounded transport, overlap prevention and synthetic marked Discord messages. Live target approval, delivered-message/cleanup evidence and release workflow wiring remain separate (#430, #557).

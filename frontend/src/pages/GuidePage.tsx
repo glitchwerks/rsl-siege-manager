@@ -180,8 +180,10 @@ export default function GuidePage() {
                 </li>
                 <li>
                   Choose <strong>Board</strong> on that siege’s row to see the
-                  building assignments. Find your name and note each building
-                  and position assigned to you.
+                  building assignments. Select your name in the list on the left
+                  to highlight your positions. Note each building and position
+                  assigned to you; select your name again to clear the
+                  highlight.
                 </li>
                 <li>
                   Choose the siege’s <strong>Posts</strong> tab to check post
@@ -361,6 +363,25 @@ export default function GuidePage() {
                 plan or sending messages.
               </p>
               <h3 className="text-lg font-semibold text-slate-900">
+                Keep the roster up to date
+              </h3>
+              <p>
+                Choose <strong>Members</strong> in the top menu, then open a
+                member’s name to edit their details and choose{" "}
+                <strong>Save</strong>. Use <strong>Add Member</strong> for a new
+                clanmate. The
+                <strong> Active only</strong> checkbox hides inactive members;
+                untick it if someone seems to be missing.
+              </p>
+              <p>
+                To connect website records with Discord accounts, choose
+                <strong> Sync Discord</strong>, then{" "}
+                <strong>Fetch Preview</strong>. Check each proposed match
+                carefully, untick any incorrect or uncertain matches, and choose{" "}
+                <strong>Apply Selected</strong>. Have the member try their
+                preference command again afterward.
+              </p>
+              <h3 className="text-lg font-semibold text-slate-900">
                 Prepare and share a siege
               </h3>
               <Steps>
@@ -399,6 +420,14 @@ export default function GuidePage() {
                   sending and check the delivery result afterward.
                 </li>
               </Steps>
+              <p>
+                To place a member manually on the board, drag their name from
+                the list on the left onto the intended building position.
+                Dropping the name changes the shared plan immediately. Use the
+                preview’s <strong>Apply</strong> button only when you are ready
+                to use the proposed auto-fill assignments, or choose
+                <strong> Cancel</strong> to leave them unapplied.
+              </p>
               <p>
                 A siege marked complete is locked against changes. If you need
                 to correct an older siege, agree on the correction with the clan
