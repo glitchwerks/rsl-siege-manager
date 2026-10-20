@@ -7,9 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### siege-api 1.5.0
+
+- Added authenticated officer-guide delivery and a guide-access flag on `/api/auth/me`. The mom-bot guide requires a real member session, the configured Master's Of Magicka guild, and a current Discord officer role; it denies access on lookup failures and is never enabled by development bypass or service tokens.
+
 ### siege-frontend 1.6.0
 
-- Added a public clan guide at `/guide` with plain-language website and mom-bot instructions, member and officer workflows, troubleshooting, and direct links to each topic. The guide requires no sign-in and is linked from the home page, sign-in page, and application menu.
+- Added a public General Usage Guide at `/guide` covering the website and core Discord bot in 16 searchable topics, including roster and preferences, creating and cloning sieges, buildings, participation and attack days, reserves, manual and suggested assignments, validation, comparison, lifecycle, and Discord delivery.
+- Separated mom-bot instructions into `/guide/mom-bot`, visible only to authenticated officers of Master's Of Magicka with server-verified access. Private instructions are fetched from the protected backend instead of embedded in public assets.
 
 ### Infrastructure
 

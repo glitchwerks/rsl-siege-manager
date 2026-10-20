@@ -107,7 +107,7 @@ export default function LoginPage() {
           {/* Always-visible self-host link */}
           <div className="text-center">
             <Link to="/guide" className="text-sm text-violet-700 hover:underline">
-              Read the clan guide — no sign-in needed
+              Read the usage guide — no sign-in needed
             </Link>
           </div>
           <div className="text-center">

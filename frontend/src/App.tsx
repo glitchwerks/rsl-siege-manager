@@ -16,6 +16,7 @@ import ComparisonPage from "./pages/ComparisonPage";
 import PostPrioritiesPage from "./pages/PostPrioritiesPage";
 import SystemPage from "./pages/SystemPage";
 import GuidePage from "./pages/GuidePage";
+import MomBotGuidePage from "./pages/MomBotGuidePage";
 
 function App() {
   return (
@@ -24,6 +25,14 @@ function App() {
       <Route path="/" element={<LandingOrSieges />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/guide" element={<GuidePage />} />
+      <Route
+        path="/guide/mom-bot"
+        element={
+          <RequireAuth>
+            <MomBotGuidePage />
+          </RequireAuth>
+        }
+      />
       <Route
         element={
           <RequireAuth>

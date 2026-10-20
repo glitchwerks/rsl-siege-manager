@@ -9,6 +9,25 @@
 
 A comprehensive web utility for coordinating Raid Shadow Legends clan siege assignments — validated, automated, Discord-native, and self-hostable.
 
+## Usage guides
+
+Open `/guide` on your instance for the public **General Usage Guide**. It covers
+the website and core Discord bot, with searchable steps for roster management,
+siege planning, post assignments, comparison, lifecycle, and message delivery.
+The home page, sign-in page, and application menu link to it.
+
+The separate `/guide/mom-bot` officer reference is specific to **Master's Of
+Magicka**. Its content is served by an authenticated backend endpoint, rather
+than included in the public frontend bundle. The instance's `DISCORD_GUILD_ID`
+must match `MOM_BOT_GUIDE_GUILD_ID` (default `1112031869337346184`, verified from
+the production app configuration), and the caller must have a real member
+session and a current Discord role listed in `MOM_BOT_GUIDE_OFFICER_ROLES`
+(default `Clan Deputies`). Other clans, anonymous readers, service tokens, and
+development authentication bypass do not unlock it. Empty guild or officer-role
+configuration disables it. Roles are checked again when the content is requested;
+a failed Discord lookup denies access. Website strength categories do not grant
+access, and broadening the website sign-in role does not broaden this guide's roles.
+
 ## Features
 
 - **Validated assignments** — 16 rule checks catch overlaps, capacity errors, and misplacements before you post.

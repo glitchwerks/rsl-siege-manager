@@ -1,0 +1,215 @@
+{
+  "title": "Master’s Of Magicka · mom-bot Guide",
+  "audience": "Master’s Of Magicka officers · Sign-in required",
+  "intro": "Use this officer reference to manage mom-bot’s extra Discord features and help clanmates use their preference buttons. Website planning and the core bot’s assignment messages are covered in the General Usage Guide.",
+  "sections": [
+    {
+      "id": "commands",
+      "title": "1. Find and run a Discord command",
+      "summary": "Use mom-bot inside the Master’s Of Magicka server and select its command from Discord’s suggestions.",
+      "tasks": [
+        {
+          "title": "Run a slash command",
+          "steps": [
+            "Open the **Master’s Of Magicka** Discord server, then a channel where bot commands are allowed. Ask the coordinating officer which channel to use if necessary.",
+            "Click or tap the message box and type **/** followed by the command name. Select the command belonging to **mom-bot** from the suggestions.",
+            "If the command has fields, fill them using Discord’s choices or member picker. Send it with Enter on a computer or the send control on a phone.",
+            "Read the bot’s reply. A command sent as plain text, rather than selected from the command suggestions, may not run."
+          ],
+          "note": "A slash command is a request to the bot. Use these commands inside the clan server. Officer reminder and join-alert commands require Discord’s **Manage Server** permission; a website planning role does not automatically grant that Discord permission."
+        },
+        {
+          "title": "Check whether mom-bot responds",
+          "steps": [
+            "Select **/ping** from mom-bot’s command suggestions and send it.",
+            "Look for the response showing the running version and uptime, meaning how long the bot has been running."
+          ],
+          "note": "A successful ping shows that the bot can answer. If a preference or reminder command still fails, report the specific failing command rather than assuming every feature is working."
+        }
+      ]
+    },
+    {
+      "id": "preferences",
+      "title": "2. Help members choose post preferences",
+      "summary": "The member commands edit the caller’s own preferences. Use the website to review another member’s record.",
+      "tasks": [
+        {
+          "title": "Show the available conditions and saved choices",
+          "paragraphs": [
+            "**/post-conditions** displays the complete condition catalog, grouped into categories.",
+            "**/post-conditions-get** displays the preferences saved for the person who ran it. If it says no preferences are set, use the set command below.",
+            "Preference command replies are visible only to the caller in Discord. Saved preferences are used by the website for clan siege planning."
+          ]
+        },
+        {
+          "title": "Choose, save, and verify preferences",
+          "steps": [
+            "Have the member select and send **/post-conditions-set**. An editor opens with their existing selections.",
+            "Tap a condition button to select it. Selected buttons turn green; tapping again removes that choice. Select the restrictions their actual teams can handle.",
+            "Use **Next ▶** and **◀ Prev** to move through the pages. Choices stay selected as the member changes pages.",
+            "Read the selected-preferences summary, then choose **Save**. Wait for **Preferences saved** before leaving.",
+            "Run **/post-conditions-get** to verify what was stored."
+          ],
+          "result": "The member’s saved website preferences reflect the selected conditions. Existing siege placements are not automatically moved.",
+          "note": "**Cancel** preserves the previous saved choices. The editor is available for about five minutes. If buttons expire or stop responding, open a fresh editor with /post-conditions-set, check the selections, and save again."
+        },
+        {
+          "title": "Correct an unregistered or mismatched account",
+          "steps": [
+            "If the bot says the account is not registered, ask which Discord account the member used to run the command.",
+            "On the website, open **Members** and find that person’s record. Check their Discord username and use **Sync Discord → Fetch Preview** to review the account match.",
+            "Correct only matches you can verify, then apply the selected match. Ask the member to run their preference command again."
+          ],
+          "note": "The bot preference commands have no target-member field or officer override. They act on the caller’s account. Use the website’s member page and **Save Preferences** when an officer needs to edit another member’s preferences."
+        }
+      ]
+    },
+    {
+      "id": "reminders",
+      "title": "3. Understand scheduled clan reminders",
+      "summary": "Read recurring event notices and distinguish channel reminders from personal assignment messages.",
+      "tasks": [
+        {
+          "title": "Read the latest event notice",
+          "paragraphs": [
+            "Mom-bot can post Hydra, Chimera, Siege, and Hydra Tank Week reminders in the clan’s Discord channels. Read the latest message’s date and instructions before acting.",
+            "These scheduled channel notices differ from the website’s **Notify Members** assignment DMs and the recurring personal reminders managed below.",
+            "If an event notice appears to use the wrong date, channel, or schedule, tell the bot maintainer which notice needs checking. The supported officer commands below manage recurring member DMs."
+          ]
+        },
+        {
+          "title": "Investigate a missing personal message",
+          "steps": [
+            "Ask the member to check message requests and allow direct messages from members of the clan server in Discord’s server privacy settings.",
+            "Check whether the member has blocked mom-bot and whether the intended reminder names the correct account.",
+            "For website-generated assignments, use the siege’s **Settings → Discord Notifications** results to check the delivery batch. For recurring personal reminders, inspect the reminder with /member-notify-get."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "create-reminder",
+      "title": "4. Create a recurring personal reminder",
+      "summary": "Choose one member, a unique reminder name, a start date, a time, and a repeat interval.",
+      "tasks": [
+        {
+          "title": "Fill in /member-notify-add",
+          "steps": [
+            "Select **/member-notify-add** from mom-bot’s suggestions. If the command is missing, check that you have Discord’s **Manage Server** permission.",
+            "In **member**, use Discord’s member picker to choose the recipient. Check the actual account before proceeding.",
+            "In **name**, enter a unique label you can recognize later, such as **weekly-hydra-alex**. In **message**, enter the exact reminder the member should receive.",
+            "Enter **start_date** as year-month-day, for example **2026-11-05**. Enter **time** as a 24-hour **UTC** time, for example **18:30**. These fields use UTC, not your device’s local timezone; check the conversion before sending.",
+            "Choose **cadence**: **Weekly** repeats every 7 days; **Biweekly** repeats every 14 days; **Monthly** repeats on the start date’s day of the month.",
+            "Send the command and read the confirmation. Use **/member-notify-get** with the same name to review the saved details."
+          ],
+          "note": "For a monthly reminder on a day that does not exist in a shorter month, the reminder falls on that month’s last day. UTC stays fixed when local daylight-saving time changes, so recheck the local time if that matters to the member."
+        },
+        {
+          "title": "Resolve an input error",
+          "paragraphs": [
+            "If the name already exists, inspect it with **/member-notify-get** before creating another. Use a different label only if you want a separate reminder.",
+            "For a date error, use a real date in year-month-day form. For a time error, use hour:minute in 24-hour form, with hours 00–23 and minutes 00–59.",
+            "A successful creation confirmation means the reminder was saved. It does not mean its first scheduled DM has already been delivered."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "manage-reminders",
+      "title": "5. Find, change, pause, or remove reminders",
+      "summary": "Use the reminder’s unique name to manage it without creating duplicates.",
+      "tasks": [
+        {
+          "title": "Find and inspect a reminder",
+          "steps": [
+            "Run **/member-notify-list** to find the existing names.",
+            "Run **/member-notify-get** and supply the exact **name** to inspect the recipient, message, schedule, and enabled state.",
+            "Check that you have the right reminder before changing or deleting it."
+          ]
+        },
+        {
+          "title": "Change the recipient, message, or schedule",
+          "steps": [
+            "Select **/member-notify-update** and enter the existing reminder’s **name**.",
+            "Supply the fields you want to change: member, message, start_date, time, or cadence. Recheck UTC when changing the date or time.",
+            "Send the command, read the result, then use **/member-notify-get** to verify the new details."
+          ]
+        },
+        {
+          "title": "Pause and resume a reminder",
+          "steps": [
+            "Choose **/member-notify-update**, supply the reminder’s **name**, and set **enabled** to **False** to pause it.",
+            "Check the saved enabled state with **/member-notify-get**.",
+            "To resume it, run update for the same name with **enabled: True**. Check the schedule as well before resuming."
+          ],
+          "result": "The reminder record is retained so it can be resumed instead of recreated."
+        },
+        {
+          "title": "Remove a reminder permanently",
+          "steps": [
+            "Inspect the reminder first with **/member-notify-get** and confirm the exact name.",
+            "Select **/member-notify-remove**, supply that name, and send it only if the reminder should be deleted.",
+            "Check the result and use **/member-notify-list** to confirm that the reminder is gone."
+          ],
+          "note": "Use pause instead if you may want the same reminder again. The remove command deletes the named reminder rather than temporarily disabling it."
+        }
+      ]
+    },
+    {
+      "id": "joins",
+      "title": "6. Subscribe to new-member join alerts",
+      "summary": "Choose whether you personally receive an officer DM when someone joins the server.",
+      "tasks": [
+        {
+          "title": "Turn your alerts on or off",
+          "steps": [
+            "Select **/notify-new-members** and choose **state: On** to receive join-alert DMs.",
+            "Send the command and check the confirmation. Make sure your Discord privacy settings allow the bot’s messages.",
+            "To stop your alerts, run the same command with **state: Off**."
+          ],
+          "note": "This changes the invoking officer’s subscription, not everybody’s alerts. The command requires Discord’s Manage Server permission. Mom-bot also handles welcome and follow-up messages as configured for the clan."
+        }
+      ]
+    },
+    {
+      "id": "day-roles",
+      "title": "7. Check siege-day roles",
+      "summary": "Understand how website attack-day choices can update Discord roles.",
+      "tasks": [
+        {
+          "title": "Investigate a mismatched Day 1 or Day 2 label",
+          "steps": [
+            "Check the member’s **Attack Day** in the correct siege’s **Members** tab. Confirm the date and account match first.",
+            "If the plan itself is wrong and still editable, correct the attack day through the website and check the saved result.",
+            "Where day-role synchronization is enabled, check the corresponding Discord role afterward. If it disagrees with the saved plan, report the member, date, intended day, and observed role to the bot maintainer."
+          ],
+          "note": "A Discord role is a label on a member’s account. Do not change another part of the siege plan just to work around a role-sync problem. Resolve a locked plan through the clan’s planning process."
+        }
+      ]
+    },
+    {
+      "id": "help",
+      "title": "8. Troubleshoot a command",
+      "summary": "Check the server, account, permission, saved result, and visible error before escalating.",
+      "tasks": [
+        {
+          "title": "The command is missing or unavailable",
+          "paragraphs": [
+            "Use the Master’s Of Magicka server and an allowed channel, then select the command belonging to mom-bot from Discord’s slash suggestions.",
+            "Check Manage Server permission for member-notification and join-alert commands. A strength role such as Heavy Hitter is unrelated to Discord command permission.",
+            "If a member preference command is missing, ask the bot maintainer to check command availability in that channel."
+          ]
+        },
+        {
+          "title": "The bot returned an error or stopped responding",
+          "steps": [
+            "For expired preference buttons, open a fresh /post-conditions-set editor and verify the saved result with /post-conditions-get.",
+            "For another command error, read the visible reply and correct any named input problem. If it appears temporary, try again after a short wait.",
+            "If it continues, tell the bot maintainer the command, when it ran, and what the reply said. Include the reminder name or siege date when relevant."
+          ],
+          "note": "Do not repeatedly create reminders or send assignment batches while a result is uncertain. Inspect the existing record or delivery result first so members do not receive duplicates."
+        }
+      ]
+    }
+  ]
+}

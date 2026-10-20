@@ -18,6 +18,7 @@ from app.dependencies.auth import AuthenticatedUser, get_current_user
 from app.models.member import Member
 from app.rate_limit import limiter
 from app.services.bot_client import bot_client
+from app.services.guide_access import can_view_mom_bot_guide
 
 logger = logging.getLogger(__name__)
 
@@ -208,14 +209,17 @@ async def logout(response: Response) -> dict:
 
 @router.get("/me")
 async def me(
+    response: Response,
     current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> dict:
     """Return identity information for the currently authenticated caller."""
+    response.headers["Cache-Control"] = "private, no-store"
     return {
         "member_id": current_user.member_id,
         "name": current_user.name,
         "role": current_user.role,
         "discord_id": current_user.discord_id,
+        "guides": {"mom_bot": await can_view_mom_bot_guide(current_user)},
     }
 
 
