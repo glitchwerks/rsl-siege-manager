@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### siege-frontend 1.6.0
 
 - Added a public General Usage Guide at `/guide` covering the website and core Discord bot in 16 searchable topics, including roster and preferences, creating and cloning sieges, buildings, participation and attack days, reserves, manual and suggested assignments, validation, comparison, lifecycle, and Discord delivery.
+- Illustrated the guide with 14 website screenshots using fictional demo data, captions, and an accessible enlarged-image viewer. Added a sticky sidebar with current-topic tracking at desktop widths and a searchable topic dialog for phones.
 - Separated mom-bot instructions into `/guide/mom-bot`, visible only to authenticated officers of Master's Of Magicka with server-verified access. Private instructions are fetched from the protected backend instead of embedded in public assets.
 
 ### Infrastructure

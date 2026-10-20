@@ -1,3 +1,12 @@
+export interface GuideImage {
+  src: string;
+  title: string;
+  alt: string;
+  caption: string;
+  width: number;
+  height: number;
+}
+
 export interface GuideTask {
   title: string;
   location?: string;
@@ -11,6 +20,7 @@ export interface GuideSection {
   title: string;
   summary: string;
   tasks: GuideTask[];
+  images?: GuideImage[];
 }
 export interface GuideDocument {
   title: string;

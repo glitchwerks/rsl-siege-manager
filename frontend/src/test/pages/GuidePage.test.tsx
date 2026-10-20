@@ -1,4 +1,10 @@
-import { render, screen, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -82,5 +88,72 @@ describe("Public General Usage Guide", () => {
       .setup()
       .type(screen.getByRole("searchbox", { name: "Find help" }), "zzzzzzzz");
     expect(screen.getByText(/No topics match/)).toBeInTheDocument();
+  });
+
+  it("opens a screenshot with its caption and can close it with Escape", async () => {
+    renderGuide();
+    const user = userEvent.setup();
+    await user.click(
+      screen.getByRole("button", {
+        name: "Enlarge screenshot: Choose and save preferences",
+      })
+    );
+    const dialog = screen.getByRole("dialog");
+    expect(
+      within(dialog).getByRole("heading", {
+        name: "Choose and save preferences",
+      })
+    ).toBeInTheDocument();
+    expect(within(dialog).getByRole("img")).toHaveAttribute(
+      "src",
+      "/guide-images/preferences.jpg"
+    );
+    expect(
+      within(dialog).getByRole("link", {
+        name: "Open full-size image in a new tab",
+      })
+    ).toHaveAttribute("href", "/guide-images/preferences.jpg");
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("lets phone readers choose a topic from the navigation dialog", async () => {
+    renderGuide();
+    const section = document.getElementById("board")!;
+    section.scrollIntoView = vi.fn();
+    const user = userEvent.setup();
+    await user.click(
+      screen.getByRole("button", { name: /Browse guide topics/ })
+    );
+    const dialog = screen.getByRole("dialog");
+    expect(
+      within(dialog).getByRole("searchbox", { name: "Find help" })
+    ).toBeInTheDocument();
+    await user.click(
+      within(dialog).getByRole("link", { name: /8\. Build & edit/ })
+    );
+    await waitFor(() => expect(section.scrollIntoView).toHaveBeenCalled());
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(
+      within(
+        screen.getByRole("navigation", { name: "Guide topics" })
+      ).getByRole("link", { name: /8\. Build & edit/ })
+    ).toHaveAttribute("aria-current", "location");
+  });
+
+  it("updates the sidebar's current topic as the reader scrolls", async () => {
+    renderGuide();
+    for (const section of document.querySelectorAll("section[id]")) {
+      vi.spyOn(section, "getBoundingClientRect").mockReturnValue({
+        top: section.id === "board" ? 100 : 1000,
+      } as DOMRect);
+    }
+    fireEvent.scroll(window);
+    const link = within(
+      screen.getByRole("navigation", { name: "Guide topics" })
+    ).getByRole("link", { name: /8\. Build & edit/ });
+    await waitFor(() =>
+      expect(link).toHaveAttribute("aria-current", "location")
+    );
   });
 });

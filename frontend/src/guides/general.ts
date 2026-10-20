@@ -1,4 +1,5 @@
 import type { GuideDocument } from "./types";
+import { guideScreenshots } from "./screenshots";
 
 export const generalGuide: GuideDocument = {
   title: "General Usage Guide",
@@ -54,6 +55,7 @@ export const generalGuide: GuideDocument = {
     },
     {
       id: "read-plan",
+      images: guideScreenshots["read-plan"],
       title: "2. Find & read your assignment",
       summary:
         "Find the right date, highlight a member, and distinguish placements, reserves, and attack days.",
@@ -100,6 +102,7 @@ export const generalGuide: GuideDocument = {
     },
     {
       id: "roster",
+      images: guideScreenshots["roster"],
       title: "3. Manage the clan roster",
       summary:
         "Add and edit members, record power and strength roles, connect Discord accounts, and handle inactive members.",
@@ -150,6 +153,7 @@ export const generalGuide: GuideDocument = {
     },
     {
       id: "preferences",
+      images: guideScreenshots["preferences"],
       title: "4. Record personal post preferences",
       summary:
         "Tell the planner which restrictions suit a member’s teams. Preferences help suggestions; they do not assign positions.",
@@ -169,6 +173,7 @@ export const generalGuide: GuideDocument = {
     },
     {
       id: "create",
+      images: guideScreenshots["create"],
       title: "5. Create or clone a siege",
       summary:
         "Start a blank event or reuse a previous layout, then check everything that must change for the new date.",
@@ -198,6 +203,7 @@ export const generalGuide: GuideDocument = {
     },
     {
       id: "buildings",
+      images: guideScreenshots["buildings"],
       title: "6. Set the date & building layout",
       summary:
         "Match the game’s building levels and broken buildings before assigning teams.",
@@ -234,6 +240,7 @@ export const generalGuide: GuideDocument = {
     },
     {
       id: "siege-members",
+      images: guideScreenshots["siege-members"],
       title: "7. Set participants, attack days & reserves",
       summary:
         "Manage membership for one siege, protect manual attack days, and record reserve sets.",
@@ -271,6 +278,7 @@ export const generalGuide: GuideDocument = {
     },
     {
       id: "board",
+      images: guideScreenshots["board"],
       title: "8. Build & edit the assignment board",
       summary:
         "Search members, place teams, replace or clear a placement, and mark reserve positions.",
@@ -308,6 +316,7 @@ export const generalGuide: GuideDocument = {
     },
     {
       id: "autofill",
+      images: guideScreenshots["autofill"],
       title: "9. Preview auto-fill & validate a plan",
       summary:
         "Review proposed building assignments, apply them deliberately, and resolve reported problems.",
@@ -338,6 +347,7 @@ export const generalGuide: GuideDocument = {
     },
     {
       id: "post-conditions",
+      images: guideScreenshots["post-conditions"],
       title: "10. Enter each siege’s post conditions",
       summary:
         "Set current restrictions, browse by level or type, and keep conditions distinct from priorities and preferences.",
@@ -365,6 +375,7 @@ export const generalGuide: GuideDocument = {
     },
     {
       id: "post-assignments",
+      images: guideScreenshots["post-assignments"],
       title: "11. Assign posts & review suggestions",
       summary:
         "Choose a member and matched condition manually, or review a full set of suggested post placements.",
@@ -411,6 +422,7 @@ export const generalGuide: GuideDocument = {
     },
     {
       id: "priorities",
+      images: guideScreenshots["priorities"],
       title: "12. Set shared post priorities",
       summary:
         "Maintain the clan’s priority map and descriptive notes, and browse the full condition reference.",
@@ -438,6 +450,7 @@ export const generalGuide: GuideDocument = {
     },
     {
       id: "compare",
+      images: guideScreenshots["compare"],
       title: "13. Compare with a previous siege",
       summary:
         "See who gained, lost, or kept placements before explaining changes to the clan.",
@@ -457,6 +470,7 @@ export const generalGuide: GuideDocument = {
     },
     {
       id: "discord",
+      images: guideScreenshots["discord"],
       title: "14. Share through the core Discord bot",
       summary:
         "Prepare images, post the plan to clan channels, send personal assignment DMs, and check delivery.",
@@ -511,6 +525,7 @@ export const generalGuide: GuideDocument = {
     },
     {
       id: "lifecycle",
+      images: guideScreenshots["lifecycle"],
       title: "15. Start, close, reopen & delete",
       summary:
         "Understand the editing lock and preserve the right record for each siege.",
