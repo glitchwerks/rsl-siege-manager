@@ -129,7 +129,7 @@ export const guideScreenshots: Record<string, GuideImage[]> = {
       caption:
         "Priority changes save immediately; a description saves when you leave its field.",
       width: 1280,
-      height: 720,
+      height: 850,
     },
   ],
   compare: [
