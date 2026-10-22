@@ -167,3 +167,51 @@ async def test_role_revoked_after_identity_check_blocks_direct_content(officer_s
     assert "no-store" in identity.headers["cache-control"]
     assert content.status_code == 403
     assert "member-notify" not in content.text
+
+
+@pytest.mark.asyncio
+async def test_slow_optional_lookup_does_not_block_identity_or_skip_content_check(officer_session):
+    import asyncio
+
+    cancelled = asyncio.Event()
+    calls = 0
+
+    async def lookup(discord_id):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            try:
+                await asyncio.Future()
+            finally:
+                cancelled.set()
+        return MEMBER
+
+    with patch(
+        "app.services.guide_access.bot_client.get_member", new=AsyncMock(side_effect=lookup)
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            identity = await asyncio.wait_for(client.get("/api/auth/me"), timeout=1)
+            assert identity.status_code == 200
+            assert identity.json()["member_id"] == USER.member_id
+            assert identity.json()["guides"]["mom_bot"] is False
+            assert cancelled.is_set()
+            content = await client.get("/api/guides/mom-bot")
+    assert content.status_code == 200
+    assert calls == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("malformed", [False, True])
+async def test_failed_lookup_logs_diagnostics_without_member_data(caplog, malformed):
+    secret = f"private-member-payload-{USER.discord_id}"
+    lookup = (
+        AsyncMock(return_value={"is_member": "invalid", "private": secret})
+        if malformed
+        else AsyncMock(side_effect=AssertionError(secret))
+    )
+    with patch("app.services.guide_access.bot_client.get_member", new=lookup):
+        assert await can_view_mom_bot_guide(USER) is False
+    assert "Officer guide membership lookup" in caplog.text
+    assert USER.discord_id not in caplog.text
+    assert secret not in caplog.text
+    assert all(record.exc_info is None for record in caplog.records)

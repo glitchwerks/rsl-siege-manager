@@ -1,13 +1,18 @@
 """Server-verified access to the guild-specific officer guide."""
 
+import asyncio
+import logging
+
 import httpx
 
 from app.config import settings
 from app.dependencies.auth import AuthenticatedUser
 from app.services.bot_client import bot_client
 
+logger = logging.getLogger(__name__)
 
-async def can_view_mom_bot_guide(user: AuthenticatedUser) -> bool:
+
+async def can_view_mom_bot_guide(user: AuthenticatedUser, *, timeout: float | None = None) -> bool:
     """Require a real session, the explicitly configured guild, and a live officer role.
 
     Strength categories in Member.role are intentionally irrelevant. Development
@@ -31,16 +36,22 @@ async def can_view_mom_bot_guide(user: AuthenticatedUser) -> bool:
         return False
 
     try:
-        member = await bot_client.get_member(user.discord_id)
-    except (httpx.HTTPError, AssertionError, ValueError, TypeError):
+        async with asyncio.timeout(timeout):
+            member = await bot_client.get_member(user.discord_id)
+    except (TimeoutError, httpx.HTTPError, AssertionError, ValueError, TypeError) as error:
+        # Exception messages and tracebacks may contain Discord IDs or member payloads.
+        logger.warning("Officer guide membership lookup failed (%s)", type(error).__name__)
         return False
 
-    if not isinstance(member, dict):
+    if isinstance(member, dict) and member.get("is_member") is False:
         return False
-    role_names = member.get("role_names")
-    return (
-        member.get("is_member") is True
-        and member.get("discord_id") == user.discord_id
-        and isinstance(role_names, list)
-        and any(isinstance(role, str) and role in officer_roles for role in role_names)
-    )
+    if (
+        not isinstance(member, dict)
+        or member.get("is_member") is not True
+        or member.get("discord_id") != user.discord_id
+        or not isinstance(member.get("role_names"), list)
+        or not all(isinstance(role, str) for role in member["role_names"])
+    ):
+        logger.warning("Officer guide membership lookup returned malformed data")
+        return False
+    return any(role in officer_roles for role in member["role_names"])

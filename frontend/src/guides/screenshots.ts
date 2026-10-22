@@ -24,17 +24,6 @@ export const guideScreenshots: Record<string, GuideImage[]> = {
       previewCrop: { top: 58, height: 66 },
     },
   ],
-  "read-plan": [
-    {
-      src: "/guide-images/sieges.jpg",
-      title: "Find the right siege",
-      alt: "Sieges list with dates, Planning and Complete status badges, and Board, Posts, and Members links.",
-      caption:
-        "Check the date and status first, then use the links on that row to open the right view.",
-      width: 1280,
-      height: 440,
-    },
-  ],
   roster: [
     {
       src: "/guide-images/members.jpg",

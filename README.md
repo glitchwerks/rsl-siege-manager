@@ -31,7 +31,9 @@ session and a current Discord role listed in `MOM_BOT_GUIDE_OFFICER_ROLES`
 (default `Clan Deputies`). Other clans, anonymous readers, service tokens, and
 development authentication bypass do not unlock it. Empty guild or officer-role
 configuration disables it. Roles are checked again when the content is requested;
-a failed Discord lookup denies access. Website strength categories do not grant
+a failed Discord lookup denies access. The optional navigation check during sign-in
+is limited to 250 milliseconds, so a slow bot cannot hold up identity loading.
+Lookup failures produce sanitized diagnostics without member data. Website strength categories do not grant
 access, and broadening the website sign-in role does not broaden this guide's roles.
 
 ## Features

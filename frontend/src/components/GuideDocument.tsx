@@ -5,6 +5,7 @@ import type { GuideDocument as Document } from "../guides/types";
 import GuideSidebar from "./GuideSidebar";
 import GuideScreenshot from "./GuideScreenshot";
 import { guidePages } from "../guides/pages";
+import { guideSectionText } from "../guides/search";
 
 function Text({ children }: { children: string }) {
   return (
@@ -61,7 +62,7 @@ export default function GuideDocument({ document }: { document: Document }) {
     const needle = search.trim().toLocaleLowerCase();
     if (!needle) return document.sections;
     return document.sections.filter((section) =>
-      JSON.stringify(section).toLocaleLowerCase().includes(needle)
+      guideSectionText(section).toLocaleLowerCase().includes(needle)
     );
   }, [document, search]);
 

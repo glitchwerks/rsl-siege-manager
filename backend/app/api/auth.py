@@ -24,6 +24,9 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+# Optional navigation must not hold up identity or protected website routes.
+GUIDE_CAPABILITY_TIMEOUT_SECONDS = 0.25
+
 
 class AuthError:
     """Error codes returned in login redirect query parameters."""
@@ -219,7 +222,11 @@ async def me(
         "name": current_user.name,
         "role": current_user.role,
         "discord_id": current_user.discord_id,
-        "guides": {"mom_bot": await can_view_mom_bot_guide(current_user)},
+        "guides": {
+            "mom_bot": await can_view_mom_bot_guide(
+                current_user, timeout=GUIDE_CAPABILITY_TIMEOUT_SECONDS
+            )
+        },
     }
 
 
