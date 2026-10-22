@@ -29,12 +29,30 @@ must match `MOM_BOT_GUIDE_GUILD_ID` (default `1112031869337346184`, verified fro
 the production app configuration), and the caller must have a real member
 session and a current Discord role listed in `MOM_BOT_GUIDE_OFFICER_ROLES`
 (default `Clan Deputies`). Other clans, anonymous readers, service tokens, and
-development authentication bypass do not unlock it. Empty guild or officer-role
+development authentication bypass alone do not unlock it. Empty guild or officer-role
 configuration disables it. Roles are checked again when the content is requested;
 a failed Discord lookup denies access. The optional navigation check during sign-in
 is limited to 250 milliseconds, so a slow bot cannot hold up identity loading.
 Lookup failures produce sanitized diagnostics without member data. Website strength categories do not grant
 access, and broadening the website sign-in role does not broaden this guide's roles.
+
+To preview guild guides on a developer instance, set the backend environment to:
+
+```dotenv
+ENVIRONMENT=development
+DEV_GUILD_GUIDE_PREVIEW=true
+```
+
+This explicit option lets all browser users on that developer instance view the
+available guild guides, including `/guide/mom-bot`, without belonging to the guild
+or holding its officer role. It also works with the existing `AUTH_DISABLED=true`
+local development user. With OAuth enabled, normal website sign-in is still
+required. The preview bypasses guild, officer-role, and empty guide settings;
+service tokens remain excluded. The guide link appears automatically in navigation.
+The option defaults to `false`, and the backend refuses to start with it enabled
+outside `ENVIRONMENT=development`. Set it back to `false` to restore normal guide
+access. Apply backend configuration through your developer instance's usual
+startup or deployment process.
 
 ## Features
 

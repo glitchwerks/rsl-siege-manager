@@ -42,6 +42,10 @@ class Settings(BaseSettings):
     # Dev-only auth bypass — startup guard rejects True outside development.
     auth_disabled: bool = False
 
+    # Explicit developer preview of guild guides, without guild/role lookup.
+    # Startup rejects this outside development; service principals stay excluded.
+    dev_guild_guide_preview: bool = False
+
     # Discord role required to log in. Members without this role are rejected
     # at OAuth callback with an insufficient_role error.
     discord_required_role: str = "Clan Deputies"

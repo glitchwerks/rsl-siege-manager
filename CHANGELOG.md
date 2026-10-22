@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### siege-api 1.6.0
+
+- Added opt-in `DEV_GUILD_GUIDE_PREVIEW` for developer instances to view guild-specific guides without guild membership or officer roles, including with the local development user. It defaults off, excludes service tokens, and refuses startup outside development. Normal guild restrictions remain in effect when preview is off.
+
 ### siege-api 1.5.0
 
 - Added authenticated officer-guide delivery and a guide-access flag on `/api/auth/me`. The mom-bot guide requires a real member session, the configured Master's Of Magicka guild, and a current Discord officer role; the optional identity lookup is bounded to 250 ms and logs sanitized failure diagnostics, while private content always requires a fresh role check; it denies access on lookup failures and is never enabled by development bypass or service tokens.

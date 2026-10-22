@@ -59,6 +59,11 @@ class TestSettingsDefaults:
         s = self._make_settings()
         assert s.auth_disabled is False
 
+    def test_developer_guild_guide_preview_defaults_off(self, monkeypatch):
+        monkeypatch.delenv("DEV_GUILD_GUIDE_PREVIEW", raising=False)
+        s = self._make_settings(_env_file=None)
+        assert s.dev_guild_guide_preview is False
+
     def test_discord_required_role_defaults_to_clan_deputies(self):
         s = self._make_settings()
         assert s.discord_required_role == "Clan Deputies"
