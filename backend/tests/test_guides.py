@@ -238,10 +238,11 @@ async def test_developer_preview_unlocks_navigation_and_content_for_local_user(m
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("environment", ["development", "dev"])
 async def test_developer_preview_allows_signed_in_user_from_another_guild(
-    monkeypatch, officer_session
+    monkeypatch, officer_session, environment
 ):
-    monkeypatch.setattr(settings, "environment", "development")
+    monkeypatch.setattr(settings, "environment", environment)
     monkeypatch.setattr(settings, "dev_guild_guide_preview", True)
     monkeypatch.setattr(settings, "mom_bot_guide_guild_id", "another-guild")
     with patch("app.services.guide_access.bot_client.get_member", new=AsyncMock()) as lookup:
