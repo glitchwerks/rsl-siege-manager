@@ -4,13 +4,7 @@ import ReactMarkdown from "react-markdown";
 import type { GuideDocument as Document } from "../guides/types";
 import GuideSidebar from "./GuideSidebar";
 import GuideScreenshot from "./GuideScreenshot";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "./ui/dialog";
+import { guidePages } from "../guides/pages";
 
 function Text({ children }: { children: string }) {
   return (
@@ -25,11 +19,43 @@ function Text({ children }: { children: string }) {
 }
 
 export default function GuideDocument({ document }: { document: Document }) {
-  const { hash } = useLocation();
-  const [search, setSearch] = useState("");
-  const [mobileOpen, setMobileOpen] = useState(false);
+  const { hash, pathname } = useLocation();
+  const [searchState, setSearchState] = useState({ path: pathname, query: "" });
+  const search = searchState.path === pathname ? searchState.query : "";
+  const setSearch = (query: string) =>
+    setSearchState({ path: pathname, query });
+  const [expanded, setExpanded] = useState(() => {
+    try {
+      const saved = localStorage.getItem("guide-navigation-expanded");
+      if (saved !== null) return saved === "true";
+    } catch {
+      /* Navigation still works when browser storage is unavailable. */
+    }
+    return window.matchMedia
+      ? window.matchMedia("(min-width: 768px)").matches
+      : true;
+  });
+  const pages = guidePages.some((page) => page.href === pathname)
+    ? guidePages
+    : [...guidePages, { ...document, href: pathname }];
+  const pageIndex = guidePages.findIndex((page) => page.href === pathname);
+  function toggleNavigation() {
+    setExpanded((value) => {
+      try {
+        localStorage.setItem("guide-navigation-expanded", String(!value));
+      } catch {
+        /* Optional preference. */
+      }
+      return !value;
+    });
+  }
+  const hashSectionId = document.sections.find(
+    (section) =>
+      section.id === hash.slice(1) ||
+      section.tasks.some((task) => task.id === hash.slice(1))
+  )?.id;
   const [activeId, setActiveId] = useState(
-    hash.slice(1) || document.sections[0]?.id || ""
+    hashSectionId || document.sections[0]?.id || ""
   );
   const sections = useMemo(() => {
     const needle = search.trim().toLocaleLowerCase();
@@ -41,10 +67,13 @@ export default function GuideDocument({ document }: { document: Document }) {
 
   useEffect(() => {
     if (hash) {
-      window.document.getElementById(hash.slice(1))?.scrollIntoView();
-      setActiveId(hash.slice(1));
+      window.document.getElementById(hash.slice(1))?.scrollIntoView?.();
+      setActiveId(hashSectionId || document.sections[0]?.id || "");
+    } else {
+      window.document.getElementById("guide-top")?.scrollIntoView?.();
+      setActiveId(document.sections[0]?.id || "");
     }
-  }, [hash]);
+  }, [hash, pathname, document, hashSectionId]);
 
   useEffect(() => {
     let frame = 0;
@@ -70,14 +99,12 @@ export default function GuideDocument({ document }: { document: Document }) {
     };
   }, [sections]);
 
-  function navigateToTopic(id: string) {
+  function navigateToTopic(id?: string) {
     setSearch("");
-    setActiveId(id);
-    setMobileOpen(false);
-    // Closing a dialog restores focus and may scroll it. Jump after the next
-    // render so filtering and mobile focus restoration finish first.
+    if (id) setActiveId(id);
+    if (window.matchMedia?.("(max-width: 767px)").matches) setExpanded(false);
     window.requestAnimationFrame(() =>
-      window.document.getElementById(id)?.scrollIntoView()
+      window.document.getElementById(id || "guide-top")?.scrollIntoView?.()
     );
   }
 
@@ -121,53 +148,45 @@ export default function GuideDocument({ document }: { document: Document }) {
           </div>
         </nav>
       </header>
-      <div className="sticky top-16 z-20 border-b border-slate-200 bg-white px-4 py-2 md:hidden print:hidden">
-        <button
-          onClick={() => setMobileOpen(true)}
-          aria-haspopup="dialog"
-          aria-expanded={mobileOpen}
-          className="w-full rounded-md border border-violet-200 px-3 py-2 text-left text-sm font-semibold text-violet-800"
-        >
-          ☰ Browse guide topics
-        </button>
-      </div>
-      <Dialog open={mobileOpen} onOpenChange={setMobileOpen}>
-        <DialogContent className="flex max-h-[85dvh] flex-col">
-          <DialogHeader>
-            <DialogTitle>Guide topics</DialogTitle>
-            <DialogDescription>
-              Search for help or choose a section.
-            </DialogDescription>
-          </DialogHeader>
-          <GuideSidebar
-            sections={sections}
-            activeId={activeId}
-            search={search}
-            onSearch={setSearch}
-            onNavigate={navigateToTopic}
-            mobile
-          />
-        </DialogContent>
-      </Dialog>
       <main
         id="guide-content"
         className="mx-auto max-w-screen-2xl px-4 py-8 sm:px-6"
       >
-        <div className="grid items-start gap-6 md:grid-cols-[230px_minmax(0,1fr)] xl:grid-cols-[280px_minmax(0,1fr)] print:block">
+        <div
+          className={`grid items-start gap-6 print:block ${expanded ? "md:grid-cols-[260px_minmax(0,1fr)] xl:grid-cols-[300px_minmax(0,1fr)]" : "md:grid-cols-[64px_minmax(0,1fr)]"}`}
+        >
           <aside
             aria-label="Guide sidebar"
-            className="sticky top-20 hidden max-h-[calc(100dvh-6rem)] flex-col rounded-xl border border-slate-200 bg-white p-4 md:flex print:hidden"
+            className="sticky top-20 z-20 flex max-h-[calc(100dvh-6rem)] flex-col rounded-xl border border-slate-200 bg-white p-3 print:hidden"
           >
-            <p className="mb-4 text-xs font-semibold uppercase tracking-wider text-slate-500">
-              On this guide
-            </p>
-            <GuideSidebar
-              sections={sections}
-              activeId={activeId}
-              search={search}
-              onSearch={setSearch}
-              onNavigate={navigateToTopic}
-            />
+            <button
+              type="button"
+              aria-label={
+                expanded
+                  ? "Minimize guide navigation"
+                  : "Expand guide navigation"
+              }
+              aria-expanded={expanded}
+              aria-controls="guide-navigation-content"
+              onClick={toggleNavigation}
+              className={`flex items-center gap-2 rounded-md px-2 py-2 text-sm font-semibold text-violet-800 hover:bg-violet-50 ${expanded ? "mb-3 justify-between" : "justify-center"}`}
+            >
+              <span className={expanded ? "" : "md:sr-only"}>
+                Guide navigation
+              </span>
+              <span aria-hidden="true">{expanded ? "‹" : "☰"}</span>
+            </button>
+            {expanded && (
+              <GuideSidebar
+                pages={pages}
+                currentPath={pathname}
+                sections={sections}
+                activeId={activeId}
+                search={search}
+                onSearch={setSearch}
+                onNavigate={navigateToTopic}
+              />
+            )}
           </aside>
           <div className="min-w-0 space-y-8">
             <div className="mb-8 max-w-3xl">
@@ -187,7 +206,7 @@ export default function GuideDocument({ document }: { document: Document }) {
                   className="text-violet-700 underline"
                   onClick={() => setSearch("")}
                 >
-                  Show the full guide
+                  Show all topics on this page
                 </button>
               </p>
             )}
@@ -212,7 +231,11 @@ export default function GuideDocument({ document }: { document: Document }) {
                 ))}
                 <div className="mt-6 divide-y divide-slate-100">
                   {section.tasks.map((task) => (
-                    <div key={task.title} className="space-y-4 py-6 first:pt-0">
+                    <div
+                      key={task.title}
+                      id={task.id}
+                      className="scroll-mt-24 space-y-4 py-6 first:pt-0"
+                    >
                       <h3 className="text-lg font-semibold text-slate-900">
                         {task.title}
                       </h3>
@@ -224,6 +247,78 @@ export default function GuideDocument({ document }: { document: Document }) {
                       {task.paragraphs?.map((paragraph) => (
                         <Text key={paragraph}>{paragraph}</Text>
                       ))}
+                      {task.images?.map((image) => (
+                        <GuideScreenshot key={image.src} image={image} />
+                      ))}
+                      {task.tables?.map((table) => (
+                        <div
+                          key={table.caption}
+                          role="region"
+                          aria-label={table.caption}
+                          tabIndex={0}
+                          className="overflow-x-auto rounded-lg border border-slate-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-600"
+                        >
+                          <table className="w-full border-collapse text-center text-sm">
+                            <caption className="bg-white px-4 py-3 text-left font-semibold text-slate-900">
+                              {table.caption}
+                            </caption>
+                            <thead className="bg-slate-100 text-slate-800">
+                              <tr>
+                                {table.columns.map((column) => (
+                                  <th
+                                    key={column}
+                                    scope="col"
+                                    className="border-t border-slate-200 px-2 py-2"
+                                  >
+                                    {column}
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {table.rows.map((row, rowIndex) => (
+                                <tr
+                                  key={row[0]}
+                                  className={
+                                    rowIndex === 0 && !table.colorSwatches
+                                      ? "bg-violet-50"
+                                      : "bg-white"
+                                  }
+                                >
+                                  {row.map((cell, columnIndex) =>
+                                    columnIndex === 0 ? (
+                                      <th
+                                        key={columnIndex}
+                                        scope="row"
+                                        className="border-t border-slate-200 px-3 py-2 font-semibold text-slate-900"
+                                      >
+                                        {cell}
+                                      </th>
+                                    ) : (
+                                      <td
+                                        key={columnIndex}
+                                        className="border-t border-slate-200 px-3 py-2"
+                                      >
+                                        {table.colorSwatches?.[cell] ? (
+                                          <span className="inline-flex items-center gap-2">
+                                            <span
+                                              aria-hidden="true"
+                                              className={`h-4 w-4 shrink-0 rounded-sm ${table.colorSwatches[cell]}`}
+                                            />
+                                            {cell}
+                                          </span>
+                                        ) : (
+                                          cell
+                                        )}
+                                      </td>
+                                    )
+                                  )}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      ))}
                       {task.steps && (
                         <ol className="list-decimal space-y-3 pl-6 marker:font-semibold marker:text-violet-700">
                           {task.steps.map((step) => (
@@ -233,10 +328,26 @@ export default function GuideDocument({ document }: { document: Document }) {
                           ))}
                         </ol>
                       )}
+                      {task.callout && (
+                        <aside
+                          aria-label={task.callout.title}
+                          className="space-y-4 rounded-xl border border-l-4 border-amber-300 border-l-amber-500 bg-amber-50 p-5 text-amber-950 sm:p-6"
+                        >
+                          <h4 className="text-lg font-bold">
+                            {task.callout.title}
+                          </h4>
+                          {task.callout.paragraphs.map((paragraph) => (
+                            <Text key={paragraph}>{paragraph}</Text>
+                          ))}
+                          {task.callout.images?.map((image) => (
+                            <GuideScreenshot key={image.src} image={image} />
+                          ))}
+                        </aside>
+                      )}
                       {task.result && (
                         <div className="rounded-lg border-l-4 border-green-600 bg-green-50 p-4 text-green-950">
                           <p className="mb-1 text-sm font-semibold">
-                            What you should see
+                            {task.resultTitle || "What you should see"}
                           </p>
                           <Text>{task.result}</Text>
                         </div>
@@ -259,9 +370,34 @@ export default function GuideDocument({ document }: { document: Document }) {
             ))}
             {sections.length === 0 && (
               <p>
-                No topics match that search. Try a button name or a shorter
-                phrase.
+                No topics match that search on this page. Try a button name or a
+                shorter phrase.
               </p>
+            )}
+            {pageIndex >= 0 && (
+              <nav
+                aria-label="Guide page navigation"
+                className="flex flex-wrap justify-between gap-4 border-t border-slate-200 pt-6 print:hidden"
+              >
+                {pageIndex > 0 ? (
+                  <Link
+                    to={guidePages[pageIndex - 1].href}
+                    className="rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-violet-800"
+                  >
+                    ← {guidePages[pageIndex - 1].title}
+                  </Link>
+                ) : (
+                  <span />
+                )}
+                {pageIndex < guidePages.length - 1 && (
+                  <Link
+                    to={guidePages[pageIndex + 1].href}
+                    className="rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-violet-800"
+                  >
+                    {guidePages[pageIndex + 1].title} →
+                  </Link>
+                )}
+              </nav>
             )}
           </div>
         </div>

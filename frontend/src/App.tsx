@@ -25,6 +25,7 @@ function App() {
       <Route path="/" element={<LandingOrSieges />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/guide" element={<GuidePage />} />
+      <Route path="/guide/:pageId" element={<GuidePage />} />
       <Route
         path="/guide/mom-bot"
         element={

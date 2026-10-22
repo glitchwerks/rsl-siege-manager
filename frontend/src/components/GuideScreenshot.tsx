@@ -18,14 +18,30 @@ export default function GuideScreenshot({ image }: { image: GuideImage }) {
         className="group block w-full cursor-zoom-in text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-600"
         aria-label={`Enlarge screenshot: ${image.title}`}
       >
-        <img
-          src={image.src}
-          alt={image.alt}
-          width={image.width}
-          height={image.height}
-          loading="lazy"
-          className="h-auto w-full"
-        />
+        <div
+          className={image.previewCrop ? "overflow-hidden" : undefined}
+          style={
+            image.previewCrop
+              ? { aspectRatio: `${image.width} / ${image.previewCrop.height}` }
+              : undefined
+          }
+        >
+          <img
+            src={image.src}
+            alt={image.alt}
+            width={image.width}
+            height={image.height}
+            loading="lazy"
+            className="h-auto w-full"
+            style={
+              image.previewCrop
+                ? {
+                    marginTop: `-${(image.previewCrop.top / image.width) * 100}%`,
+                  }
+                : undefined
+            }
+          />
+        </div>
         <span className="block border-t border-slate-200 px-4 py-2 text-xs font-semibold text-violet-700 group-hover:underline">
           Click or tap to enlarge
         </span>

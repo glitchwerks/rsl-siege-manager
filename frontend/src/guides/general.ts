@@ -1,5 +1,6 @@
 import type { GuideDocument } from "./types";
 import { guideScreenshots } from "./screenshots";
+import { buildingSlotTables } from "./buildingSlots";
 
 export const generalGuide: GuideDocument = {
   title: "General Usage Guide",
@@ -25,6 +26,7 @@ export const generalGuide: GuideDocument = {
         },
         {
           title: "Understand the two sets of menus",
+          images: guideScreenshots["navigation"],
           paragraphs: [
             "The **top menu** applies to the whole clan: **Sieges** lists siege events; **Members** holds the main roster; **Posts** holds shared post priorities and the condition reference; **System** shows version information for support. **Guide** brings you back here.",
             "Inside one siege, a second menu has **Board**, **Posts**, **Members**, **Compare**, and **Settings**. These apply to the siege you opened. Check the date in the page heading before making a change.",
@@ -42,61 +44,6 @@ export const generalGuide: GuideDocument = {
             "Use **Start Siege** when ready. After the event, use **Close Siege** to preserve its record.",
           ],
           note: "These instructions explain what the controls do. Follow your clan’s decisions about who may edit and when to publish. Use a computer for planning; the board needs a larger screen.",
-        },
-        {
-          title: "Know when a change is saved",
-          paragraphs: [
-            "Some controls save immediately: dropping a name onto a position, changing a building level, changing an attack day or checkbox, choosing a shared post priority, and assigning a post member.",
-            "Other screens have an explicit button: **Save** for member details, **Save Preferences** for personal preferences, **Save Settings** for the siege date, and **Save Conditions** for a post’s restrictions.",
-            "An auto-fill or suggestion **preview** is a proposal. It changes the plan only after **Apply**. **Cancel** or closing an unapplied preview leaves those proposed changes unused. Check for an error or success message before leaving a screen.",
-          ],
-        },
-      ],
-    },
-    {
-      id: "read-plan",
-      images: guideScreenshots["read-plan"],
-      title: "2. Find & read your assignment",
-      summary:
-        "Find the right date, highlight a member, and distinguish placements, reserves, and attack days.",
-      tasks: [
-        {
-          title: "Find the current siege",
-          location: "Top menu → Sieges",
-          steps: [
-            "Find the date your officers are working on. Check its status: **Planning** is being prepared, **Active** is underway, and **Complete** is a finished record.",
-            "Choose **Board**, **Posts**, or **Members** on that siege’s row to jump straight to that view. Clicking the date’s row opens its settings.",
-            "If you do not have website access, read the latest assignment images or personal message shared in your clan’s Discord channels. A channel is one conversation inside the server.",
-          ],
-        },
-        {
-          title: "Read building assignments",
-          location: "Open a siege → Board → Buildings",
-          steps: [
-            "Use **Search...** in the member list on the left to find a name. If the list is filtered by strength role, choose **All** to see everyone.",
-            "Click the member’s name once to highlight their positions. Click it again to clear the highlight. This selects a person to inspect; it does not change their assignments.",
-            "Read each highlighted building’s type and number, then the group and position number. For example, **Mana Shrine 1, Group 2, Position 3** identifies one placement inside that building.",
-            "Switch to the board’s **Posts** view to check post placements as well. Note the active condition and matched condition shown for each post.",
-          ],
-          note: "A building assignment tells you where to place a defense team. An **Attack Day** tells you when to attack. They are different parts of the plan.",
-        },
-        {
-          title: "Understand empty, reserve, and disabled positions",
-          paragraphs: [
-            "A dash or empty slot has no member assigned. **RESERVE** is a deliberate placeholder for a backup placement, not a named member’s assignment. **DISABLED** means that position cannot be used in the current building layout.",
-            "The board’s summary counts total, assigned, reserve, and empty positions. Use it to spot unfinished planning, then inspect the positions themselves.",
-            "If your name is missing, your team cannot meet a condition, or a reserve placement needs filling, ask the coordinating officer before placing a different team.",
-          ],
-        },
-        {
-          title: "Find your attack day and reserve-set status",
-          location: "Open a siege → Members",
-          steps: [
-            "Find your name in the siege’s member table.",
-            "Read **Attack Day**: Day 1 or Day 2. A dash means no day has been assigned.",
-            "Read **Reserve Set** to see the recorded reserve-set status. Ask an officer what your clan expects you to prepare.",
-          ],
-          note: "**Override (Pinned)** protects a manually chosen attack day during automatic day assignment. It does not pin a defense position on the board.",
         },
       ],
     },
@@ -144,10 +91,11 @@ export const generalGuide: GuideDocument = {
           steps: [
             "Open the correct record and choose **Deactivate**.",
             "Read and confirm the dialog only after checking the person’s identity.",
-            "Check any siege still in planning for leftover placements or participation that need updating. Do not assume that an older siege’s history has been rewritten.",
+            "After deactivation, review any **Planning** siege: the member is removed from its participant list and their placements are cleared, leaving positions to refill.",
           ],
           result:
             "The person is marked inactive and disappears from the default active-only roster. Their record remains available when you untick Active only.",
+          note: "Participation and placements in **Active** and **Complete** sieges are preserved. Deactivation is blocked while the member has an assignment in an **Active** siege.",
         },
       ],
     },
@@ -191,7 +139,7 @@ export const generalGuide: GuideDocument = {
         {
           title: "Clone a previous siege",
           steps: [
-            "In **New Siege**, select an existing siege from the clone dropdown and choose **Clone Siege**. You can also open an existing siege’s **Settings**, choose **Clone**, and confirm.",
+            "You can clone in either of two places: in **New Siege**, select a previous siege from the clone dropdown and choose **Clone Siege**; or open the siege you want to copy, go to **Settings → Lifecycle**, choose **Clone**, and confirm.",
             "The copy is a new **Planning** siege. Open **Settings**, enter the new date, and choose **Save Settings**.",
             "Review the copied building levels, broken flags, active member placements, reserve positions, and post priority descriptions.",
             "Enter the new siege’s post conditions. These are cleared on a clone because the game assigns fresh conditions for each siege.",
@@ -222,11 +170,21 @@ export const generalGuide: GuideDocument = {
           location: "Open a Planning siege → Settings → Buildings",
           steps: [
             "Find the building by its type and number. Compare it with the current game layout.",
-            "Choose the correct **Lvl** number from 1 to 6. The level controls the available team positions.",
-            "Tick **Broken** for a broken building, or untick it after repair. These controls save as you change them; they do not wait for Save Settings.",
+            "Choose the correct **Lvl** number from 1 to 6. The level controls the available team positions; see the [building level slot chart](#building-slots) below for the slots in each group.",
+            "Tick **Broken** for a broken building: the system uses its **Level 1 slot layout**. Its saved level stays recorded; unticking Broken after repair restores the slot layout for that level. These controls save immediately.",
             "Return to **Board** to inspect the resulting available and disabled positions, then validate the plan again.",
           ],
-          note: "Changing a building’s capacity can affect which positions can be used. Finish these checks before filling the board. Existing assignments should be reviewed after any layout change.",
+          note: "Lowering a building’s level removes any groups or slots that no longer fit, including the members assigned to those removed slots. Marking Broken also removes slots beyond the Level 1 layout. Restoring the level or repairing the building recreates those slots empty; their old assignments are not restored. Review the board after either change.",
+        },
+        {
+          id: "building-slots",
+          title: "Building level slot chart",
+          paragraphs: [
+            "Each number is the number of team slots in that group. One slot holds one member’s defense team. A dash (—) means that group does not exist at that level. Total slots is the capacity of one building, not all buildings of that type combined.",
+            "For example, a Level 2 Mana Shrine has 3 slots in Group 1, 3 in Group 2, and 1 in Group 3: 7 slots in total. On a small screen, scroll a table sideways to see every group.",
+            "Use the Level 1 row when a building is marked Broken. Posts always have one group with one slot.",
+          ],
+          tables: buildingSlotTables,
         },
         {
           title: "Understand Defense Scroll Count",
@@ -235,6 +193,7 @@ export const generalGuide: GuideDocument = {
             "The displayed per-member limit is **3** when the total is below 90, or **4** when it is 90 or more. Marking a building Broken does not reduce the theoretical total used for this limit.",
             "Use the board’s per-member assignment counts to check how those available placements are being used.",
           ],
+          note: "This calculation sets the **enforced defense-scroll limit per member**: 3 or 4 assignments. If any member has more than this limit, the website blocks **Notify Members** from sending assignment messages. Reduce or reassign their extra placements, then run **Validate** again before sending.",
         },
       ],
     },
@@ -256,14 +215,59 @@ export const generalGuide: GuideDocument = {
           note: "Removing a participant clears their position assignments, attack day, and reserve state for this siege. It does not deactivate their main clan record.",
         },
         {
-          title: "Choose and pin an attack day",
+          title: "Assign and pin attack days",
+          location: "Open a Planning siege → Members",
           steps: [
             "On a member’s row, choose **Day 1** or **Day 2** from **Attack Day**. A dash clears the assigned day. The change saves immediately.",
             "Tick **Override (Pinned)** if automatic day assignment must preserve that member’s chosen day. Leave it unticked if the automatic process may choose their day.",
             "Run **Auto-Assign Attack Days** to see a **preview**. Read the Day 1 and Day 2 lists, including the pinned choices.",
             "Choose **Apply** to use the preview or **Cancel** to leave it unapplied. Check the member table afterward.",
           ],
+          resultTitle: "Included in the Discord assignment message",
+          result:
+            "When you use **Notify Members**, the bot’s personal Discord message includes the member’s **Attack Day**.",
           note: "Pinned means a protected attack-day choice. It does not protect a building placement from every editing control.",
+        },
+        {
+          id: "automatic-attack-days",
+          title: "How automatic attack days are chosen",
+          paragraphs: [
+            "The automatic assignment aims for at least **10 Day 2 members**. Follow the chart from top to bottom; pinned choices take priority over the automatic rules.",
+          ],
+          tables: [
+            {
+              caption: "Automatic attack-day decision chart",
+              columns: ["Step", "Check", "What happens"],
+              rows: [
+                [
+                  "1",
+                  "Is the member pinned?",
+                  "Keep their chosen day. Members pinned to Day 2 count toward the target of 10.",
+                ],
+                [
+                  "2",
+                  "Unpinned Heavy Hitter or Advanced?",
+                  "Assign them to Day 2, even if this takes Day 2 above 10 members.",
+                ],
+                [
+                  "3",
+                  "Still fewer than 10 on Day 2?",
+                  "Add unpinned Medium members, highest player power first, until Day 2 reaches 10 or no Medium members remain.",
+                ],
+                [
+                  "4",
+                  "Still fewer than 10?",
+                  "Add unpinned Novices, highest player power first, until Day 2 reaches 10 or no Novices remain.",
+                ],
+                [
+                  "5",
+                  "Who is left?",
+                  "Assign all remaining unpinned members to Day 1.",
+                ],
+              ],
+            },
+          ],
+          note: "10 is a minimum target, not a maximum. If too few participants are available after keeping pinned days, Day 2 may still have fewer than 10 members. Review the preview before applying it.",
         },
         {
           title: "Record reserve sets",
@@ -272,6 +276,9 @@ export const generalGuide: GuideDocument = {
             "Use **Auto-Assign Reserves** if you want the website to set reserve flags automatically. This action applies directly; review the resulting checkboxes afterward.",
             "Tell the members what their reserve responsibilities mean for this siege, especially if the flags changed.",
           ],
+          resultTitle: "Included in the Discord assignment message",
+          result:
+            "When you use **Notify Members**, the bot’s personal Discord message includes the member’s reserve-set status, shown as **Have Reserve Set**.",
           note: "A member’s Reserve Set checkbox and a board position marked RESERVE describe different things. Check both when preparing the backup plan.",
         },
       ],
@@ -303,13 +310,33 @@ export const generalGuide: GuideDocument = {
             "Choose **Mark RESERVE** to replace the current occupant with a reserve placeholder. This removes the named member from that position.",
             "Check the board after either action. These changes save immediately. To put a named member back, drag their name onto the position again.",
           ],
+          note: "Marking a position **RESERVE** means you intend it to be filled by Raid’s **in-game reserve system**. Raid selects reserve teams randomly from the reserve pool, so marking the slot does **not guarantee it will be filled** or which team will fill it.",
         },
         {
+          id: "role-labels",
           title: "Read counts and role labels",
           paragraphs: [
             "The member list shows how many assignments each person has. An over-limit count is a reason to inspect their placements and run validation.",
-            "**HH**, **Adv**, **Med**, and **Nov** abbreviate Heavy Hitter, Advanced, Medium, and Novice. They match the strength categories in the main roster.",
             "Use each building’s heading, group, and position numbers when describing an issue to another planner. This avoids confusion when the same person fills several slots.",
+            "The board’s role colors and abbreviations match the strength categories in the main roster:",
+          ],
+          tables: [
+            {
+              caption: "Board role colors and abbreviations",
+              columns: ["Role", "Abbreviation", "Color"],
+              rows: [
+                ["Heavy Hitter", "HH", "Red"],
+                ["Advanced", "Adv", "Amber (gold)"],
+                ["Medium", "Med", "Green"],
+                ["Novice", "Nov", "Blue"],
+              ],
+              colorSwatches: {
+                Red: "bg-red-500",
+                "Amber (gold)": "bg-amber-500",
+                Green: "bg-green-500",
+                Blue: "bg-blue-400",
+              },
+            },
           ],
         },
       ],
@@ -335,13 +362,31 @@ export const generalGuide: GuideDocument = {
           title: "Check the whole plan",
           location:
             "Board → Validate, or Settings → Validation → Run Validation",
+          tables: [
+            {
+              caption: "Errors, warnings, and finalizing the plan",
+              columns: ["Result", "What it means", "Effect on finalizing"],
+              rows: [
+                [
+                  "Error",
+                  "A problem that must be fixed, such as a member exceeding their scroll limit or missing an attack day.",
+                  "Blocks Start Siege and Notify Members until all errors are fixed.",
+                ],
+                [
+                  "Warning",
+                  "Something to review, such as empty positions or fewer than 10 Day 2 attackers.",
+                  "Does not block Start Siege or Notify Members. Correct unintended issues; you can proceed if the warning reflects your intended plan.",
+                ],
+              ],
+            },
+          ],
           steps: [
             "Run validation after the main edits and again before sharing the plan.",
-            "Read each **Error** and **Warning**, including its member or building details. Errors block starting a siege and sending assignment DMs. Warnings need a planner’s review.",
+            "Read each **Error** and **Warning**, including its member or building details. Use the table above to see what must be fixed and what needs review.",
             "Correct the cited issue in the appropriate screen: building levels or broken flags in Settings; participation and days in Members; placements on Board; post restrictions on Posts.",
             "Run validation again. **No issues found.** means the check has no errors or warnings to report; still confirm that the plan matches the clan’s intentions.",
           ],
-          note: "If the plan changes after a preview or validation result, review or validate the updated plan. A previous result describes what was checked at that time.",
+          note: "Before finalizing, resolve every error and review every warning. Warnings alone do not stop you from starting the siege or sending assignment messages. If you change the plan afterward, run validation again so the result reflects the updated plan.",
         },
       ],
     },
@@ -375,20 +420,30 @@ export const generalGuide: GuideDocument = {
     },
     {
       id: "post-assignments",
-      images: guideScreenshots["post-assignments"],
-      title: "11. Assign posts & review suggestions",
+      images: guideScreenshots["post-assignments"].slice(0, 1),
+      title: "Assign posts manually",
       summary:
-        "Choose a member and matched condition manually, or review a full set of suggested post placements.",
+        "Choose a member and matched condition for one post, or mark a post for a reserve.",
       tasks: [
         {
           title: "Assign one post manually",
           location: "Open a Planning siege → Board → Posts",
+          images: guideScreenshots["post-expanded"],
           steps: [
             "Expand the post you want to fill. Read its active conditions and the current assigned member or reserve status.",
             "Review the member choices and their matching preferences. If more than one condition is offered for a member, choose the intended matching condition.",
-            "Choose **Assign** beside that member. If a duplicate-condition warning appears, review the other post it names. Use **Confirm anyway** only if repeating the condition is intentional.",
+            "Choose **Assign** beside that member. If a warning appears, follow the **Duplicate condition warning** guidance below.",
             "Check the member and matched condition shown on the post after it updates. Assign saves immediately and clears that position’s reserve status.",
           ],
+          callout: {
+            title: "Duplicate condition warning",
+            paragraphs: [
+              "This warns that **the same member is already matched to the same condition at another post**. The amber post number beside a condition identifies that other assignment. Different members can use the same condition without triggering this warning.",
+              "Choosing **Assign** for that repeated match shows **Already matched on…** and replaces Assign with **Cancel** and **Confirm anyway**. The new assignment has not been saved yet.",
+              "Choose **Cancel** to review the other post, then select a different matching condition or another member. Use **Confirm anyway** only when you intend to repeat that member’s condition at both posts. It saves the new assignment without removing the other one.",
+            ],
+            images: guideScreenshots["post-duplicate-warning"],
+          },
           note: "Use **Edit conditions** in a post’s expanded view to open its condition editor. Setting conditions and choosing the assigned member are separate actions.",
         },
         {
@@ -398,6 +453,61 @@ export const generalGuide: GuideDocument = {
             "Check that the post now shows the reserve placeholder instead of a named member.",
             "To replace the placeholder later, choose a member and use **Assign**. Recheck their matched condition.",
           ],
+        },
+      ],
+    },
+    {
+      id: "post-suggestions",
+      images: guideScreenshots["post-assignments"].slice(1),
+      title: "Automatic post assignments",
+      summary:
+        "Understand how suggestions are chosen, review the preview, and apply the changes you want.",
+      tasks: [
+        {
+          id: "automatic-post-rules",
+          title: "How automatic post assignments are chosen",
+          paragraphs: [
+            "Follow this chart for each post. Suggestions use the siege’s current priorities, conditions, and participants, together with the members’ saved post preferences.",
+          ],
+          tables: [
+            {
+              caption: "Automatic post-assignment decision chart",
+              columns: ["Step", "Check", "What happens"],
+              rows: [
+                [
+                  "1",
+                  "Which post goes first?",
+                  "High priority, then Medium, then Low. Within the same priority, the lower post number goes first.",
+                ],
+                [
+                  "2",
+                  "Can this post receive a suggestion?",
+                  "Ignore broken buildings. Skip reserve or disabled positions, missing positions, and posts with no current conditions.",
+                ],
+                [
+                  "3",
+                  "Who matches its conditions?",
+                  "Consider active siege participants with a matching saved preference. The same member-and-condition combination cannot be used twice in this preview.",
+                ],
+                [
+                  "4",
+                  "No suitable member available?",
+                  "Leave the post without a suggestion and show why it was skipped. Continue to the next post.",
+                ],
+                [
+                  "5",
+                  "Which suitable member is chosen?",
+                  "Prefer the current occupant if they still qualify. Otherwise, prefer fewer assignments; if tied, choose by name alphabetically.",
+                ],
+                [
+                  "6",
+                  "What changes for the next post?",
+                  "Record the chosen member and an unused matching condition. Count this suggestion alongside their existing assignments before considering the next post.",
+                ],
+              ],
+            },
+          ],
+          note: "High priority does not guarantee a match. Strength roles and player power do not rank post suggestions. The preview only changes assignments after you review it and choose Apply.",
         },
         {
           title: "Review suggested post assignments",
@@ -425,8 +535,15 @@ export const generalGuide: GuideDocument = {
       images: guideScreenshots["priorities"],
       title: "12. Set shared post priorities",
       summary:
-        "Maintain the clan’s priority map and descriptive notes, and browse the full condition reference.",
+        "Set shared post priorities and location notes, and browse the condition reference.",
       tasks: [
+        {
+          title: "What post priority is used for",
+          paragraphs: [
+            "Choose **Low**, **Medium**, or **High** to set a post’s priority. This affects automatic post assignments and is displayed when you set post conditions and assign members during a siege.",
+            "See **Siege Management → Automatic post assignments** for how automatic assignments use priority.",
+          ],
+        },
         {
           title: "Choose priority and description for a post",
           location: "Top menu → Posts → Priorities",
@@ -435,16 +552,20 @@ export const generalGuide: GuideDocument = {
             "Enter a useful location description, such as “Near Mana Shrine 1”. Click or tab out of the description field to save the edited text.",
             "Check the values before leaving and review them when preparing the next siege.",
           ],
-          note: "This top-menu page is shared planning configuration. It is separate from a siege’s Posts tab, where you enter that siege’s conditions. Recheck the siege’s displayed priorities when creating or cloning a plan.",
+          note: "Shared priorities are copied into new or cloned sieges. Changes here do not update existing sieges.",
         },
         {
           title: "Browse all available conditions",
           location: "Top menu → Posts → Conditions",
+          paragraphs: [
+            "This page is **purely for reference**. It lists the available post conditions so you can read their requirements; viewing it does not change a member’s preferences or a siege’s conditions.",
+          ],
+          images: guideScreenshots["conditions-reference"],
           steps: [
             "Choose **Conditions** to see the reference list.",
             "Switch **Group by: Level / Type** to browse the descriptions in the way you find easiest.",
-            "Use the reference to understand a condition before recording a member’s preference or choosing a post’s current restrictions.",
           ],
+          note: "If new conditions need to be added in the future, a **database administrator** must add them. Conditions cannot be added or edited from this reference page.",
         },
       ],
     },
@@ -505,14 +626,7 @@ export const generalGuide: GuideDocument = {
           ],
           note: "Avoid repeatedly sending the whole batch while investigating one failure: members who received the first batch may get duplicate messages. Check the result and coordinate any resend.",
         },
-        {
-          title: "Help a member who did not receive a DM",
-          steps: [
-            "Check their saved Discord username and account match on the main roster. Correct a missing or incorrect record before sending again.",
-            "Ask them to check Discord message requests, allow direct messages from server members in that server’s privacy settings, and confirm that they have not blocked the bot.",
-            "Read the website’s delivery result. If the service reported an error or an unknown result, ask the website manager to investigate before a broad resend.",
-          ],
-        },
+
         {
           title: "What members do in Discord",
           paragraphs: [
@@ -593,15 +707,6 @@ export const generalGuide: GuideDocument = {
             "Check the post’s active conditions, member preferences, participant list, disabled position, and reserve marker. Save any condition or preference edits before refreshing suggestions.",
             "A member with no matching preference may need their preferences reviewed. If the team is suitable despite a missing match, the planner should verify the placement rather than assuming a suggestion is a guarantee.",
           ],
-        },
-        {
-          title: "Tell the website manager what happened",
-          steps: [
-            "Include the siege date, screen or tab, and the button or action you used.",
-            "Copy the visible error text or share a screenshot that helps locate the problem. Include the member, building, group, and position when relevant.",
-            "Use **System** in the top menu to find the displayed component versions if asked. The changelog menu in the header shows what changed in releases.",
-          ],
-          note: "If an edit failed, do not assume it saved. Reload the relevant record and verify the visible result before telling the clan that the plan changed.",
         },
       ],
     },

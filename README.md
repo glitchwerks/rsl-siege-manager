@@ -11,13 +11,16 @@ A comprehensive web utility for coordinating Raid Shadow Legends clan siege assi
 
 ## Usage guides
 
-Open `/guide` on your instance for the public **General Usage Guide**. It covers
-the website and core Discord bot, with searchable steps for roster management,
-siege planning, post assignments, comparison, lifecycle, and message delivery.
+Open `/guide` on your instance for the public **General Usage Guide**. It is
+split into four pages: **Quick Start** (`/guide`), **Clan Management**
+(`/guide/clan-management`), **Siege Management** (`/guide/siege-management`), and
+**FAQ and Troubleshooting** (`/guide/faq`). Each page has searchable subsections.
+One shared sidebar links the pages, tracks the current subsection, and can be
+expanded or minimized on computers and phones. The browser remembers the chosen
+navigation size. Older `/guide#topic` links open the appropriate page.
 Captioned screenshots show the actual website with fictional demo members;
-click an image to enlarge it. A sticky desktop sidebar tracks the current topic,
-and a searchable topic menu provides navigation on phones. The home page,
-sign-in page, and application menu link to the guide.
+click an image to enlarge it. The home page, sign-in page, and application menu
+link to the guide.
 
 The separate `/guide/mom-bot` officer reference is specific to **Master's Of
 Magicka**. Its content is served by an authenticated backend endpoint, rather

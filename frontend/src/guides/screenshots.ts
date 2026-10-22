@@ -2,6 +2,28 @@ import type { GuideImage } from "./types";
 
 // Captured from the actual website with fictional, isolated demo data.
 export const guideScreenshots: Record<string, GuideImage[]> = {
+  navigation: [
+    {
+      src: "/guide-images/top-menu.jpg",
+      title: "Top menu — the whole clan",
+      alt: "Top navigation bar with Sieges, Members, Posts, Guide, and System.",
+      caption:
+        "Use this bar to move between the clan’s main pages. Members here opens the main clan roster.",
+      width: 1280,
+      height: 720,
+      previewCrop: { top: 0, height: 58 },
+    },
+    {
+      src: "/guide-images/siege-menu.jpg",
+      title: "Siege menu — the event you opened",
+      alt: "Siege navigation bar with Board, Posts, Members, Compare, and Settings; Board is selected.",
+      caption:
+        "This second bar appears after you open a siege. Its Members tab applies only to that siege. Enlarge the image to see the siege date below the bar.",
+      width: 1265,
+      height: 712,
+      previewCrop: { top: 58, height: 66 },
+    },
+  ],
   "read-plan": [
     {
       src: "/guide-images/sieges.jpg",
@@ -130,6 +152,42 @@ export const guideScreenshots: Record<string, GuideImage[]> = {
         "Priority changes save immediately; a description saves when you leave its field.",
       width: 1280,
       height: 850,
+    },
+  ],
+  "post-expanded": [
+    {
+      src: "/guide-images/post-expanded-multiple.jpg",
+      title: "Expand a post to assign a member",
+      alt: "Post 1 expanded with three active conditions. Alex has three matching condition choices, while Blair and Casey each have two, with an Assign button for each member.",
+      caption:
+        "Alex matches all three conditions; Blair and Casey each match two. Choose one matching condition beside the intended member, then use that member’s Assign button.",
+      width: 1265,
+      height: 1374,
+      previewCrop: { top: 360, height: 560 },
+    },
+  ],
+  "post-duplicate-warning": [
+    {
+      src: "/guide-images/post-duplicate-warning.jpg",
+      title: "Review a duplicate condition before confirming",
+      alt: "Alex’s ATK condition at Post 1 is marked Post 2. An Already matched warning appears with Cancel and Confirm anyway buttons, alongside alternative Magic and Void condition choices.",
+      caption:
+        "Alex is already matched to the ATK condition at Post 2. Trying the same match at Post 1 pauses for confirmation; Magic and Void are alternative matches in this example.",
+      width: 1265,
+      height: 1404,
+      previewCrop: { top: 360, height: 260 },
+    },
+  ],
+  "conditions-reference": [
+    {
+      src: "/guide-images/conditions-reference.jpg",
+      title: "Post conditions reference",
+      alt: "Posts page with the Conditions tab selected, a read-only list of champion restrictions, and Level and Type grouping controls.",
+      caption:
+        "The Conditions tab is a reference list. Use Level or Type to change how the list is grouped.",
+      width: 1280,
+      height: 720,
+      previewCrop: { top: 0, height: 530 },
     },
   ],
   compare: [
