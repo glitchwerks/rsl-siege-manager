@@ -22,7 +22,7 @@ async def can_view_mom_bot_guide(user: AuthenticatedUser, *, timeout: float | No
     if user.is_service:
         return False
     if settings.dev_guild_guide_preview:
-        return settings.environment == "development" and (
+        return settings.environment in {"development", "dev"} and (
             settings.auth_disabled or (user.member_id is not None and bool(user.discord_id))
         )
 

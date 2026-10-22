@@ -50,7 +50,8 @@ local development user. With OAuth enabled, normal website sign-in is still
 required. The preview bypasses guild, officer-role, and empty guide settings;
 service tokens remain excluded. The guide link appears automatically in navigation.
 The option defaults to `false`, and the backend refuses to start with it enabled
-outside `ENVIRONMENT=development`. Set it back to `false` to restore normal guide
+outside `ENVIRONMENT=development` or the hosted developer value `ENVIRONMENT=dev`.
+Set it back to `false` to restore normal guide
 access. Apply backend configuration through your developer instance's usual
 startup or deployment process.
 

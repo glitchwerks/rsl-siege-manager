@@ -285,9 +285,14 @@ async def test_developer_preview_fails_closed_outside_development(monkeypatch, e
 
 
 @pytest.mark.asyncio
-async def test_developer_preview_startup_warns_and_allows_development(monkeypatch, caplog):
-    monkeypatch.setattr(settings, "environment", "development")
-    monkeypatch.setattr(settings, "auth_disabled", True)
+@pytest.mark.parametrize("environment,auth_disabled", [("development", True), ("dev", False)])
+async def test_developer_preview_startup_warns_and_allows_development(
+    monkeypatch, caplog, environment, auth_disabled
+):
+    monkeypatch.setattr(settings, "environment", environment)
+    monkeypatch.setattr(settings, "auth_disabled", auth_disabled)
+    monkeypatch.setattr(settings, "session_secret", "test-session-secret")
+    monkeypatch.setattr(settings, "bot_service_token", "test-service-token")
     monkeypatch.setattr(settings, "dev_guild_guide_preview", True)
     async with app.router.lifespan_context(app):
         pass
