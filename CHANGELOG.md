@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Added a public General Usage Guide at `/guide` split into Quick Start, Clan Management, Siege Management, and FAQ and Troubleshooting pages with searchable subsections, covering roster and preferences, creating and cloning sieges, buildings, participation and attack days, reserves, manual and suggested assignments, validation, comparison, lifecycle, and Discord delivery.
 - Illustrated the guide with 18 website screenshots using fictional demo data, captions, and an accessible enlarged-image viewer. Added one shared sidebar with page links, current-subsection tracking, and a remembered expand/minimize control for computers and phones. Older section links open the appropriate guide page.
-- Separated mom-bot instructions into `/guide/mom-bot`, visible only to authenticated officers of Master's Of Magicka with server-verified access. Private instructions are fetched from the protected backend instead of embedded in public assets.
+- Separated mom-bot instructions into `/guide/mom-bot`, visible only to authenticated officers of Master's Of Magicka with server-verified access. Private instructions are fetched from the protected backend instead of embedded in public assets. Direct visits always request the protected endpoint for signed-in users, even if the optional navigation access lookup timed out.
 
 ### Infrastructure
 

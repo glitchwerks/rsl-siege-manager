@@ -47,7 +47,7 @@ describe("Private guide route", () => {
     expect(screen.queryByText("Private content")).not.toBeInTheDocument();
   });
 
-  it("does not request content for an account without server-granted access", async () => {
+  it("requests authoritative access even when the optional identity hint is false", async () => {
     const request = vi.fn();
     server.use(
       http.get("/api/auth/me", () => HttpResponse.json(identity(false))),
@@ -58,9 +58,21 @@ describe("Private guide route", () => {
     );
     openGuide();
     expect(
+      await screen.findByRole("heading", { name: "Private officer reference" })
+    ).toBeInTheDocument();
+    expect(request).toHaveBeenCalledOnce();
+  });
+
+  it("denies content when the protected endpoint rejects a false identity hint", async () => {
+    server.use(
+      http.get("/api/auth/me", () => HttpResponse.json(identity(false))),
+      http.get("/api/guides/mom-bot", () => new HttpResponse(null, { status: 403 }))
+    );
+    openGuide();
+    expect(
       await screen.findByRole("heading", { name: "Guide unavailable" })
     ).toBeInTheDocument();
-    expect(request).not.toHaveBeenCalled();
+    expect(screen.queryByText("Private content")).not.toBeInTheDocument();
   });
 
   it("loads officer content from the protected endpoint", async () => {

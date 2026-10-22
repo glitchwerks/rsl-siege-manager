@@ -8,20 +8,21 @@ import type { GuideDocument as Document } from "../guides/types";
 
 export default function MomBotGuidePage() {
   const { user } = useAuth();
-  const allowed = user?.guides?.mom_bot === true;
+  // The identity capability advertises navigation; this endpoint decides access.
+  const signedIn = user !== null;
   const { data, isPending, error, refetch } = useQuery({
     queryKey: ["private-guide", "mom-bot", user?.member_id],
     queryFn: async () =>
       (await apiClient.get<Document>("/api/guides/mom-bot")).data,
-    enabled: allowed,
+    enabled: signedIn,
     retry: false,
     staleTime: 0,
     gcTime: 0,
   });
 
-  if (allowed && data && !error) return <GuideDocument document={data} />;
+  if (signedIn && data && !error) return <GuideDocument document={data} />;
   const denied =
-    !allowed || (isAxiosError(error) && error.response?.status === 403);
+    !signedIn || (isAxiosError(error) && error.response?.status === 403);
   return (
     <main className="mx-auto max-w-xl space-y-4 px-6 py-12">
       <h1 className="text-2xl font-bold">
