@@ -158,7 +158,10 @@ export const guidePages: GuidePageDefinition[] = [
 
 export const guideSectionPaths = Object.fromEntries(
   guidePages.flatMap((page) =>
-    page.sections.map((item) => [item.id, page.href])
+    page.sections.flatMap((item) => [
+      [item.id, page.href],
+      ...item.tasks.flatMap((task) => task.id ? [[task.id, page.href]] : []),
+    ])
   )
 );
 // Keep older links to the former troubleshooting section useful.

@@ -145,6 +145,19 @@ describe("Public General Usage Guide", () => {
     expect(HTMLElement.prototype.scrollIntoView).toHaveBeenCalled();
   });
 
+  it.each(
+    guidePages.flatMap((page) => page.sections.flatMap((section) =>
+      section.tasks.filter((task) => task.id).map((task) => ({
+        id: task.id!, title: task.title, pageTitle: page.title,
+      }))
+    ))
+  )("redirects the older nested topic link #$id to its page and anchor", ({ id, title, pageTitle }) => {
+    renderGuide(`/guide#${id}`);
+    expect(screen.getByRole("heading", { name: pageTitle, level: 1 })).toBeInTheDocument();
+    expect(document.getElementById(id)).toHaveTextContent(title);
+    expect(HTMLElement.prototype.scrollIntoView).toHaveBeenCalled();
+  });
+
   it("searches within a page and restores its topics", async () => {
     renderGuide("/guide/siege-management");
     const user = userEvent.setup();
