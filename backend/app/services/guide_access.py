@@ -13,16 +13,22 @@ logger = logging.getLogger(__name__)
 
 
 async def can_view_mom_bot_guide(user: AuthenticatedUser, *, timeout: float | None = None) -> bool:
-    """Require a real session, the explicitly configured guild, and a live officer role.
+    """Check normal guild access or an explicitly enabled developer preview.
 
-    Strength categories in Member.role are intentionally irrelevant. Development
-    bypass users and service tokens never unlock this guide. A failed or malformed
-    Discord lookup denies access rather than trusting a stale login-time role.
+    Strength categories in Member.role are intentionally irrelevant. Service tokens
+    never unlock this guide. Development preview explicitly bypasses guild/role
+    checks for browser users; otherwise a failed or malformed lookup denies access.
     """
+    if user.is_service:
+        return False
+    if settings.dev_guild_guide_preview:
+        return settings.environment in {"development", "dev"} and (
+            settings.auth_disabled or (user.member_id is not None and bool(user.discord_id))
+        )
+
     target = settings.mom_bot_guide_guild_id.strip()
     if (
         settings.auth_disabled
-        or user.is_service
         or user.member_id is None
         or not user.discord_id
         or not target

@@ -23,6 +23,7 @@ MEMBER = {
 @pytest.fixture(autouse=True)
 def guide_settings(monkeypatch):
     monkeypatch.setattr(settings, "auth_disabled", False)
+    monkeypatch.setattr(settings, "dev_guild_guide_preview", False)
     monkeypatch.setattr(settings, "bot_service_token", "")
     monkeypatch.setattr(settings, "discord_guild_id", "123456789")
     monkeypatch.setattr(settings, "mom_bot_guide_guild_id", "123456789")
@@ -215,3 +216,85 @@ async def test_failed_lookup_logs_diagnostics_without_member_data(caplog, malfor
     assert USER.discord_id not in caplog.text
     assert secret not in caplog.text
     assert all(record.exc_info is None for record in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_developer_preview_unlocks_navigation_and_content_for_local_user(monkeypatch):
+    monkeypatch.setattr(settings, "environment", "development")
+    monkeypatch.setattr(settings, "auth_disabled", True)
+    monkeypatch.setattr(settings, "dev_guild_guide_preview", True)
+    monkeypatch.setattr(settings, "mom_bot_guide_guild_id", "")
+    monkeypatch.setattr(settings, "mom_bot_guide_officer_roles", "")
+    with patch("app.services.guide_access.bot_client.get_member", new=AsyncMock()) as lookup:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            identity = await client.get("/api/auth/me")
+            content = await client.get("/api/guides/mom-bot")
+    assert identity.status_code == 200
+    assert identity.json()["guides"]["mom_bot"] is True
+    assert content.status_code == 200
+    assert "member-notify-add" in content.text
+    assert "no-store" in content.headers["cache-control"]
+    lookup.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("environment", ["development", "dev"])
+async def test_developer_preview_allows_signed_in_user_from_another_guild(
+    monkeypatch, officer_session, environment
+):
+    monkeypatch.setattr(settings, "environment", environment)
+    monkeypatch.setattr(settings, "dev_guild_guide_preview", True)
+    monkeypatch.setattr(settings, "mom_bot_guide_guild_id", "another-guild")
+    with patch("app.services.guide_access.bot_client.get_member", new=AsyncMock()) as lookup:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            identity = await client.get("/api/auth/me")
+            content = await client.get("/api/guides/mom-bot")
+    assert identity.json()["guides"]["mom_bot"] is True
+    assert content.status_code == 200
+    lookup.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("auth_disabled", [False, True])
+async def test_developer_preview_never_grants_service_principals_access(monkeypatch, auth_disabled):
+    monkeypatch.setattr(settings, "environment", "development")
+    monkeypatch.setattr(settings, "auth_disabled", auth_disabled)
+    monkeypatch.setattr(settings, "dev_guild_guide_preview", True)
+    assert await can_view_mom_bot_guide(replace(USER, is_service=True)) is False
+
+
+@pytest.mark.asyncio
+async def test_developer_preview_still_requires_login_when_oauth_is_enabled(monkeypatch):
+    monkeypatch.setattr(settings, "environment", "development")
+    monkeypatch.setattr(settings, "dev_guild_guide_preview", True)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/guides/mom-bot")
+    assert response.status_code == 401
+    assert await can_view_mom_bot_guide(replace(USER, member_id=None)) is False
+    assert await can_view_mom_bot_guide(replace(USER, discord_id=None)) is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("environment", ["production", "staging", "Development", ""])
+async def test_developer_preview_fails_closed_outside_development(monkeypatch, environment):
+    monkeypatch.setattr(settings, "environment", environment)
+    monkeypatch.setattr(settings, "dev_guild_guide_preview", True)
+    assert await can_view_mom_bot_guide(USER) is False
+    with pytest.raises(RuntimeError, match="DEV_GUILD_GUIDE_PREVIEW=true is not permitted"):
+        async with app.router.lifespan_context(app):
+            pass
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("environment,auth_disabled", [("development", True), ("dev", False)])
+async def test_developer_preview_startup_warns_and_allows_development(
+    monkeypatch, caplog, environment, auth_disabled
+):
+    monkeypatch.setattr(settings, "environment", environment)
+    monkeypatch.setattr(settings, "auth_disabled", auth_disabled)
+    monkeypatch.setattr(settings, "session_secret", "test-session-secret")
+    monkeypatch.setattr(settings, "bot_service_token", "test-service-token")
+    monkeypatch.setattr(settings, "dev_guild_guide_preview", True)
+    async with app.router.lifespan_context(app):
+        pass
+    assert "browser users can preview guild guides" in caplog.text

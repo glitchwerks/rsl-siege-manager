@@ -47,6 +47,16 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan — runs startup guards before serving requests."""
+    if settings.dev_guild_guide_preview:
+        if settings.environment not in {"development", "dev"}:
+            raise RuntimeError(
+                "DEV_GUILD_GUIDE_PREVIEW=true is not permitted outside development. "
+                f"Current environment: {settings.environment}"
+            )
+        logger.warning(
+            "DEV_GUILD_GUIDE_PREVIEW=true: browser users can preview guild guides "
+            "without guild membership or officer roles"
+        )
     if settings.auth_disabled and settings.environment != "development":
         raise RuntimeError(
             "AUTH_DISABLED=true is not permitted outside development. "

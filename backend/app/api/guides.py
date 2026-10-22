@@ -14,7 +14,7 @@ async def mom_bot_guide(
     response: Response,
     user: AuthenticatedUser = Depends(get_current_user),
 ) -> dict:
-    """Serve instructions only to a verified officer in the configured guild."""
+    """Serve instructions to verified guild officers or opted-in developer previews."""
     response.headers["Cache-Control"] = "private, no-store"
     response.headers["Vary"] = "Cookie, Authorization"
     if not await can_view_mom_bot_guide(user):
