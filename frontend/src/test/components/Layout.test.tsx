@@ -48,9 +48,7 @@ describe("Layout demo banner", () => {
   });
 
   it("does not show the demo banner when /api/config returns an error (fail-closed)", async () => {
-    server.use(
-      http.get("/api/config", () => HttpResponse.error())
-    );
+    server.use(http.get("/api/config", () => HttpResponse.error()));
 
     renderLayout();
 
@@ -58,5 +56,37 @@ describe("Layout demo banner", () => {
     await waitFor(() => {
       expect(screen.queryByText(/demo mode/i)).not.toBeInTheDocument();
     });
+  });
+});
+
+describe("Private guide navigation", () => {
+  it("does not advertise guild-specific help without access", async () => {
+    renderLayout();
+    await screen.findByText("TestUser");
+    expect(
+      screen.queryByRole("link", { name: "mom-bot Guide" })
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Guide" })).toHaveAttribute(
+      "href",
+      "/guide"
+    );
+  });
+
+  it("shows the private guide only with the server-granted capability", async () => {
+    server.use(
+      http.get("/api/auth/me", () =>
+        HttpResponse.json({
+          member_id: 7,
+          name: "Officer",
+          role: "novice",
+          discord_id: "123",
+          guides: { mom_bot: true },
+        })
+      )
+    );
+    renderLayout();
+    expect(
+      await screen.findByRole("link", { name: "mom-bot Guide" })
+    ).toHaveAttribute("href", "/guide/mom-bot");
   });
 });

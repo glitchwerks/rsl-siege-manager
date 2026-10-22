@@ -15,6 +15,7 @@ from app.api.changelog import router as changelog_router
 from app.api.comparison import router as comparison_router
 from app.api.config import router as config_router
 from app.api.discord_sync import router as discord_sync_router
+from app.api.guides import router as guides_router
 from app.api.health import router as health_router
 from app.api.images import router as images_router
 from app.api.lifecycle import router as lifecycle_router
@@ -125,6 +126,7 @@ app.include_router(auth_router, prefix="/api")
 # Protected routes — require authentication
 _auth_deps = [Depends(get_current_user)]
 app.include_router(reference_router, prefix="/api", dependencies=_auth_deps)
+app.include_router(guides_router, prefix="/api", dependencies=_auth_deps)
 app.include_router(discord_sync_router, prefix="/api", dependencies=_auth_deps)
 app.include_router(members_router, prefix="/api", dependencies=_auth_deps)
 app.include_router(sieges_router, prefix="/api", dependencies=_auth_deps)

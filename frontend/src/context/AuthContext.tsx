@@ -13,6 +13,7 @@ interface AuthUser {
   name: string;
   role: string | null;
   discord_id: string | null;
+  guides?: { mom_bot: boolean };
 }
 
 interface AuthContextValue {

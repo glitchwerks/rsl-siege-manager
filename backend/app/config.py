@@ -46,6 +46,13 @@ class Settings(BaseSettings):
     # at OAuth callback with an insufficient_role error.
     discord_required_role: str = "Clan Deputies"
 
+    # Master’s Of Magicka's verified production guild. Other guilds cannot
+    # serve this guide. Empty disables it, including on the matching instance.
+    mom_bot_guide_guild_id: str = "1112031869337346184"
+    # Officer roles are independent of any broader website sign-in policy.
+    # Comma-separated, exact Discord role names; empty denies access.
+    mom_bot_guide_officer_roles: str = "Clan Deputies"
+
     # Comma-separated list of origins allowed by CORS middleware.
     # Default covers local dev frontend. In production set to your public domain,
     # e.g. "https://rslsiege.com" or "https://rslsiege.com,https://www.rslsiege.com".

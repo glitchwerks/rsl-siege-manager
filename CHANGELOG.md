@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### siege-api 1.5.0
+
+- Added authenticated officer-guide delivery and a guide-access flag on `/api/auth/me`. The mom-bot guide requires a real member session, the configured Master's Of Magicka guild, and a current Discord officer role; the optional identity lookup is bounded to 250 ms and logs sanitized failure diagnostics, while private content always requires a fresh role check; it denies access on lookup failures and is never enabled by development bypass or service tokens.
+
+### siege-frontend 1.6.0
+
+- Added a public General Usage Guide at `/guide` split into Quick Start, Clan Management, Siege Management, and FAQ and Troubleshooting pages with searchable subsections, covering roster and preferences, creating and cloning sieges, buildings, participation and attack days, reserves, manual and suggested assignments, validation, comparison, lifecycle, and Discord delivery.
+- Illustrated the guide with 18 website screenshots using fictional demo data, captions, and an accessible enlarged-image viewer. Added one shared sidebar with page links, current-subsection tracking, and a remembered expand/minimize control for computers and phones. Older section links open the appropriate guide page.
+- Separated mom-bot instructions into `/guide/mom-bot`, visible only to authenticated officers of Master's Of Magicka with server-verified access. Private instructions are fetched from the protected backend instead of embedded in public assets. Direct visits always request the protected endpoint for signed-in users, even if the optional navigation access lookup timed out.
+
 ### Infrastructure
 
 - **Portable sidecar acceptance preparation** — add separately gated read-only/full integration checks with fresh private evidence, strict target/authentication checks, bounded transport, overlap prevention and synthetic marked Discord messages. Live target approval, delivered-message/cleanup evidence and release workflow wiring remain separate (#430, #557).
