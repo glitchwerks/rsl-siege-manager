@@ -23,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Infrastructure
 
+- **Local portable pilot preparation** — add explicit localhost/internal-TLS gates, loopback-only guest proxy ports, a bounded Incus-agent tunnel, and separately confirmed owned-VM provisioning/tools/stop phases with shared-host baseline checks. Azure handoff, application activation and browser trust remain separate (#557, #430).
+
 - **Portable sidecar acceptance preparation** — add separately gated read-only/full integration checks with fresh private evidence, strict target/authentication checks, bounded transport, overlap prevention and synthetic marked Discord messages. Live target approval, delivered-message/cleanup evidence and release workflow wiring remain separate (#430, #557).
 
 - **Portable independent monitoring preparation** — add a separately gated fresh-observation exporter with empty HTTPS success/failure signals, private endpoint handling, and independent missed-signal/Slack activation guidance. No schedules, monitor accounts, notifications or live services are activated by this preparation (#557).
