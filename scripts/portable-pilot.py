@@ -5,6 +5,7 @@ No container execution, restart, deployment, database queries, notifications or
 Discord writes. PASS covers this observation only, never full pilot acceptance.
 """
 import argparse
+import importlib.util
 from datetime import datetime, timezone
 import http.client
 import json
@@ -18,6 +19,11 @@ import time
 import urllib.request
 from urllib.parse import urlsplit
 
+LOCAL_SPEC = importlib.util.spec_from_file_location("local_pilot_helpers", Path(__file__).with_name("local-pilot.py"))
+local = importlib.util.module_from_spec(LOCAL_SPEC)
+LOCAL_SPEC.loader.exec_module(local)
+
+TLS_CONTEXT = None
 MAX_JSON = 65536
 DOCKER = ["docker", "--host", "unix:///var/run/docker.sock"]
 INSPECT = '{"id":{{json .Id}},"project":{{json (index .Config.Labels "com.docker.compose.project")}},"service":{{json (index .Config.Labels "com.docker.compose.service")}},"image":{{json .Config.Image}},"running":{{json .State.Running}},"oom":{{json .State.OOMKilled}},"restarts":{{json .RestartCount}},"started_at":{{json .State.StartedAt}},"memory_limit":{{json .HostConfig.Memory}},"health":{{if index .State "Health"}}{{json .State.Health.Status}}{{else}}"none"{{end}},"public_host":{{if eq (index .Config.Labels "com.docker.compose.service") "proxy"}}{{range .Config.Env}}{{if eq (index (split . "=") 0) "PUBLIC_HOST"}}{{json (join (slice (split . "=") 1) "=")}}{{end}}{{end}}{{else}}null{{end}}}'
@@ -40,7 +46,7 @@ def private(path, directory=False):
             and meta.st_uid == os.geteuid() and not meta.st_mode & 0o077, "unsafe_private_path")
 
 
-def settings(path):
+def settings(path, local_pilot=False):
     private(path.parent, True)
     private(path)
     with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK), "rb") as source:
@@ -55,6 +61,7 @@ def settings(path):
             "invalid_configuration")
     require(cfg["topology"] in {"mom", "bundled"}
             and re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,62}", cfg["project"]), "invalid_configuration")
+    require(not local_pilot or (cfg["project"] == "rsl-siege-pilot" and cfg["topology"] == "mom"), "local_project_required")
     bot = "mom" if cfg["topology"] == "mom" else "bot"
     cfg["services"] = ["postgres", "backend", "frontend", "proxy", bot]
     require(set(cfg["images"]) == set(cfg["services"]) and all(
@@ -64,12 +71,12 @@ def settings(path):
             and all(isinstance(value, str) and re.fullmatch(r"[a-zA-Z0-9.+_-]{1,100}", value)
                     and value != "unknown" for value in cfg["versions"].values()), "invalid_versions")
     origin = urlsplit(cfg["origin"])
-    require(origin.scheme == "https" and origin.netloc == origin.hostname
+    require((local_pilot and cfg["origin"] == "https://localhost") or (not local_pilot and origin.scheme == "https" and origin.netloc == origin.hostname
             and not origin.path and not origin.query and not origin.fragment
             and re.fullmatch(r"[a-z0-9.-]+", origin.hostname or "")
             and "." in origin.hostname and not origin.hostname.endswith((".test", ".invalid", ".localhost"))
             and not any(origin.hostname == host or origin.hostname.endswith("." + host)
-                        for host in ("example.com", "example.net", "example.org")), "invalid_origin")
+                        for host in ("example.com", "example.net", "example.org"))), "invalid_origin")
     for name, low, high in (("samples", 2, 30), ("interval_seconds", 1, 10),
                             ("minimum_disk_bytes", 1024 ** 3, 1024 ** 5),
                             ("minimum_available_memory_bytes", 128 * 1024 ** 2, 1024 ** 4)):
@@ -121,7 +128,7 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 def endpoint(origin, route):
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect(), urllib.request.HTTPSHandler(context=TLS_CONTEXT))
     with opener.open(origin + route, timeout=budget(5)) as response:
         require(response.status == 200, "https_probe_failed")
         deadline = time.monotonic() + budget(10)
@@ -221,7 +228,11 @@ def main(argv=None):
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--report", type=Path, required=True)
     parser.add_argument("--confirm-readonly-pilot", action="store_true")
+    parser.add_argument("--local-pilot", action="store_true")
+    parser.add_argument("--ca-file", type=Path)
     args = parser.parse_args(argv)
+    global TLS_CONTEXT
+    TLS_CONTEXT = None
     report = {"schema": 1, "phase": "pilot-observation", "timestamp": datetime.now(timezone.utc).isoformat(),
               "checks": {}, "result": "STOP", "samples_completed": 0, "pilot_accepted": False}
     started = time.monotonic()
@@ -235,9 +246,14 @@ def main(argv=None):
             os.fsync(output.fileno())
             try:
                 require(args.confirm_readonly_pilot, "readonly_pilot_confirmation_required")
-                observe(settings(args.config), report)
-            except (Stop, OSError, ValueError, KeyError, TypeError, AttributeError, ArithmeticError, subprocess.SubprocessError, http.client.HTTPException, KeyboardInterrupt) as error:
-                report["error"] = str(error) if isinstance(error, Stop) else "observation_failed"
+                require(args.local_pilot or args.ca_file is None, "local_ca_requires_local_mode")
+                if args.local_pilot:
+                    TLS_CONTEXT = local.tls_context(args.ca_file)
+                    observe(settings(args.config, True), report)
+                else:
+                    observe(settings(args.config), report)
+            except (Stop, local.Stop, OSError, ValueError, KeyError, TypeError, AttributeError, ArithmeticError, subprocess.SubprocessError, http.client.HTTPException, KeyboardInterrupt) as error:
+                report["error"] = str(error) if isinstance(error, (Stop, local.Stop)) else "observation_failed"
             report["elapsed_seconds"] = round(time.monotonic() - started, 3)
             output.seek(0)
             output.truncate()
@@ -248,6 +264,7 @@ def main(argv=None):
     except (Stop, OSError):
         report["result"] = "STOP"
         report["error"] = "report_write_failed"
+    TLS_CONTEXT = None
     print(json.dumps(report))
     return 0 if report["result"] == "PASS" else 1
 

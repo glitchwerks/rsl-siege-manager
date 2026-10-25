@@ -1,0 +1,17 @@
+# Explicit isolated guest overlay only; never layer into Azure/production.
+name: rsl-siege-pilot
+services:
+  proxy:
+    environment:
+      PUBLIC_HOST: localhost
+    ports: !override ["127.0.0.1:80:80", "127.0.0.1:443:443"]
+  backend:
+    environment:
+      DISCORD_REDIRECT_URI: https://localhost:18443/api/auth/callback
+      ALLOWED_ORIGINS: https://localhost:18443
+      DAY_ROLE_SYNC_ENABLED: "false"
+  migrate-siege:
+    environment:
+      DISCORD_REDIRECT_URI: https://localhost:18443/api/auth/callback
+      ALLOWED_ORIGINS: https://localhost:18443
+      DAY_ROLE_SYNC_ENABLED: "false"
