@@ -3,6 +3,7 @@ import type { GuideDocument, GuideSection } from "./types";
 
 export interface GuidePageDefinition extends GuideDocument {
   href: string;
+  parentHref?: string;
 }
 
 function section(id: string): GuideSection {
@@ -160,7 +161,7 @@ export const guideSectionPaths = Object.fromEntries(
   guidePages.flatMap((page) =>
     page.sections.flatMap((item) => [
       [item.id, page.href],
-      ...item.tasks.flatMap((task) => task.id ? [[task.id, page.href]] : []),
+      ...item.tasks.flatMap((task) => (task.id ? [[task.id, page.href]] : [])),
     ])
   )
 );

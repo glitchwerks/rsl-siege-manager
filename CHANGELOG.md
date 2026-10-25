@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### siege-api 1.6.1
+
+- Added a protected reference for all ten mom-bot commands, including fields and permissions, plus a first-section feature/control overview, a UTC timetable for clan reminders, and administrator change-request instructions. Moved Discord account-matching help from preferences to troubleshooting.
+
+### siege-frontend 1.7.0
+
+- Added a separate private mom-bot Command Reference page at `/guide/mom-bot/commands`, with shared guide navigation and search. The page uses the same authenticated guide endpoint and developer-preview rules as the officer instructions.
+
 ### siege-api 1.6.0
 
 - Added opt-in `DEV_GUILD_GUIDE_PREVIEW` for developer instances to view guild-specific guides without guild membership or officer roles, including with the local development user. It defaults off, excludes service tokens, and refuses startup outside development. Normal guild restrictions remain in effect when preview is off.

@@ -1,13 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { isAxiosError } from "axios";
 import { useAuth } from "../context/AuthContext";
 import apiClient from "../api/client";
 import GuideDocument from "../components/GuideDocument";
 import type { GuideDocument as Document } from "../guides/types";
+import { guidePages } from "../guides/pages";
 
 export default function MomBotGuidePage() {
   const { user } = useAuth();
+  const { pathname } = useLocation();
   // The identity capability advertises navigation; this endpoint decides access.
   const signedIn = user !== null;
   const { data, isPending, error, refetch } = useQuery({
@@ -20,7 +22,36 @@ export default function MomBotGuidePage() {
     gcTime: 0,
   });
 
-  if (signedIn && data && !error) return <GuideDocument document={data} />;
+  if (signedIn && data && !error) {
+    const reference = data.sections.find(
+      (section) => section.id === "command-reference"
+    );
+    const guide = {
+      ...data,
+      sections: data.sections.filter((section) => section !== reference),
+    };
+    const commands: Document = {
+      title: "mom-bot Command Reference",
+      audience: data.audience,
+      intro: "All mom-bot slash commands, their fields, and who can use them.",
+      sections: reference ? [reference] : [],
+    };
+    const navigationPages = [
+      ...guidePages,
+      { ...guide, href: "/guide/mom-bot" },
+      {
+        ...commands,
+        href: "/guide/mom-bot/commands",
+        parentHref: "/guide/mom-bot",
+      },
+    ];
+    return (
+      <GuideDocument
+        document={pathname === "/guide/mom-bot/commands" ? commands : guide}
+        navigationPages={navigationPages}
+      />
+    );
+  }
   const denied =
     !signedIn || (isAxiosError(error) && error.response?.status === 403);
   return (

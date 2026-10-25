@@ -36,6 +36,46 @@ export default function GuideSidebar({
       nav.scrollTop += linkRect.bottom - navRect.bottom;
   }, [activeId]);
 
+  function renderPage(page: GuidePageDefinition) {
+    const children = pages.filter((child) => child.parentHref === page.href);
+    return (
+      <li key={page.href}>
+        <Link
+          to={page.href}
+          aria-current={page.href === currentPath ? "page" : undefined}
+          onClick={() => onNavigate()}
+          className={`block rounded-md px-3 py-2 font-semibold ${page.href === currentPath ? "bg-violet-100 text-violet-950" : "text-slate-700 hover:bg-slate-100"}`}
+        >
+          {page.title}
+        </Link>
+        {page.href === currentPath && (
+          <ul className="ml-3 mt-1 space-y-1 border-l border-slate-200">
+            {sections.map(({ id, title }) => (
+              <li key={id}>
+                <Link
+                  to={`${currentPath}#${id}`}
+                  aria-current={activeId === id ? "location" : undefined}
+                  onClick={() => onNavigate(id)}
+                  className={`block rounded-r-md border-l-2 px-3 py-2 leading-snug ${activeId === id ? "border-violet-600 bg-violet-50 font-semibold text-violet-900" : "border-transparent text-slate-600 hover:bg-slate-100"}`}
+                >
+                  {title}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+        {children.length > 0 && (
+          <ul
+            aria-label={`${page.title} subpages`}
+            className="ml-3 mt-2 space-y-1 border-l border-slate-200 pl-2"
+          >
+            {children.map(renderPage)}
+          </ul>
+        )}
+      </li>
+    );
+  }
+
   return (
     <div id="guide-navigation-content" className="flex min-h-0 flex-col">
       <label
@@ -58,34 +98,7 @@ export default function GuideSidebar({
         className="min-h-0 overflow-y-auto overscroll-contain"
       >
         <ul className="space-y-3 pr-1 text-sm">
-          {pages.map((page) => (
-            <li key={page.href}>
-              <Link
-                to={page.href}
-                aria-current={page.href === currentPath ? "page" : undefined}
-                onClick={() => onNavigate()}
-                className={`block rounded-md px-3 py-2 font-semibold ${page.href === currentPath ? "bg-violet-100 text-violet-950" : "text-slate-700 hover:bg-slate-100"}`}
-              >
-                {page.title}
-              </Link>
-              {page.href === currentPath && (
-                <ul className="ml-3 mt-1 space-y-1 border-l border-slate-200">
-                  {sections.map(({ id, title }) => (
-                    <li key={id}>
-                      <Link
-                        to={`${currentPath}#${id}`}
-                        aria-current={activeId === id ? "location" : undefined}
-                        onClick={() => onNavigate(id)}
-                        className={`block rounded-r-md border-l-2 px-3 py-2 leading-snug ${activeId === id ? "border-violet-600 bg-violet-50 font-semibold text-violet-900" : "border-transparent text-slate-600 hover:bg-slate-100"}`}
-                      >
-                        {title}
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </li>
-          ))}
+          {pages.filter((page) => !page.parentHref).map(renderPage)}
         </ul>
       </nav>
       {sections.length === 0 && (
