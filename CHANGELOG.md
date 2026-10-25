@@ -7,47 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-10-25
+
+Public planner guides, a private mom-bot officer reference, and developer guide preview. Includes portable-hosting preparation; pilot activation and production cutover remain separately gated.
+
+Components changed: siege-api, siege-frontend.
+
+Released component versions: siege-api 1.6.1, siege-frontend 1.7.0, siege-bot 1.4.2 (unchanged).
+
 ### siege-api 1.6.1
 
-- Added a protected reference for all ten mom-bot commands, including fields and permissions, plus a first-section feature/control overview, a UTC timetable for clan reminders, and administrator change-request instructions. Moved Discord account-matching help from preferences to troubleshooting.
+- Added authenticated delivery of the guild-specific mom-bot officer guide and a navigation capability on `/api/auth/me`. Normal access requires a real member session, the configured guild, and a current officer role. The optional identity lookup is bounded to 250 ms; protected content always requires a fresh role check and denies access on lookup failure. Diagnostics exclude member data. Service tokens never unlock the guide. (#569)
+- Added opt-in `DEV_GUILD_GUIDE_PREVIEW` for developer instances to view guild-specific guides without guild membership or officer roles. It defaults off, excludes service tokens, and refuses startup outside local or hosted development environments. Normal guild restrictions remain in effect when preview is off. (#570)
+- Expanded the officer guide with a first-section feature/control overview, all ten mom-bot commands and their fields/permissions, a UTC timetable for six clan reminders, and administrator change-request instructions. Moved account-matching help into Troubleshooting. (#571)
 
 ### siege-frontend 1.7.0
 
-- Added a separate private mom-bot Command Reference page at `/guide/mom-bot/commands`, with shared guide navigation and search. The page uses the same authenticated guide endpoint and developer-preview rules as the officer instructions.
+- Added a public General Usage Guide split into Quick Start, Clan Management, Siege Management, and FAQ and Troubleshooting pages. Covers roster/preferences, siege setup and buildings, participation and attack days, reserves, assignment planning and validation, comparisons, lifecycle, and Discord delivery. (#569)
+- Illustrated the guide with 18 website screenshots using fictional demo data, captions, and an accessible enlarged-image viewer. Added a shared sidebar with page links, current-subsection tracking, per-page search, and remembered expand/minimize controls for desktop and mobile. Older section and task links open the appropriate page. (#569)
+- Added guild-restricted mom-bot officer instructions at `/guide/mom-bot` and a nested Command Reference at `/guide/mom-bot/commands`. Private content is fetched through the protected backend. Signed-in direct visits request an authoritative access check even when the optional navigation hint is false. (#569, #571)
 
-### siege-api 1.6.0
+### Infrastructure / repo
 
-- Added opt-in `DEV_GUILD_GUIDE_PREVIEW` for developer instances to view guild-specific guides without guild membership or officer roles, including with the local development user. It defaults off, excludes service tokens, and refuses startup outside development. Normal guild restrictions remain in effect when preview is off.
+- **Portable sidecar acceptance preparation** — add separately gated read-only/full integration checks with fresh private evidence, strict target/authentication checks, bounded transport, overlap prevention and synthetic marked Discord messages. Live target approval, delivered-message/cleanup evidence and release workflow wiring remain separate (#430, #557, #566).
 
-### siege-api 1.5.0
+- **Portable independent monitoring preparation** — add a separately gated fresh-observation exporter with empty HTTPS success/failure signals, private endpoint handling, and independent missed-signal/Slack activation guidance. No schedules, monitor accounts, notifications or live services are activated by this preparation (#557, #565).
 
-- Added authenticated officer-guide delivery and a guide-access flag on `/api/auth/me`. The mom-bot guide requires a real member session, the configured Master's Of Magicka guild, and a current Discord officer role; the optional identity lookup is bounded to 250 ms and logs sanitized failure diagnostics, while private content always requires a fresh role check; it denies access on lookup failures and is never enabled by development bypass or service tokens.
+- **Portable mom scheduler health** — require both Discord connection and successful scheduler progress in the mom-bot 1.6.0 candidate; preflight refuses a disabled/gateway-only probe and requires a protected approved digest/capability record matching runtime and migrations. Independent Slack/missed-signal delivery and activation remain separate (#557, #564).
 
-### siege-frontend 1.6.0
+- **Portable pilot observation** — prepare bounded read-only health/resource evidence, an inert independent-monitoring policy and provisional VPS sizing guidance. Live pilot activation, scheduler/watchdog acceptance and alert delivery remain separate (#557, #430, #563).
 
-- Added a public General Usage Guide at `/guide` split into Quick Start, Clan Management, Siege Management, and FAQ and Troubleshooting pages with searchable subsections, covering roster and preferences, creating and cloning sieges, buildings, participation and attack days, reserves, manual and suggested assignments, validation, comparison, lifecycle, and Discord delivery.
-- Illustrated the guide with 18 website screenshots using fictional demo data, captions, and an accessible enlarged-image viewer. Added one shared sidebar with page links, current-subsection tracking, and a remembered expand/minimize control for computers and phones. Older section links open the appropriate guide page.
-- Separated mom-bot instructions into `/guide/mom-bot`, visible only to authenticated officers of Master's Of Magicka with server-verified access. Private instructions are fetched from the protected backend instead of embedded in public assets. Direct visits always request the protected endpoint for signed-in users, even if the optional navigation access lookup timed out.
+- **Portable recovery validation** — reject duplicate database endpoints and ambiguous service-file parameters before connecting, and reject reports inside backup bundles before creating any evidence (#557, #562).
 
-### Infrastructure
+- **Portable backup automation preparation** — add an explicitly gated hourly job with process-group timeouts and overlap prevention, independent receipt readback/monitor signals, inert systemd templates, and separately reviewed local retention protecting restore-tested copies. Live activation and remote expiry remain separate (#557, #561).
 
-- **Portable sidecar acceptance preparation** — add separately gated read-only/full integration checks with fresh private evidence, strict target/authentication checks, bounded transport, overlap prevention and synthetic marked Discord messages. Live target approval, delivered-message/cleanup evidence and release workflow wiring remain separate (#430, #557).
+- **Encrypted portable backup copies** — add separate local encryption, approved remote publication/readback, and recovered-key verification phases for S3-compatible, Azure Blob or SFTP storage. Disposable CI restores from the decrypted remote copy; hourly scheduling, retention, alerts and live activation remain separate (#557, #560).
 
-- **Portable independent monitoring preparation** — add a separately gated fresh-observation exporter with empty HTTPS success/failure signals, private endpoint handling, and independent missed-signal/Slack activation guidance. No schedules, monitor accounts, notifications or live services are activated by this preparation (#557).
+- **Portable recovery preparation** — add separately gated PostgreSQL 16 snapshot backups, offline archive verification, and isolated least-privilege restore rehearsal with sanitized evidence and disposable CI coverage. Scheduling, encrypted off-host copies, and live recovery acceptance remain separately approved (#557, #559).
 
-- **Portable mom scheduler health** — require both Discord connection and successful scheduler progress in the mom-bot 1.6.0 candidate; preflight refuses a disabled/gateway-only probe and requires a protected approved digest/capability record matching runtime and migrations. Independent Slack/missed-signal delivery and activation remain separate (#557).
-
-- **Portable pilot observation** — prepare bounded read-only health/resource evidence, an inert independent-monitoring policy and provisional VPS sizing guidance. Live pilot activation, scheduler/watchdog acceptance and alert delivery remain separate (#557, #430).
-
-- **Portable recovery validation** — reject duplicate database endpoints and ambiguous service-file parameters before connecting, and reject reports inside backup bundles before creating any evidence (#557).
-
-- **Portable backup automation preparation** — add an explicitly gated hourly job with process-group timeouts and overlap prevention, independent receipt readback/monitor signals, inert systemd templates, and separately reviewed local retention protecting restore-tested copies. Live activation and remote expiry remain separate (#557).
-
-- **Encrypted portable backup copies** — add separate local encryption, approved remote publication/readback, and recovered-key verification phases for S3-compatible, Azure Blob or SFTP storage. Disposable CI restores from the decrypted remote copy; hourly scheduling, retention, alerts and live activation remain separate (#557).
-
-- **Portable recovery preparation** — add separately gated PostgreSQL 16 snapshot backups, offline archive verification, and isolated least-privilege restore rehearsal with sanitized evidence and disposable CI coverage. Scheduling, encrypted off-host copies, and live recovery acceptance remain separately approved (#557).
-
-- **Portable production preparation** — add standalone Compose with digest-pinned images, private database/sidecar ports, HTTPS proxy trust, explicit bundled/mom-bot topologies, resource/log bounds, a sanitized configuration preflight, and recovery gates. Pilot activation, backup automation, and production cutover remain separately gated (#557).
+- **Portable production preparation** — add standalone Compose with digest-pinned images, private database/sidecar ports, HTTPS proxy trust, explicit bundled/mom-bot topologies, resource/log bounds, a sanitized configuration preflight, and recovery gates. Pilot activation, backup automation, and production cutover remain separately gated (#557, #558).
 
 ## [1.5.0] - 2026-10-04
 
