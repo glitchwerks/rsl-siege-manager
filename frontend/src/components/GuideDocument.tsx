@@ -4,7 +4,7 @@ import ReactMarkdown from "react-markdown";
 import type { GuideDocument as Document } from "../guides/types";
 import GuideSidebar from "./GuideSidebar";
 import GuideScreenshot from "./GuideScreenshot";
-import { guidePages } from "../guides/pages";
+import { guidePages, type GuidePageDefinition } from "../guides/pages";
 import { guideSectionText } from "../guides/search";
 
 function Text({ children }: { children: string }) {
@@ -19,7 +19,10 @@ function Text({ children }: { children: string }) {
   );
 }
 
-export default function GuideDocument({ document }: { document: Document }) {
+export default function GuideDocument({ document, navigationPages }: {
+  document: Document;
+  navigationPages?: GuidePageDefinition[];
+}) {
   const { hash, pathname } = useLocation();
   const [searchState, setSearchState] = useState({ path: pathname, query: "" });
   const search = searchState.path === pathname ? searchState.query : "";
@@ -36,9 +39,9 @@ export default function GuideDocument({ document }: { document: Document }) {
       ? window.matchMedia("(min-width: 768px)").matches
       : true;
   });
-  const pages = guidePages.some((page) => page.href === pathname)
+  const pages = navigationPages ?? (guidePages.some((page) => page.href === pathname)
     ? guidePages
-    : [...guidePages, { ...document, href: pathname }];
+    : [...guidePages, { ...document, href: pathname }]);
   const pageIndex = guidePages.findIndex((page) => page.href === pathname);
   function toggleNavigation() {
     setExpanded((value) => {

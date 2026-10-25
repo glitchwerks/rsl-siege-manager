@@ -35,6 +35,14 @@ function App() {
         }
       />
       <Route
+        path="/guide/mom-bot/commands"
+        element={
+          <RequireAuth>
+            <MomBotGuidePage />
+          </RequireAuth>
+        }
+      />
+      <Route
         element={
           <RequireAuth>
             <Layout />

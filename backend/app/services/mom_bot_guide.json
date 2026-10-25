@@ -4,8 +4,116 @@
   "intro": "Use this officer reference to manage mom-bot’s extra Discord features and help clanmates use their preference buttons. Website planning and the core bot’s assignment messages are covered in the General Usage Guide.",
   "sections": [
     {
+      "id": "overview",
+      "title": "1. What mom-bot does & who can change it",
+      "summary": "See how mom-bot connects the website and Discord, what members and officers can manage, and when to contact an administrator.",
+      "tasks": [
+        {
+          "title": "How the website and bot work together",
+          "paragraphs": [
+            "The website is where officers plan sieges, maintain member records, and send assignments. Mom-bot connects those plans to Discord: it delivers messages and images, lets members save post preferences, and can synchronize siege-day roles.",
+            "Mom-bot also runs clan reminders and new-member workflows. Some features have website controls or Discord commands; others are administrator-managed. A website planning role does not automatically grant Discord’s **Manage Server** permission."
+          ]
+        },
+        {
+          "title": "What members and officers can manage",
+          "tables": [
+            {
+              "caption": "Controls available through the website or Discord",
+              "columns": [
+                "Feature",
+                "What it does",
+                "What you can change"
+              ],
+              "rows": [
+                [
+                  "Website assignment delivery",
+                  "Sends siege assignments through Discord, including the member’s attack day and reserve set.",
+                  "Authorized planners prepare the siege and use its website Discord Notifications controls to send assignments."
+                ],
+                [
+                  "Post-condition preferences",
+                  "Keeps a member’s saved conditions available for siege planning.",
+                  "Members use /post-conditions-get and /post-conditions-set for their own choices. Officers use the website to edit another member’s preferences."
+                ],
+                [
+                  "Recurring personal DM reminders",
+                  "Sends a chosen member a weekly, biweekly, or monthly reminder.",
+                  "Officers with Manage Server use /member-notify-* to create, inspect, change, pause, resume, or remove these reminders."
+                ],
+                [
+                  "Officer new-member alerts",
+                  "Sends subscribed officers a DM when a human member joins.",
+                  "Officers with Manage Server use /notify-new-members to turn their own subscription on or off. This does not control the welcome message."
+                ],
+                [
+                  "Attack-day choices",
+                  "Records which day a member should attack in a siege.",
+                  "Authorized planners change Attack Day in that siege’s website Members tab. Where day-role sync is enabled, the saved plan drives the Discord day-role updates."
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "title": "What currently requires an administrator",
+          "tables": [
+            {
+              "caption": "Administrator-managed configuration — no website or Discord editor yet",
+              "columns": [
+                "Feature",
+                "Automatic behavior",
+                "Contact the administrator to change"
+              ],
+              "rows": [
+                [
+                  "Website–bot integration",
+                  "Connects the correct clan’s website and Discord bot for member matching, assignment delivery, and other supported actions.",
+                  "The connected guild, integration setup, delivery channels, access permissions, or bot connection settings."
+                ],
+                [
+                  "Scheduled clan reminders",
+                  "Posts Hydra, Chimera, Tank Week, and Siege notices on the clan schedule.",
+                  "Their schedule, message wording, destination channel, or role mention. Personal reminder commands do not edit these notices."
+                ],
+                [
+                  "New-member welcome message",
+                  "Greets a human joiner in the configured channel and asks for an in-game profile screenshot.",
+                  "The message wording, destination channel, or whether the welcome message is sent. There is currently no website or Discord on/off control."
+                ],
+                [
+                  "Siege-day role synchronization",
+                  "Applies or removes the configured Discord siege-day roles based on website updates.",
+                  "Whether synchronization is enabled, which Discord roles represent each day, or integration and permission problems. Change the member’s planned day on the website."
+                ],
+                [
+                  "New-member activity follow-up",
+                  "Tracks the first server message after a member joins. After 24 hours with no message, the bot attempts to DM the member and remove them from the server.",
+                  "The 24-hour rule, follow-up wording, or removal behavior. These have no website or Discord configuration controls."
+                ]
+              ]
+            }
+          ],
+          "callout": {
+            "title": "Request a change from the bot administrator",
+            "paragraphs": [
+              "For an administrator-managed feature, name the feature and describe the change you want. Include the channel, role, message wording, or desired schedule and timezone when relevant.",
+              "Officers cannot change these settings with the personal-reminder or join-alert commands. Ask the administrator to confirm the change before relying on different behavior."
+            ]
+          }
+        },
+        {
+          "title": "Find the detailed instructions",
+          "paragraphs": [
+            "Use the following sections for [post preferences](/guide/mom-bot#preferences), [scheduled clan reminders and their UTC timetable](/guide/mom-bot#reminders), [personal reminder commands](/guide/mom-bot#create-reminder), [officer join alerts](/guide/mom-bot#joins), and [siege-day roles](/guide/mom-bot#day-roles).",
+            "The [Command Reference](/guide/mom-bot/commands) lists every slash command, its purpose, fields, and permissions. For a missing command, account mismatch, or delivery problem, use [Troubleshooting](/guide/mom-bot#help)."
+          ]
+        }
+      ]
+    },
+    {
       "id": "commands",
-      "title": "1. Find and run a Discord command",
+      "title": "2. Find and run a Discord command",
       "summary": "Use mom-bot inside the Master’s Of Magicka server and select its command from Discord’s suggestions.",
       "tasks": [
         {
@@ -16,7 +124,9 @@
             "If the command has fields, fill them using Discord’s choices or member picker. Send it with Enter on a computer or the send control on a phone.",
             "Read the bot’s reply. A command sent as plain text, rather than selected from the command suggestions, may not run."
           ],
-          "note": "A slash command is a request to the bot. Use these commands inside the clan server. Officer reminder and join-alert commands require Discord’s **Manage Server** permission; a website planning role does not automatically grant that Discord permission."
+          "note": "A slash command is a request to the bot. Use these commands inside the clan server. Officer reminder and join-alert commands require Discord’s **Manage Server** permission; a website planning role does not automatically grant that Discord permission.",
+          "resultTitle": "Need a command lookup?",
+          "result": "Open the [Command Reference](/guide/mom-bot/commands) for all commands, fields, and permissions."
         },
         {
           "title": "Check whether mom-bot responds",
@@ -30,7 +140,7 @@
     },
     {
       "id": "preferences",
-      "title": "2. Help members choose post preferences",
+      "title": "3. Help members choose post preferences",
       "summary": "The member commands edit the caller’s own preferences. Use the website to review another member’s record.",
       "tasks": [
         {
@@ -52,22 +162,13 @@
           ],
           "result": "The member’s saved website preferences reflect the selected conditions. Existing siege placements are not automatically moved.",
           "note": "**Cancel** preserves the previous saved choices. The editor is available for about five minutes. If buttons expire or stop responding, open a fresh editor with /post-conditions-set, check the selections, and save again."
-        },
-        {
-          "title": "Correct an unregistered or mismatched account",
-          "steps": [
-            "If the bot says the account is not registered, ask which Discord account the member used to run the command.",
-            "On the website, open **Members** and find that person’s record. Check their Discord username and use **Sync Discord → Fetch Preview** to review the account match.",
-            "Correct only matches you can verify, then apply the selected match. Ask the member to run their preference command again."
-          ],
-          "note": "The bot preference commands have no target-member field or officer override. They act on the caller’s account. Use the website’s member page and **Save Preferences** when an officer needs to edit another member’s preferences."
         }
       ]
     },
     {
       "id": "reminders",
-      "title": "3. Understand scheduled clan reminders",
-      "summary": "Read recurring event notices and distinguish channel reminders from personal assignment messages.",
+      "title": "4. Understand scheduled clan reminders",
+      "summary": "See when the automatic clan notices go out and contact the bot administrator to request changes.",
       "tasks": [
         {
           "title": "Read the latest event notice",
@@ -76,6 +177,67 @@
             "These scheduled channel notices differ from the website’s **Notify Members** assignment DMs and the recurring personal reminders managed below.",
             "If an event notice appears to use the wrong date, channel, or schedule, tell the bot maintainer which notice needs checking. The supported officer commands below manage recurring member DMs."
           ]
+        },
+        {
+          "id": "clan-reminder-schedule",
+          "title": "When scheduled clan reminders go out",
+          "paragraphs": [
+            "The standard schedule is shown below. All times are **UTC**, not your device’s local time. Local daylight-saving changes can shift the time you see. These notices are posted to the clan’s configured reminder channel."
+          ],
+          "tables": [
+            {
+              "caption": "Standard clan reminder schedule — all times UTC",
+              "columns": [
+                "Reminder",
+                "When it goes out (UTC)",
+                "What it is for"
+              ],
+              "rows": [
+                [
+                  "Hydra",
+                  "Every Tuesday at 07:00, except when replaced by the Tank Week End notice.",
+                  "Reminds members to use their Hydra keys before the weekly reset."
+                ],
+                [
+                  "Chimera",
+                  "Every Wednesday at 12:00.",
+                  "Reminds members to complete their Chimera attempts."
+                ],
+                [
+                  "Hydra Tank Week Heads-up",
+                  "Tuesday at 07:00, one week before the first Tuesday of each month. This can fall in the previous month.",
+                  "Warns that Tank Week begins the next day. This notice is sent in addition to the normal Hydra reminder."
+                ],
+                [
+                  "Hydra Tank Week End",
+                  "The first Tuesday of each month at 07:00.",
+                  "Final-hours Tank Week instructions. Replaces the regular Hydra reminder for that date."
+                ],
+                [
+                  "Siege 48h Heads-up",
+                  "Sunday at 10:00, two days before each Tuesday start in the bot’s fortnightly Siege cycle.",
+                  "Asks members to prepare defenses and check post assignments."
+                ],
+                [
+                  "Siege 24h Heads-up",
+                  "Monday at 10:00, one day before each Tuesday start in the bot’s fortnightly Siege cycle.",
+                  "Final check to finish defenses and confirm posts."
+                ]
+              ]
+            }
+          ],
+          "note": "This table describes the bot’s standard configured schedule. An administrator may have changed the stored settings. If a notice arrives at a different time or the Siege cycle looks wrong, ask the bot administrator to confirm the current schedule."
+        },
+        {
+          "title": "Request a reminder change",
+          "callout": {
+            "title": "Contact the bot administrator",
+            "paragraphs": [
+              "Clan-wide Hydra, Chimera, Tank Week, and Siege notices **cannot currently be configured through Discord commands or the website**. Contact the bot administrator to change their schedule, message, destination channel, or role mention.",
+              "Include the reminder’s name, what you want changed, and the desired day and time with its timezone. For channel, mention, or wording changes, include the exact channel, role, or proposed message.",
+              "The **/member-notify-*** commands manage separate recurring personal DMs. They do not change these scheduled clan notices."
+            ]
+          }
         },
         {
           "title": "Investigate a missing personal message",
@@ -89,7 +251,7 @@
     },
     {
       "id": "create-reminder",
-      "title": "4. Create a recurring personal reminder",
+      "title": "5. Create a recurring personal reminder",
       "summary": "Choose one member, a unique reminder name, a start date, a time, and a repeat interval.",
       "tasks": [
         {
@@ -116,7 +278,7 @@
     },
     {
       "id": "manage-reminders",
-      "title": "5. Find, change, pause, or remove reminders",
+      "title": "6. Find, change, pause, or remove reminders",
       "summary": "Use the reminder’s unique name to manage it without creating duplicates.",
       "tasks": [
         {
@@ -157,7 +319,7 @@
     },
     {
       "id": "joins",
-      "title": "6. Subscribe to new-member join alerts",
+      "title": "7. Subscribe to new-member join alerts",
       "summary": "Choose whether you personally receive an officer DM when someone joins the server.",
       "tasks": [
         {
@@ -173,7 +335,7 @@
     },
     {
       "id": "day-roles",
-      "title": "7. Check siege-day roles",
+      "title": "8. Check siege-day roles",
       "summary": "Understand how website attack-day choices can update Discord roles.",
       "tasks": [
         {
@@ -189,7 +351,7 @@
     },
     {
       "id": "help",
-      "title": "8. Troubleshoot a command",
+      "title": "9. Troubleshoot a command",
       "summary": "Check the server, account, permission, saved result, and visible error before escalating.",
       "tasks": [
         {
@@ -201,6 +363,15 @@
           ]
         },
         {
+          "title": "Correct an unregistered or mismatched account",
+          "steps": [
+            "If the bot says the account is not registered, ask which Discord account the member used to run the command.",
+            "On the website, open **Members** and find that person’s record. Check their Discord username and use **Sync Discord → Fetch Preview** to review the account match.",
+            "Correct only matches you can verify, then apply the selected match. Ask the member to run their preference command again."
+          ],
+          "note": "The bot preference commands have no target-member field or officer override. They act on the caller’s account. Use the website’s member page and **Save Preferences** when an officer needs to edit another member’s preferences."
+        },
+        {
           "title": "The bot returned an error or stopped responding",
           "steps": [
             "For expired preference buttons, open a fresh /post-conditions-set editor and verify the saved result with /post-conditions-get.",
@@ -208,6 +379,145 @@
             "If it continues, tell the bot maintainer the command, when it ran, and what the reply said. Include the reminder name or siege date when relevant."
           ],
           "note": "Do not repeatedly create reminders or send assignment batches while a result is uncertain. Inspect the existing record or delivery result first so members do not receive duplicates."
+        }
+      ]
+    },
+    {
+      "id": "command-reference",
+      "title": "Command Reference",
+      "summary": "Look up every mom-bot slash command, what it does, and the fields to fill in. Run commands inside the Master’s Of Magicka Discord server by selecting mom-bot’s command from Discord’s suggestions.",
+      "tasks": [
+        {
+          "title": "General and member commands",
+          "tables": [
+            {
+              "caption": "Commands for checking the bot and managing your own post preferences",
+              "columns": [
+                "Command",
+                "What it does",
+                "Who can use it"
+              ],
+              "rows": [
+                [
+                  "/ping",
+                  "Replies with pong, the running bot version, and uptime.",
+                  "Server members in a channel where the command is allowed."
+                ],
+                [
+                  "/post-conditions",
+                  "Shows the complete post-condition catalog, grouped by category.",
+                  "Server members in an allowed channel."
+                ],
+                [
+                  "/post-conditions-get",
+                  "Shows your saved post-condition preferences.",
+                  "Members whose Discord account is registered on the website."
+                ],
+                [
+                  "/post-conditions-set",
+                  "Opens your preference editor. Choose conditions, move between pages, then Save or Cancel.",
+                  "Members whose Discord account is registered on the website."
+                ]
+              ]
+            }
+          ],
+          "note": "These commands have no fields to fill in. Preference commands work on the caller’s own account. Officers edit another member’s preferences through the website."
+        },
+        {
+          "title": "Officer commands",
+          "paragraphs": [
+            "All commands below require Discord’s **Manage Server** permission. Website planning access and strength roles do not grant this Discord permission."
+          ],
+          "tables": [
+            {
+              "caption": "Recurring member reminders and new-member join alerts",
+              "columns": [
+                "Command",
+                "What it does",
+                "Fields"
+              ],
+              "rows": [
+                [
+                  "/member-notify-add",
+                  "Creates a recurring direct-message reminder for the selected member.",
+                  "Required: member, name, start_date, time, cadence, message."
+                ],
+                [
+                  "/member-notify-list",
+                  "Lists existing recurring member reminders so you can find their names.",
+                  "None."
+                ],
+                [
+                  "/member-notify-get",
+                  "Shows one reminder’s recipient, message, schedule, and enabled state.",
+                  "Required: name."
+                ],
+                [
+                  "/member-notify-update",
+                  "Changes a reminder, or pauses/resumes it. Supply only the fields you want to change.",
+                  "Required: name. Optional: enabled, cadence, message, member, start_date, time."
+                ],
+                [
+                  "/member-notify-remove",
+                  "Permanently deletes the named reminder.",
+                  "Required: name."
+                ],
+                [
+                  "/notify-new-members",
+                  "Turns new-member join-alert DMs on or off for the officer running the command.",
+                  "Required: state — On or Off."
+                ]
+              ]
+            }
+          ],
+          "note": "To pause a reminder, use /member-notify-update with enabled: False. To resume it, use enabled: True. Removal permanently deletes it."
+        },
+        {
+          "title": "What the command fields mean",
+          "tables": [
+            {
+              "caption": "Field formats used by the officer commands",
+              "columns": [
+                "Field",
+                "What to enter"
+              ],
+              "rows": [
+                [
+                  "member",
+                  "Choose the recipient using Discord’s member picker."
+                ],
+                [
+                  "name",
+                  "A unique reminder label when creating; the existing exact label when viewing, updating, or removing."
+                ],
+                [
+                  "start_date",
+                  "A real UTC date in year-month-day format, for example 2026-11-05."
+                ],
+                [
+                  "time",
+                  "A 24-hour UTC time in hour:minute format, for example 18:30. Convert from your local time first."
+                ],
+                [
+                  "cadence",
+                  "Weekly (every 7 days), Biweekly (every 14 days), or Monthly (the same day each month; the last day in a shorter month)."
+                ],
+                [
+                  "message",
+                  "The text the member should receive in their reminder DM."
+                ],
+                [
+                  "enabled",
+                  "True to enable/resume the reminder; False to pause it."
+                ],
+                [
+                  "state",
+                  "On to receive your own new-member join alerts; Off to stop them."
+                ]
+              ]
+            }
+          ],
+          "note": "Run /member-notify-get after creating or updating a reminder to check the saved result. All command replies are visible only to the caller; scheduled reminder DMs go to the chosen recipient."
         }
       ]
     }

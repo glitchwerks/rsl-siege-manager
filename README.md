@@ -36,6 +36,10 @@ is limited to 250 milliseconds, so a slow bot cannot hold up identity loading.
 Lookup failures produce sanitized diagnostics without member data. Website strength categories do not grant
 access, and broadening the website sign-in role does not broaden this guide's roles.
 
+The officer guide also includes a Command Reference at `/guide/mom-bot/commands`
+with every mom-bot slash command, its purpose, required fields, and permissions.
+Both private pages share the guide sidebar and require the same access.
+
 To preview guild guides on a developer instance, set the backend environment to:
 
 ```dotenv
