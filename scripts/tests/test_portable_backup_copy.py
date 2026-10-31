@@ -93,6 +93,26 @@ class SafetyTests(unittest.TestCase):
             with self.assertRaises(runner.Stop):
                 runner.remote(config, prefix, str(uuid.uuid4()))
 
+    def test_smb_explicit_credentials_and_share_relative_path(self):
+        config = private(self.root / "config", "[backup]\ntype=smb\nhost=nas\nuser=backup\npass=obscured-test\ndomain=NAS\nport=445\n")
+        copy_id = str(uuid.uuid4())
+        self.assertEqual(runner.remote(config, "share/siege", copy_id),
+                         f"backup:share/siege/{copy_id}.tar.age")
+
+    def test_smb_missing_credentials_guest_and_unsafe_options_refused(self):
+        base = "[backup]\ntype=smb\nhost=nas\nuser=backup\npass=obscured-test\n"
+        cases = [base.replace("pass=obscured-test\n", ""),
+                 base.replace("user=backup", "user=guest"),
+                 base.replace("user=backup", "user=ANONYMOUS"),
+                 base.replace("host=nas", "host=//nas/share"),
+                 base + "port=0\n", base + "port=65536\n", base + "port=invalid\n",
+                 base + "use_kerberos=true\n", base + "encoding=None\n"]
+        for content in cases:
+            with self.subTest(content=content):
+                config = private(self.root / "config", content)
+                with self.assertRaises(runner.Stop):
+                    runner.remote(config, "share/siege", str(uuid.uuid4()))
+
     def test_malformed_config_diagnostic_is_sanitized(self):
         config = private(self.root / "config", "[backup]\ntype=s3\ncredential_without_equals_secret\n")
         sealed = self.root / "sealed"

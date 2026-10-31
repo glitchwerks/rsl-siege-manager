@@ -109,12 +109,13 @@ def remote(config, prefix, copy_id):
     parser.read_string(read(config).decode())
     # No local/alias/union/plugin backend can silently redirect copies onto the VM.
     require(not parser.defaults() and parser.sections() == ["backup"]
-            and parser["backup"].get("type") in {"s3", "azureblob", "sftp"}, "invalid_remote_config")
+            and parser["backup"].get("type") in {"s3", "azureblob", "sftp", "smb"}, "invalid_remote_config")
     values = dict(parser["backup"])
     common = {"type"}
     allowed = {
         "s3": {"provider", "access_key_id", "secret_access_key", "region", "endpoint", "location_constraint"},
         "azureblob": {"account", "key", "sas_url"},
+        "smb": {"host", "user", "pass", "domain", "port"},
         "sftp": {"host", "user", "port", "pass", "key_file", "known_hosts_file", "disable_hashcheck", "shell_type"},
     }
     kind = values["type"]
@@ -125,6 +126,15 @@ def remote(config, prefix, copy_id):
     elif kind == "azureblob":
         require((values.get("account") and values.get("key")) or values.get("sas_url", "").startswith("https://"),
                 "explicit_credentials_required")
+    elif kind == "smb":
+        require(values.get("host", "").strip() and values.get("pass", "").strip()
+                and values.get("user", "").strip()
+                and values["user"].strip().casefold() not in {"guest", "anonymous"},
+                "explicit_smb_credentials_required")
+        require(re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.-]*", values["host"]) is not None,
+                "invalid_smb_host")
+        require(values.get("port", "445").isdigit()
+                and 0 < int(values.get("port", "445")) < 65536, "invalid_smb_port")
     else:
         require(values.get("shell_type") == "none" and values.get("disable_hashcheck") == "true",
                 "sftp_shell_execution_must_be_disabled")
