@@ -180,6 +180,26 @@ that missed backups will alert after the VM disappears. Do not stop Azure or the
 application VM to simulate a missing backup; use a dedicated monitor test/check
 or an approved bounded pause of only the test backup schedule.
 
+### Bounded overdue-alert rehearsal on the test check
+
+The ping URL can report events; it cannot change the monitor schedule. The
+operator must change schedule settings in the portal, or separately provision a
+management credential. Do not request broad API access just for this one test.
+
+1. Record the existing test check period/grace and verify no automatic backup
+   timer is active. Never shorten the production monitor's schedule for this test.
+2. Temporarily set the test check to a one-minute period and one-minute grace.
+   Record the setting-change time and the last acknowledged successful backup.
+3. Send no success or failure requests during the observation. Confirm a real
+   overdue Slack notification after the monitor's deadline. If the previous ping
+   is already older than the shortened deadline, the alert may arrive immediately.
+4. Restore the intended one-hour period and 40-minute grace, then run a complete
+   verified backup to generate a real recovery signal. Confirm Slack recovery.
+5. Record user-confirmed overdue delivery separately from explicit `/fail`
+   delivery. If no overdue alert arrives, diagnose check activation, schedule and
+   Slack routing before enabling the backup timer. Do not report PASS from a
+   `/fail` request or a local waiting period alone.
+
 ## 7. Enable the complete job only after acceptance
 
 Use [job and scheduler instructions](../../deploy/portable/recovery/automation/README.md)
