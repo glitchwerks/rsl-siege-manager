@@ -164,3 +164,6 @@ Primary references: [age CLI](https://github.com/FiloSottile/age#usage),
 [rclone SFTP trust](https://rclone.org/sftp/).
 
 SMB reference: [rclone SMB configuration](https://rclone.org/smb/).
+
+For moving the tested arrangement to another host, follow the
+[portable VM transfer runbook](../../../docs/operations/portable-vm-transfer.md).
