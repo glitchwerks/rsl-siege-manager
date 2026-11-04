@@ -1,0 +1,6 @@
+{
+  "project": "REPLACE_REVIEWED_PROJECT",
+  "image": "docker.io/library/postgres@sha256:REPLACE_REVIEWED_POSTGRES16_DIGEST",
+  "services": "/etc/rsl-pilot-backup/source-services.conf",
+  "state": "/var/lib/rsl-pilot-backup"
+}

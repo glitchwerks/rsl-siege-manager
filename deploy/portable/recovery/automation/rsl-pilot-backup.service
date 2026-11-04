@@ -1,0 +1,25 @@
+[Unit]
+Description=Siege pilot encrypted NAS backup and independent monitor
+Wants=network-online.target
+After=network-online.target docker.service
+[Service]
+Type=oneshot
+User=root
+Group=root
+UMask=0077
+WorkingDirectory=/opt/rsl-pilot-backup
+Environment=PATH=/opt/rsl-pilot-backup/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
+Environment=DOCKER_CONFIG=/etc/rsl-pilot-backup/docker
+ExecStart=/usr/bin/python3 /opt/rsl-pilot-backup/scripts/portable-backup-job.py run --config /etc/rsl-pilot-backup/job.json --confirm-run
+TimeoutStartSec=35min
+TimeoutStopSec=45s
+KillMode=control-group
+Nice=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/rsl-pilot-backup
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+StandardOutput=journal
+StandardError=journal

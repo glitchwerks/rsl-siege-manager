@@ -1,0 +1,10 @@
+[Unit]
+Description=Hourly Siege pilot backup
+[Timer]
+OnCalendar=hourly
+RandomizedDelaySec=2min
+AccuracySec=1min
+Persistent=true
+Unit=rsl-pilot-backup.service
+[Install]
+WantedBy=timers.target

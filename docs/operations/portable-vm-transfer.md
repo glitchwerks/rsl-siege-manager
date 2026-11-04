@@ -156,9 +156,9 @@ when complete; do not delete unrelated data or perform broad Docker cleanup.
 
 The test VM used temporary Docker transport adapters for PostgreSQL 16 clients
 and a network-isolated restore container. These `/tmp` helpers are experiment
-artifacts, not installed production dependencies. Before unattended use, replace
-that arrangement with reviewed stable client/connection setup and verify it under
-the actual scheduler account and service restrictions. Do not depend on a captured
+artifacts, not installed production dependencies. For the durable pilot installation, use the
+[guarded Docker client transport](../../deploy/portable/recovery/automation/DOCKER-PILOT.md)
+and verify it under the actual scheduler account and service restrictions. Do not depend on a captured
 container ID or a temporary script surviving a reboot.
 
 ## 6. Configure independent Slack alert delivery
