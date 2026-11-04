@@ -151,3 +151,24 @@ state. Preserve its evidence. Do not remove backups, stop application containers
 restart PostgreSQL, prune volumes or change Azure. An intentionally disabled
 schedule will eventually trigger its external overdue alert; adjust the monitor
 explicitly rather than sending fake successes.
+
+## One-time post-backup readiness review
+
+For the test VM, an operator can schedule a separate one-time systemd check after
+the next normal hourly slot. Keep it separate from the backup timer and job: it
+must not send fake success signals, change application state, merge a PR or begin
+migration. The check reads the reviewed PR head's public CI check results (without
+storing a GitHub credential), requires a new successful managed backup after the
+chosen hourly boundary, and checks the five expected pilot services are healthy.
+Record PASS, NEEDS_REVIEW or STOP in a private JSON report. Pending CI or a still
+running backup must not be treated as migration approval.
+
+The test installation uses `rsl-pilot-readiness.service` and a one-date
+`rsl-pilot-readiness.timer`, writing
+`/var/lib/rsl-pilot-backup/readiness-after-hourly.json`. Its target PR, expected CI
+checks, backup boundary and calendar date are operator-specific and must be
+reviewed again on another host. Inspect the service result and report after its
+scheduled time, then disable the spent timer while preserving evidence. This is a
+VM-side collector; it does not resume an agent conversation or send a chat message.
+Review the collected results before proceeding to migration preparation. The
+existing external backup monitor remains responsible for real backup alerts.
