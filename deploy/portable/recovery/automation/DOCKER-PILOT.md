@@ -101,6 +101,30 @@ behavior without restarting unrelated services or the host just for testing.
 The regular job lock prevents overlapping runs. An unhealthy running application
 is not restarted by this backup service.
 
+## Bounded timer-trigger acceptance
+
+When the next hourly slot is far away, a separately approved pilot test can add a
+single temporary timer trigger instead of changing the system clock or stopping
+apps. First verify the backup service is idle and preserve its previous report.
+Create only `/etc/systemd/system/rsl-pilot-backup.timer.d/90-bounded-acceptance.conf`
+with the following content (refuse to overwrite an existing file):
+
+```ini
+[Timer]
+OnActiveSec=15s
+RandomizedDelaySec=0
+AccuracySec=1s
+```
+
+Reload systemd and restart only `rsl-pilot-backup.timer`. Watch for a new managed
+job UUID, a nonempty `LastTriggerUSec` and full job PASS. Use a bounded observation
+window; a failed/incomplete report is not acceptance. Always remove exactly this
+temporary file in cleanup, reload and restart only the timer, and verify the next
+hourly deadline and enabled state. Do not leave the shortened trigger or zero
+jitter as the permanent configuration. Preserve the acceptance report outside the
+run's data folders. This proves timer-to-service execution; subsequent normal
+hourly slots and recovery after a real reboot still need observation.
+
 ## Retention, evidence and rollback
 
 The timer runs the job's `run` phase only. It enables no local or remote deletion.

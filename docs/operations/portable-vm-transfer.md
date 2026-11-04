@@ -224,6 +224,34 @@ unreviewed deletion. Remote retention currently means no automated deletion;
 review NAS capacity and a bounded policy before long-term activation. Do not
 expire the protected anchor or its receipt blindly.
 
+### Bounded image workload acceptance
+
+On the approved test deployment, issue two concurrent calls to the synthetic
+planning siege's `generate-images` endpoint without calling notification/post
+endpoints. Capture request duration, generated PNGs, backend cgroup peak memory,
+OOM events, board state before/after and bot health. Use the configured internal
+service credential privately; never print it or bypass HTTPS certificate checks.
+Verify no assignments changed.
+
+For a larger rendering workload without persisting fictional members, read the
+standard board and construct a separate in-memory `BoardResponse` with 30 synthetic
+names, all four gameplay roles and every enabled position populated. This checks
+rendering scale, not valid game assignments or a database-backed roster workflow.
+Use the exact pinned backend image in a separate container with `--network none`,
+no credentials, no public ports, and the installed backend's memory/CPU/shared
+memory bounds. Invoke `generate_assignments_image` and `generate_reserves_image`
+with a 30-row `SiegeMemberWithName` list, running two complete image pairs
+concurrently. Collect PNGs and cgroup peak/OOM counters before the worker exits.
+Inspect the complete images visually; a PNG signature alone cannot prove that the
+board or the last member row is visible. Preserve an exited worker only as scoped
+evidence, not as another deployed application service.
+
+Document the actual board size and populated-position count. A standard level-one
+board is not proof of the largest upgraded board, long names, database concurrency
+or a production-sized restore. Test those separately when the real dataset and
+traffic profile are available. Do not claim minimum VM sizing or long-term
+stability from this bounded workload.
+
 ## 8. Keep production cutover separate
 
 Retain target preflight, image provenance, OAuth, core-workflow, Discord delivery,
