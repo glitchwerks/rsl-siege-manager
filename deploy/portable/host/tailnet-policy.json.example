@@ -1,0 +1,69 @@
+{
+  "grants": [
+    {
+      "src": [
+        "REPLACE_DESKTOP_TAILSCALE_IPV4"
+      ],
+      "dst": [
+        "REPLACE_VPS_TAILSCALE_IPV4"
+      ],
+      "ip": [
+        "tcp:22"
+      ]
+    },
+    {
+      "src": [
+        "REPLACE_VPS_TAILSCALE_IPV4"
+      ],
+      "dst": [
+        "REPLACE_NAS_TAILSCALE_IPV4"
+      ],
+      "ip": [
+        "tcp:445"
+      ]
+    },
+    {
+      "src": [
+        "REPLACE_DESKTOP_TAILSCALE_IPV4"
+      ],
+      "dst": [
+        "REPLACE_NAS_TAILSCALE_IPV4"
+      ],
+      "ip": [
+        "tcp:445"
+      ]
+    }
+  ],
+  "ssh": [],
+  "tests": [
+    {
+      "src": "REPLACE_DESKTOP_TAILSCALE_IPV4",
+      "accept": [
+        "REPLACE_VPS_TAILSCALE_IPV4:22",
+        "REPLACE_NAS_TAILSCALE_IPV4:445"
+      ],
+      "deny": [
+        "REPLACE_VPS_TAILSCALE_IPV4:5432",
+        "REPLACE_NAS_TAILSCALE_IPV4:3389"
+      ]
+    },
+    {
+      "src": "REPLACE_VPS_TAILSCALE_IPV4",
+      "accept": [
+        "REPLACE_NAS_TAILSCALE_IPV4:445"
+      ],
+      "deny": [
+        "REPLACE_NAS_TAILSCALE_IPV4:22",
+        "REPLACE_NAS_TAILSCALE_IPV4:3389",
+        "REPLACE_DESKTOP_TAILSCALE_IPV4:445"
+      ]
+    },
+    {
+      "src": "REPLACE_NAS_TAILSCALE_IPV4",
+      "deny": [
+        "REPLACE_VPS_TAILSCALE_IPV4:22",
+        "REPLACE_DESKTOP_TAILSCALE_IPV4:445"
+      ]
+    }
+  ]
+}
