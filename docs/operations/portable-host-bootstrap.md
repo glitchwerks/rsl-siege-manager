@@ -53,6 +53,10 @@ Create root-owned 0700 deployment/config/evidence directories:
 
 Use 0600 for credential and private evidence files. Do not render Compose secrets
 to public logs. Keep reviewed code separate from mutable configuration.
+The environment-based `init-databases.sql` contains no passwords and must be
+readable by the PostgreSQL container user (for example, mode 0644 inside the
+protected deployment directory). Applying 0600 indiscriminately to that bind mount
+prevents the first-boot application roles and databases from being created.
 
 On a fresh 4 GiB host with no swap, a 2 GiB `/swapfile` reserve and
 `vm.swappiness=10` can provide host headroom. Check space and existing swap/fstab

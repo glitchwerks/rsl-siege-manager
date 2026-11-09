@@ -113,7 +113,12 @@ guarantee after a failed activation.
    Production must not depend on that relay or test application/guild.
 2. Start only the production PostgreSQL service on its private network. Require the
    exact project/service/image and the reviewed fresh volume. The standard bootstrap
-   creates empty runtime databases and least-privilege roles. Restore the final
+   creates empty runtime databases and least-privilege roles. Verify both roles
+   and empty databases explicitly; a healthy restarted PostgreSQL process alone
+   does not prove initialization succeeded. Its nonsecret environment-based init
+   SQL bind mount must be readable by the container user. Preserve a failed
+   initialization volume and diagnose it before retrying; do not prune it.
+   Restore the final
    snapshots first into fresh UUID-named databases owned by those roles through
    the canonical restore checks, without source ownership/ACLs or automatic seeds.
 3. Compare every control total and schema head before any runtime connects. If the
