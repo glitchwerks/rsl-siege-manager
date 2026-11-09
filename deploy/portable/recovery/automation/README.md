@@ -181,3 +181,6 @@ concrete reviews; this PR grants neither remote-delete permissions nor activatio
 Existing Azure definitions and alert infrastructure remain supported. Completing
 this preparation does not close #557: actual independent storage/monitor acceptance,
 production sizing, service/scheduler health checks, pilot and cutover remain.
+
+For a protected installed pilot using the existing container PostgreSQL clients,
+see [the Docker client transport procedure](DOCKER-PILOT.md).

@@ -14,7 +14,7 @@ transfer budget, endpoint/TLS/SSH trust, host dependencies and access recovery.
 The destination must survive losing the application VM and its disks. A separate
 storage account/failure domain is preferable; a folder or service on the same VM
 is insufficient. Backend selection cannot prove independence. S3-compatible,
-Azure Blob and SFTP destinations are supported without changing Azure deployment
+Azure Blob, SFTP and SMB destinations are supported without changing Azure deployment
 files or coupling deployment to a VPS provider. No destination has been purchased
 or selected by this change.
 
@@ -43,6 +43,14 @@ Allowed backend settings are deliberately narrow:
   `location_constraint`. Explicit access keys are required; custom endpoints must
   use HTTPS. Default service endpoints use rclone's normal HTTPS behavior.
 - `azureblob`: `account`, `key`, `sas_url`. Supply account/key or an HTTPS SAS URL.
+- `smb`: `host`, `user`, `pass`, `domain`, `port`. Require an explicit host,
+  non-guest user and rclone-obscured password. The port defaults to 445.
+  The prefix starts with the share name, e.g. `share/siege-backups` for
+  `\\server-nas\share`. No host filesystem mount or ambient Windows login is used.
+  Require encryption on the Windows share and verify the installed rclone version
+  can connect to it; do not disable server encryption to work around a client failure.
+  Password obscuring is not encryption: protect the configuration as a credential.
+  Keep the age recovery key outside both the VM and upload credentials.
 - `sftp`: `host`, `user`, `port`, `pass`, `key_file`, `known_hosts_file`,
   `disable_hashcheck`, `shell_type`. Require `disable_hashcheck = true` and
   `shell_type = none` to prevent remote shell execution and autodetection/config
@@ -142,7 +150,7 @@ objects as an automatic recovery action.
 Disposable CI rehearses actual encryption, SFTP upload/readback, wrong-key and
 corruption refusal, decryption and PostgreSQL restore from the remote copy. This
 proves tool integration; its same-runner server is **not** independent production
-storage or production-sized recovery evidence. S3/Blob configurations need their
+storage or production-sized recovery evidence. S3/Blob/SMB configurations need their
 own approved destination acceptance before activation.
 
 Hourly scheduling, bounded concurrency, retention and independent overdue/failure
@@ -154,3 +162,8 @@ loss window is not yet an accepted guarantee. Existing Azure infra remains suppo
 Primary references: [age CLI](https://github.com/FiloSottile/age#usage),
 [rclone copyto](https://rclone.org/commands/rclone_copyto/),
 [rclone SFTP trust](https://rclone.org/sftp/).
+
+SMB reference: [rclone SMB configuration](https://rclone.org/smb/).
+
+For moving the tested arrangement to another host, follow the
+[portable VM transfer runbook](../../../docs/operations/portable-vm-transfer.md).
