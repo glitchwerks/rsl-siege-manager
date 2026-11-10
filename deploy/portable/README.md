@@ -1,9 +1,11 @@
 # Portable production stack
 
-This is a standalone production configuration, independent of VM provider. It is
-**not approved for activation yet**. Issue #557 tracks the remaining pilot,
-monitoring, backup, and recovery evidence. Existing Azure Bicep, deployment
-workflows, and development Compose files remain supported and unchanged.
+This is a standalone production configuration, independent of VM provider. The
+initial VPS cutover was separately approved and completed; that approval does
+not authorize another production release. [Coordination #25](https://github.com/glitchwerks/rsl-mom-apps/issues/25)
+tracks guarded repeatable deployment. Issue #557 tracks remaining monitoring,
+backup, and recovery evidence. Retained Azure resources are recovery assets;
+their deployment workflows remain disabled.
 
 Use this configuration instead of layering `docker-compose.prod.yml` on the
 development file: that older path inherits builds and public service ports.
@@ -49,8 +51,11 @@ and first usable (inferred gateway) addresses. Never install/change Docker, fire
 on an existing infrastructure host as a side effect of preparing this stack.
 
 Pin PostgreSQL 16 and Caddy by digest, along with application images. Siege images
-are currently built in CI and available from retained Azure registries; using
-those images is transitional, not a requirement for Azure at runtime. Before
+are published by `.github/workflows/publish-portable-images.yml` after a successful
+`main` push CI run. The workflow publishes API, frontend, and optional reference
+bot images to GHCR under the exact source SHA, and its run summary lists their
+immutable digest references. It does not deploy or approve production. The
+retained Azure registries remain transitional recovery sources. Before
 retiring a registry, preserve all active/recovery image digests in a provider-neutral
 registry/archive and verify pulls. Do not point the VPS at mutable `main` or
 `latest` images or build Playwright on the small production VM.
