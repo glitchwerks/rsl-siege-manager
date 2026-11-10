@@ -89,7 +89,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--report", required=True, type=Path)
     args = parser.parse_args()
-    checks = check()
+    try:
+        checks = check()
+    except (OSError, UnicodeError, ValueError):
+        checks = {"local_material": False}
     result = {"status": "PASS" if all(checks.values()) else "STOP", "checks": checks}
     try:
         descriptor = os.open(args.report, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
