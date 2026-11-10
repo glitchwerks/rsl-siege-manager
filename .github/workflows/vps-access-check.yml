@@ -1,0 +1,63 @@
+name: VPS access check
+
+# Explicit manual probe only. This workflow does not deploy or mutate the VPS.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vps-production-promotion
+  cancel-in-progress: false
+
+jobs:
+  access:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: vps-prod
+    steps:
+      - name: Check out reviewed main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Join tailnet as ephemeral deployment runner
+        uses: tailscale/github-action@064b10558093f38325e838ddea35486bdc6b1d5c # v4.4.0
+        with:
+          oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
+          tags: tag:github-deploy
+
+      - name: Verify pinned SSH host and read-only VPS baseline
+        env:
+          VPS_TAILSCALE_HOST: ${{ vars.VPS_TAILSCALE_HOST }}
+          VPS_SSH_USER: ${{ vars.VPS_SSH_USER }}
+          VPS_SSH_ED25519_FINGERPRINT: ${{ vars.VPS_SSH_ED25519_FINGERPRINT }}
+          VPS_DEPLOY_SSH_KEY: ${{ secrets.VPS_DEPLOY_SSH_KEY }}
+          VPS_SSH_KNOWN_HOSTS: ${{ secrets.VPS_SSH_KNOWN_HOSTS }}
+        run: python3 scripts/portable-vps-access-check.py --report "$RUNNER_TEMP/vps-access-report.json"
+
+      - name: Preserve sanitized report
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          path = Path(os.environ['RUNNER_TEMP']) / 'vps-access-report.json'
+          if not path.exists():
+              descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+              with os.fdopen(descriptor, 'w') as report:
+                  json.dump({'status': 'STOP', 'checks': {'connection_setup': False}}, report)
+                  report.write('\n')
+          PY
+
+      - name: Upload sanitized report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: vps-access-report
+          path: ${{ runner.temp }}/vps-access-report.json
+          if-no-files-found: ignore
+          retention-days: 14
