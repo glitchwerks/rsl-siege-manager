@@ -41,6 +41,20 @@ jobs:
 
       - name: Preserve sanitized report
         if: always()
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          path = Path(os.environ['RUNNER_TEMP']) / 'vps-access-report.json'
+          if not path.exists():
+              descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+              with os.fdopen(descriptor, 'w') as report:
+                  json.dump({'status': 'STOP', 'checks': {'connection_setup': False}}, report)
+                  report.write('\n')
+          PY
+
+      - name: Upload sanitized report
+        if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: vps-access-report
