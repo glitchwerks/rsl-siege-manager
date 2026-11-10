@@ -1,0 +1,26 @@
+name: VPS access contract
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/vps-access-*.yml"
+      - "scripts/portable-vps-*.py"
+      - "scripts/tests/test_portable_vps_access.py"
+      - "docs/operations/vps-github-access.md"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/vps-access-*.yml"
+      - "scripts/portable-vps-*.py"
+      - "scripts/tests/test_portable_vps_access.py"
+      - "docs/operations/vps-github-access.md"
+permissions:
+  contents: read
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Test fixed read-only SSH request and sanitized reporting
+        run: python3 -m unittest discover -s scripts/tests -p test_portable_vps_access.py -v
