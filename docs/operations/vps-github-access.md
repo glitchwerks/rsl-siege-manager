@@ -55,14 +55,16 @@ open and confirm provider-console recovery first. The script requires root,
 an existing private `/root/.ssh/authorized_keys`, and the reviewed remote
 script beside it. It refuses to replace an existing remote script or deploy
 key. Each invocation writes one root-private JSON report at the specified
-new path; reports contain booleans only, not keys or host data.
+new path; reports contain booleans only, not keys or host data. The dedicated
+**public** key is committed at `deploy/portable/host/github-vps-deploy.pub`;
+its private half exists only in the protected GitHub environment secret.
 
 Run the phases separately, using a distinct report path for each:
 
 ```text
 sudo python3 scripts/portable-vps-host-access.py inspect --report /root/vps-access-inspect.json
-sudo python3 scripts/portable-vps-host-access.py install --public-key /path/to/vps-deploy-public.pub --confirm install --report /root/vps-access-install.json
-sudo python3 scripts/portable-vps-host-access.py verify --public-key /path/to/vps-deploy-public.pub --report /root/vps-access-verify.json
+sudo python3 scripts/portable-vps-host-access.py install --public-key deploy/portable/host/github-vps-deploy.pub --confirm install --report /root/vps-access-install.json
+sudo python3 scripts/portable-vps-host-access.py verify --public-key deploy/portable/host/github-vps-deploy.pub --report /root/vps-access-verify.json
 ```
 
 Inspect must pass before install. Install preserves an exact root-private

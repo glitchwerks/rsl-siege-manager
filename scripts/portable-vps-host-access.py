@@ -26,6 +26,22 @@ def checked_file(path, uid=0):
     return stat.S_ISREG(info.st_mode) and info.st_uid == uid and not (info.st_mode & 0o022)
 
 
+def private_file(path):
+    try:
+        info = path.lstat()
+    except OSError:
+        return False
+    return checked_file(path) and not (info.st_mode & 0o077)
+
+
+def protected_directory(path):
+    try:
+        info = path.lstat()
+    except OSError:
+        return False
+    return stat.S_ISDIR(info.st_mode) and info.st_uid == 0 and not (info.st_mode & 0o022)
+
+
 def public_key(path):
     fields = path.read_text().strip().split()
     if len(fields) != 3 or fields[0] != "ssh-ed25519" or fields[2] != KEY_COMMENT:
@@ -45,10 +61,13 @@ def key_entry(key):
 def preflight():
     checks = {
         "root_execution": os.geteuid() == 0,
-        "authorized_keys_regular_private": checked_file(AUTHORIZED_KEYS),
+        "authorized_keys_regular_private": private_file(AUTHORIZED_KEYS),
         "ssh_directory_private": False,
         "script_source_present": SOURCE_SCRIPT.is_file(),
-        "script_destination_directory": REMOTE_SCRIPT.parent.is_dir(),
+        "script_destination_directory": all(
+            protected_directory(path)
+            for path in (Path("/opt"), REMOTE_SCRIPT.parent.parent, REMOTE_SCRIPT.parent)
+        ),
     }
     try:
         info = AUTHORIZED_KEYS.parent.lstat()
@@ -83,7 +102,11 @@ def install(key):
     entry = key_entry(key).encode()
     lines = current.splitlines()
     checks["no_existing_deploy_key"] = not any(KEY_COMMENT.encode() in line for line in lines)
-    checks["script_destination_available"] = not REMOTE_SCRIPT.exists()
+    script_data = SOURCE_SCRIPT.read_bytes()
+    checks["script_destination_available"] = (
+        not REMOTE_SCRIPT.exists()
+        or (checked_file(REMOTE_SCRIPT) and REMOTE_SCRIPT.read_bytes() == script_data)
+    )
     if not all(checks.values()):
         return checks
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -93,12 +116,12 @@ def install(key):
         stream.write(current)
         stream.flush()
         os.fsync(stream.fileno())
-    checks["authorized_keys_backup"] = checked_file(backup) and backup.read_bytes() == current
+    checks["authorized_keys_backup"] = private_file(backup) and backup.read_bytes() == current
     if not checks["authorized_keys_backup"]:
         return checks
-    script_data = SOURCE_SCRIPT.read_bytes()
     try:
-        atomic_write(REMOTE_SCRIPT, script_data, 0o700)
+        if not REMOTE_SCRIPT.exists():
+            atomic_write(REMOTE_SCRIPT, script_data, 0o700)
         checks["script_installed"] = checked_file(REMOTE_SCRIPT) and REMOTE_SCRIPT.read_bytes() == script_data
         if not checks["script_installed"]:
             return checks
