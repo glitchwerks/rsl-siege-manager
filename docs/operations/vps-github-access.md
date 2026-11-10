@@ -28,11 +28,11 @@ target. Do not place them in repository files or PR comments:
 | --- | --- | --- |
 | Variable | `VPS_TAILSCALE_HOST` | Verified VPS tailnet IPv4 or MagicDNS name |
 | Variable | `VPS_SSH_USER` | Existing approved login; initially `root` only if its restricted key is reviewed |
-| Variable | `VPS_SSH_ED25519_FINGERPRINT` | Trusted host-key fingerprint from the provider console |
+| Variable | `VPS_SSH_HOST_FINGERPRINT` | Trusted ED25519 or ECDSA P-256 host-key fingerprint from the provider console |
 | Secret | `TAILSCALE_OAUTH_CLIENT_ID` | Tailnet OAuth client ID |
 | Secret | `TAILSCALE_OAUTH_SECRET` | Tailnet OAuth client secret |
 | Secret | `VPS_DEPLOY_SSH_KEY` | Dedicated passphrase-free ED25519 private key for the forced command |
-| Secret | `VPS_SSH_KNOWN_HOSTS` | One `ssh-ed25519` known-hosts entry for the exact tailnet host |
+| Secret | `VPS_SSH_KNOWN_HOSTS` | One `ssh-ed25519` or `ecdsa-sha2-nistp256` known-hosts entry for the exact tailnet host |
 
 The private key must be new and dedicated to this workflow, not the operator's
 existing admin key. Before adding its public half to the VPS, preserve the

@@ -12,6 +12,7 @@ from pathlib import Path
 HOST = re.compile(r"[A-Za-z0-9][A-Za-z0-9.-]{0,252}\Z")
 USER = re.compile(r"[a-z_][a-z0-9_-]{0,31}\Z")
 FINGERPRINT = re.compile(r"SHA256:[A-Za-z0-9+/]{43}\Z")
+HOST_KEY_TYPES = {"ssh-ed25519", "ecdsa-sha2-nistp256"}
 
 def run(arguments):
     try:
@@ -26,7 +27,7 @@ def run(arguments):
 def settings():
     host = os.environ.get("VPS_TAILSCALE_HOST", "")
     user = os.environ.get("VPS_SSH_USER", "")
-    fingerprint = os.environ.get("VPS_SSH_ED25519_FINGERPRINT", "")
+    fingerprint = os.environ.get("VPS_SSH_HOST_FINGERPRINT", "")
     key = os.environ.get("VPS_DEPLOY_SSH_KEY", "")
     known_hosts = os.environ.get("VPS_SSH_KNOWN_HOSTS", "")
     checks = {
@@ -48,7 +49,7 @@ def check():
         len(records) == 1
         and len(records[0].split()) == 3
         and records[0].split()[0] == host
-        and records[0].split()[1] == "ssh-ed25519"
+        and records[0].split()[1] in HOST_KEY_TYPES
     )
     if not checks["known_host_identity"]:
         return checks
