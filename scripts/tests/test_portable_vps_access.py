@@ -20,6 +20,12 @@ REMOTE = load("vps_remote", "scripts/portable-vps-remote.py")
 
 
 class AccessTests(unittest.TestCase):
+    def test_private_host_identity_comes_from_environment_secrets(self):
+        workflow = (ROOT / ".github/workflows/vps-access-check.yml").read_text()
+        for name in ("VPS_TAILSCALE_HOST", "VPS_SSH_HOST_FINGERPRINT"):
+            self.assertIn("secrets." + name, workflow)
+            self.assertNotIn("vars." + name, workflow)
+
     def test_pinned_ed25519_and_ecdsa_host_keys(self):
         for algorithm in ("ssh-ed25519", "ecdsa-sha2-nistp256"):
             with self.subTest(algorithm=algorithm):
