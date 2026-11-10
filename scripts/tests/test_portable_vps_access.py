@@ -20,6 +20,22 @@ REMOTE = load("vps_remote", "scripts/portable-vps-remote.py")
 
 
 class AccessTests(unittest.TestCase):
+    def test_pinned_ed25519_and_ecdsa_host_keys(self):
+        for algorithm in ("ssh-ed25519", "ecdsa-sha2-nistp256"):
+            with self.subTest(algorithm=algorithm):
+                environment = {
+                    "VPS_TAILSCALE_HOST": "100.117.110.57",
+                    "VPS_SSH_USER": "root",
+                    "VPS_SSH_HOST_FINGERPRINT": "SHA256:" + "A" * 43,
+                    "VPS_DEPLOY_SSH_KEY": "-----BEGIN OPENSSH PRIVATE KEY-----\n" + "x" * 100,
+                    "VPS_SSH_KNOWN_HOSTS": "100.117.110.57 " + algorithm + " " + "a" * 80,
+                }
+                results = [(True, ""), (True, "256 SHA256:" + "A" * 43 + " host"), (True, "PASS\n")]
+                with patch.dict(os.environ, environment, clear=True), patch.object(
+                    LOCAL, "run", side_effect=results
+                ):
+                    self.assertTrue(all(LOCAL.check().values()))
+
     def test_missing_settings_fail_without_ssh(self):
         with patch.dict(os.environ, {}, clear=True), patch.object(LOCAL, "run") as runner:
             checks = LOCAL.check()
