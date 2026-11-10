@@ -49,6 +49,31 @@ The entry's configuration shape is:
 restrict,command="/usr/bin/python3 /opt/rsl-siege-manager/scripts/portable-vps-remote.py" ssh-ed25519 <dedicated-public-key> github-vps-deploy
 ```
 
+Use `scripts/portable-vps-host-access.py` from a reviewed checkout staged on the
+VPS to perform the host change. Keep a separate, existing admin SSH session
+open and confirm provider-console recovery first. The script requires root,
+an existing private `/root/.ssh/authorized_keys`, and the reviewed remote
+script beside it. It refuses to replace an existing remote script or deploy
+key. Each invocation writes one root-private JSON report at the specified
+new path; reports contain booleans only, not keys or host data.
+
+Run the phases separately, using a distinct report path for each:
+
+```text
+sudo python3 scripts/portable-vps-host-access.py inspect --report /root/vps-access-inspect.json
+sudo python3 scripts/portable-vps-host-access.py install --public-key /path/to/vps-deploy-public.pub --confirm install --report /root/vps-access-install.json
+sudo python3 scripts/portable-vps-host-access.py verify --public-key /path/to/vps-deploy-public.pub --report /root/vps-access-verify.json
+```
+
+Inspect must pass before install. Install preserves an exact root-private
+`authorized_keys.before-github-deploy.*` copy, writes the reviewed script, and
+atomically appends the restricted key. Verify checks the exact entry, script
+contents, local read-only baseline, and rejection of arbitrary commands.
+Verify the original admin login still works in a **new** session before closing
+the old one. If the new key must be revoked, run the separately confirmed
+`rollback` phase with the same public key and a new report path; it removes
+only that exact key entry and retains the backup and script for inspection.
+
 The forced command currently accepts only the literal `access-check` request.
 It checks the protected directories, Docker access, and active backup timer,
 then returns `PASS` or `STOP`. An arbitrary SSH command must fail. Install and
