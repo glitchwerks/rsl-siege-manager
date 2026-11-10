@@ -26,9 +26,9 @@ target. Do not place them in repository files or PR comments:
 
 | Type | Name | Meaning |
 | --- | --- | --- |
-| Variable | `VPS_TAILSCALE_HOST` | Verified VPS tailnet IPv4 or MagicDNS name |
 | Variable | `VPS_SSH_USER` | Existing approved login; initially `root` only if its restricted key is reviewed |
-| Variable | `VPS_SSH_HOST_FINGERPRINT` | Trusted ED25519 or ECDSA P-256 host-key fingerprint from the provider console |
+| Secret | `VPS_TAILSCALE_HOST` | Verified VPS tailnet IPv4 or MagicDNS name |
+| Secret | `VPS_SSH_HOST_FINGERPRINT` | Trusted ED25519 or ECDSA P-256 host-key fingerprint from the provider console |
 | Secret | `TAILSCALE_OAUTH_CLIENT_ID` | Tailnet OAuth client ID |
 | Secret | `TAILSCALE_OAUTH_SECRET` | Tailnet OAuth client secret |
 | Secret | `VPS_DEPLOY_SSH_KEY` | Dedicated passphrase-free ED25519 private key for the forced command |

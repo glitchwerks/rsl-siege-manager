@@ -32,9 +32,9 @@ jobs:
 
       - name: Verify pinned SSH host and read-only VPS baseline
         env:
-          VPS_TAILSCALE_HOST: ${{ vars.VPS_TAILSCALE_HOST }}
+          VPS_TAILSCALE_HOST: ${{ secrets.VPS_TAILSCALE_HOST }}
           VPS_SSH_USER: ${{ vars.VPS_SSH_USER }}
-          VPS_SSH_HOST_FINGERPRINT: ${{ vars.VPS_SSH_HOST_FINGERPRINT }}
+          VPS_SSH_HOST_FINGERPRINT: ${{ secrets.VPS_SSH_HOST_FINGERPRINT }}
           VPS_DEPLOY_SSH_KEY: ${{ secrets.VPS_DEPLOY_SSH_KEY }}
           VPS_SSH_KNOWN_HOSTS: ${{ secrets.VPS_SSH_KNOWN_HOSTS }}
         run: python3 scripts/portable-vps-access-check.py --report "$RUNNER_TEMP/vps-access-report.json"
