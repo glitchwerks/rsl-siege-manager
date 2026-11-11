@@ -40,7 +40,8 @@ def stage(manifest, expected, run_id):
     checks["manifest_digest"] = checks["input_bounded"] and hashlib.sha256(raw).hexdigest() == expected
     if not all(checks.values()):
         return checks
-    checks["read_only_vps_baseline"] = all(ACCESS.check().values())
+    baseline = ACCESS.check()
+    checks["read_only_vps_baseline"] = bool(baseline) and all(baseline.values())
     if not checks["read_only_vps_baseline"]:
         return checks
     _, host, user, _, key, known_hosts = ACCESS.settings()

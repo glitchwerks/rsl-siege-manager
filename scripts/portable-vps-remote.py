@@ -76,7 +76,7 @@ def image(value, name):
 def valid_manifest(raw):
     try:
         data = json.loads(raw.decode("utf-8"), object_pairs_hook=no_duplicate_keys)
-    except (UnicodeError, ValueError, TypeError):
+    except (UnicodeError, ValueError, TypeError, RecursionError):
         return False
     if not exact_keys(data, ("schema_version", "release_id", "siege", "mom", "configuration")):
         return False

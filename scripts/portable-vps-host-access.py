@@ -18,7 +18,7 @@ SOURCE_SCRIPT = Path(__file__).with_name("portable-vps-remote.py")
 KEY_COMMENT = "github-vps-deploy"
 FORCED_COMMAND = f'restrict,command="/usr/bin/python3 {REMOTE_SCRIPT}"'
 OLD_REMOTE_SHA256 = "f965a4edc244c7ece696bbeb30b650f67c3c21e82584c44185ca57a94db31da7"
-NEW_REMOTE_SHA256 = "7c014c3df8c26e9f14b7474af9371ef9a0d763d765f85363eb48eaed2e5c3a9f"
+NEW_REMOTE_SHA256 = "24d799fb964f9270be88dc5df64315f5339ef04b3960de05725d3e85ec40bebf"
 
 
 def script_backup_path():

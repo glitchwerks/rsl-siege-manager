@@ -127,6 +127,7 @@ class AccessTests(unittest.TestCase):
         self.assertTrue(REMOTE.valid_manifest(raw))
         duplicate = raw.replace(b'"schema_version": 1,', b'"schema_version": 1, "schema_version": 1,')
         self.assertFalse(REMOTE.valid_manifest(duplicate))
+        self.assertFalse(REMOTE.valid_manifest(b"[" * 1100 + b"0" + b"]" * 1100))
         with tempfile.TemporaryDirectory() as directory:
             evidence = Path(directory) / "evidence"
             evidence.mkdir(mode=0o700)
