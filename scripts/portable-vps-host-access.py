@@ -42,6 +42,30 @@ def protected_directory(path):
     return stat.S_ISDIR(info.st_mode) and info.st_uid == 0 and not (info.st_mode & 0o022)
 
 
+def destination_directories():
+    return (Path("/opt"), REMOTE_SCRIPT.parent.parent, REMOTE_SCRIPT.parent)
+
+
+def destination_path_safe():
+    for path in destination_directories():
+        if path.is_symlink():
+            return False
+        if path.exists() and not protected_directory(path):
+            return False
+        if path == Path("/opt") and not protected_directory(path):
+            return False
+    return True
+
+
+def prepare_destination():
+    for path in destination_directories():
+        if not path.exists():
+            path.mkdir(mode=0o755)
+        if not protected_directory(path):
+            return False
+    return True
+
+
 def public_key(path):
     fields = path.read_text().strip().split()
     if len(fields) != 3 or fields[0] != "ssh-ed25519" or fields[2] != KEY_COMMENT:
@@ -64,10 +88,7 @@ def preflight():
         "authorized_keys_regular_private": private_file(AUTHORIZED_KEYS),
         "ssh_directory_private": False,
         "script_source_present": SOURCE_SCRIPT.is_file(),
-        "script_destination_directory": all(
-            protected_directory(path)
-            for path in (Path("/opt"), REMOTE_SCRIPT.parent.parent, REMOTE_SCRIPT.parent)
-        ),
+        "script_destination_path_safe": destination_path_safe(),
     }
     try:
         info = AUTHORIZED_KEYS.parent.lstat()
@@ -104,7 +125,7 @@ def install(key):
     checks["no_existing_deploy_key"] = not any(KEY_COMMENT.encode() in line for line in lines)
     script_data = SOURCE_SCRIPT.read_bytes()
     checks["script_destination_available"] = (
-        not REMOTE_SCRIPT.exists()
+        (not REMOTE_SCRIPT.exists() and not REMOTE_SCRIPT.is_symlink())
         or (checked_file(REMOTE_SCRIPT) and REMOTE_SCRIPT.read_bytes() == script_data)
     )
     if not all(checks.values()):
@@ -120,6 +141,9 @@ def install(key):
     if not checks["authorized_keys_backup"]:
         return checks
     try:
+        checks["script_destination_directory_ready"] = prepare_destination()
+        if not checks["script_destination_directory_ready"]:
+            return checks
         if not REMOTE_SCRIPT.exists():
             atomic_write(REMOTE_SCRIPT, script_data, 0o700)
         checks["script_installed"] = checked_file(REMOTE_SCRIPT) and REMOTE_SCRIPT.read_bytes() == script_data
