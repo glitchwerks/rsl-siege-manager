@@ -110,3 +110,25 @@ configuration, authorized keys, Compose or services. Run `verify` again with a
 new report path before dispatching the protected GitHub workflow. If the new
 script fails, `restore-script --confirm restore-script` restores only the
 preserved old script after checking both versions; use a fresh report path.
+
+## Rotate the dedicated GitHub SSH key
+
+The Tailscale OAuth `tskey` joins the runner to the tailnet; it is not the
+OpenSSH private key used by `VPS_DEPLOY_SSH_KEY`. If that separate SSH secret is
+unusable, generate a new passphrase-free ED25519 pair, validate the private
+half locally with `ssh-keygen -y -P ''`, and verify that its derived public key
+matches `deploy/portable/host/github-vps-deploy.pub`. Store the private half
+only as the `vps-prod` environment secret; never commit or print it. The former
+public key remains in `github-vps-deploy-previous.pub` for exact matching.
+
+From the pinned reviewed checkout, run `rotate-key` with the new
+`--public-key`, `--old-public-key` pointing to the previous public file,
+`--confirm rotate-key`, and a fresh root-private report path. The phase
+preserves an exact `authorized_keys` backup and atomically replaces only the
+matching restricted key line; all operator keys remain. Keep existing admin
+SSH and provider-console recovery open, then run `verify` with the new public
+key and a new report before dispatching the protected workflow. If that path
+fails, `restore-key --confirm restore-key` with the same two public-key paths
+reinstates only the prior restricted line, again preserving a backup. The
+prior private key remains unusable for CI, so restore protects host state and
+admin access while diagnosing; it is not a successful deployment route.

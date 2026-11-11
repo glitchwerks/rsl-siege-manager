@@ -273,11 +273,53 @@ def rollback(key):
     return checks
 
 
+def replace_restricted_key(old_key, new_key, phase):
+    checks = preflight()
+    checks["old_public_key_valid"] = bool(old_key)
+    checks["new_public_key_valid"] = bool(new_key) and new_key != old_key
+    if not all(checks.values()):
+        return checks
+    current = AUTHORIZED_KEYS.read_bytes()
+    lines = current.splitlines(keepends=True)
+    old_entry = key_entry(old_key).encode()
+    new_entry = key_entry(new_key).encode()
+    checks["old_restricted_key_exactly_once"] = sum(
+        line.rstrip(b"\r\n") == old_entry for line in lines
+    ) == 1
+    checks["new_restricted_key_absent"] = not any(
+        line.rstrip(b"\r\n") == new_entry for line in lines
+    )
+    checks["no_other_deploy_key"] = sum(KEY_COMMENT.encode() in line for line in lines) == 1
+    if not all(checks.values()):
+        return checks
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    backup = AUTHORIZED_KEYS.with_name(f"authorized_keys.before-github-deploy-{phase}.{stamp}")
+    descriptor = os.open(backup, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(descriptor, "wb") as stream:
+        stream.write(current)
+        stream.flush()
+        os.fsync(stream.fileno())
+    checks["authorized_keys_backup"] = private_file(backup) and backup.read_bytes() == current
+    if not checks["authorized_keys_backup"]:
+        return checks
+    updated = b"".join(
+        new_entry + line[len(old_entry):] if line.rstrip(b"\r\n") == old_entry else line
+        for line in lines
+    )
+    atomic_write(AUTHORIZED_KEYS, updated, 0o600)
+    checks["restricted_key_replaced"] = AUTHORIZED_KEYS.read_bytes() == updated
+    if not checks["restricted_key_replaced"]:
+        atomic_write(AUTHORIZED_KEYS, current, 0o600)
+        checks["authorized_keys_restored"] = AUTHORIZED_KEYS.read_bytes() == current
+    return checks
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("phase", choices=("inspect", "install", "verify", "rollback", "update-script", "restore-script"))
+    parser.add_argument("phase", choices=("inspect", "install", "verify", "rollback", "update-script", "restore-script", "rotate-key", "restore-key"))
     parser.add_argument("--public-key", type=Path)
-    parser.add_argument("--confirm", choices=("install", "rollback", "update-script", "restore-script"))
+    parser.add_argument("--old-public-key", type=Path)
+    parser.add_argument("--confirm", choices=("install", "rollback", "update-script", "restore-script", "rotate-key", "restore-key"))
     parser.add_argument("--report", required=True, type=Path)
     args = parser.parse_args()
     checks = preflight()
@@ -286,7 +328,11 @@ def main():
             key = public_key(args.public_key) if args.public_key else ""
         except (OSError, ValueError, subprocess.TimeoutExpired):
             key = ""
-        if args.phase in ("install", "rollback", "update-script", "restore-script") and args.confirm != args.phase:
+        try:
+            old_key = public_key(args.old_public_key) if args.old_public_key else ""
+        except (OSError, ValueError, subprocess.TimeoutExpired):
+            old_key = ""
+        if args.phase in ("install", "rollback", "update-script", "restore-script", "rotate-key", "restore-key") and args.confirm != args.phase:
             checks["explicit_phase_confirmation"] = False
         elif args.phase == "install":
             checks = install(key)
@@ -296,6 +342,10 @@ def main():
             checks = update_script(key)
         elif args.phase == "restore-script":
             checks = restore_script(key)
+        elif args.phase == "rotate-key":
+            checks = replace_restricted_key(old_key, key, "rotation")
+        elif args.phase == "restore-key":
+            checks = replace_restricted_key(key, old_key, "restore")
         else:
             checks = rollback(key)
     status = "PASS" if all(checks.values()) else "STOP"
