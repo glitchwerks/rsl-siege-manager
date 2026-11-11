@@ -33,9 +33,14 @@ jobs:
     steps:
       - name: Require cross-repository read credential
         env:
-          VPS_RELEASE_READ_TOKEN: ${{ secrets.VPS_RELEASE_READ_TOKEN }}
+          VPS_RELEASE_REPO_READ_TOKEN: ${{ secrets.VPS_RELEASE_REPO_READ_TOKEN }}
+          VPS_RELEASE_PACKAGE_READ_TOKEN: ${{ secrets.VPS_RELEASE_PACKAGE_READ_TOKEN }}
           VPS_RELEASE_READ_USER: ${{ vars.VPS_RELEASE_READ_USER }}
-        run: test -n "$VPS_RELEASE_READ_TOKEN" && test -n "$VPS_RELEASE_READ_USER"
+        run: |
+          set -euo pipefail
+          test -n "$VPS_RELEASE_REPO_READ_TOKEN"
+          test -n "$VPS_RELEASE_PACKAGE_READ_TOKEN"
+          test -n "$VPS_RELEASE_READ_USER"
 
       - name: Validate data-only candidate selector
         id: input
@@ -57,7 +62,7 @@ jobs:
           repository: glitchwerks/rsl-mom-apps
           ref: 7f654cbb57b3e185207edf9fc70a04601f1125a0
           path: contract
-          token: ${{ secrets.VPS_RELEASE_READ_TOKEN }}
+          token: ${{ secrets.VPS_RELEASE_REPO_READ_TOKEN }}
           persist-credentials: false
 
       - name: Check out data-only candidate
@@ -67,7 +72,7 @@ jobs:
           ref: ${{ inputs.candidate_ref }}
           path: candidate
           fetch-depth: 0
-          token: ${{ secrets.VPS_RELEASE_READ_TOKEN }}
+          token: ${{ secrets.VPS_RELEASE_REPO_READ_TOKEN }}
           persist-credentials: false
 
       - name: Bind candidate to exact file digest
@@ -92,11 +97,11 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ vars.VPS_RELEASE_READ_USER }}
-          password: ${{ secrets.VPS_RELEASE_READ_TOKEN }}
+          password: ${{ secrets.VPS_RELEASE_PACKAGE_READ_TOKEN }}
 
       - name: Verify CI runs and immutable GHCR image digests
         env:
-          GH_TOKEN: ${{ secrets.VPS_RELEASE_READ_TOKEN }}
+          GH_TOKEN: ${{ secrets.VPS_RELEASE_REPO_READ_TOKEN }}
         run: |
           python3 contract/scripts/verify-vps-candidate.py \
             --manifest '${{ steps.input.outputs.candidate_file }}' \

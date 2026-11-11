@@ -26,15 +26,25 @@ and the three SHA-tagged GHCR image digests. The candidate checkout is data only
 the workflow never executes its code. The pinned validator can be updated only
 through a reviewed Siege workflow change.
 
-Because coordination and Mom repositories are private, the unprotected
-candidate job needs the selected organization Actions secret
-`VPS_RELEASE_READ_TOKEN`: a dedicated credential with read-only repository
-contents on `rsl-mom-apps`, read-only Actions runs on both producers, and GHCR
-package read access. Do not grant write permissions. Set the organization
-Actions variable `VPS_RELEASE_READ_USER` to the credential owner's GitHub login
-for GHCR authentication. Select only Siege Manager as a consumer. The planning
-job never receives the VPS SSH/Tailscale secrets; the `vps-prod` access job never
-receives this cross-repository credential.
+Because coordination and Mom repositories are private, the candidate job needs
+two selected organization Actions secrets:
+
+- `VPS_RELEASE_REPO_READ_TOKEN`: a fine-grained token with Contents read on
+  `rsl-mom-apps` and Actions read on the Siege and Mom repositories. It has no
+  write permissions. A GitHub App installation token can replace this if it is
+  minted per run with the same scope.
+- `VPS_RELEASE_PACKAGE_READ_TOKEN`: a separate classic token with only
+  `read:packages` for GHCR digest inspection. Do not add the broad `repo` scope.
+
+Set the organization Actions variable `VPS_RELEASE_READ_USER` to the package
+token owner's GitHub login. Select only Siege Manager as a consumer for these
+secrets and the variable. GitHub Packages currently requires a classic token
+for this registry authentication; a fine-grained repository token alone does
+not cover it. This avoids granting the public Siege repository direct Actions
+access to Mom's private package. The candidate job never receives the VPS
+SSH/Tailscale secrets; the `vps-prod` access job never receives these two
+cross-repository credentials. See [GitHub's package authentication guidance](https://docs.github.com/en/packages/learn-github-packages/about-permissions-for-github-packages)
+and [cross-repository workflow token guidance](https://docs.github.com/en/actions/concepts/security/compromised-runners).
 
 After candidate checks pass, GitHub requests `vps-prod` environment approval.
 The approved job joins Tailscale and runs the same pinned-host, read-only forced
