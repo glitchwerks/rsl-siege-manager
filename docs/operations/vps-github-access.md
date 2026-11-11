@@ -32,7 +32,7 @@ target. Do not place them in repository files or PR comments:
 | Secret | `VPS_SSH_HOST_FINGERPRINT` | Trusted ED25519 or ECDSA P-256 host-key fingerprint from the provider console |
 | Secret | `TAILSCALE_OAUTH_CLIENT_ID` | Tailnet OAuth client ID |
 | Secret | `TAILSCALE_OAUTH_SECRET` | Tailnet OAuth client secret |
-| Secret | `VPS_DEPLOY_SSH_KEY` | Dedicated passphrase-free ED25519 private key for the forced command |
+| Secret | `VPS_DEPLOY_SSH_KEY` | Dedicated passphrase-free ED25519 private key for the forced command; currently a selected organization Actions secret |
 | Secret | `VPS_SSH_KNOWN_HOSTS` | One `ssh-ed25519` or `ecdsa-sha2-nistp256` known-hosts entry for the exact tailnet host |
 
 The private key must be new and dedicated to this workflow, not the operator's
@@ -58,7 +58,8 @@ script beside it. It refuses to replace an existing remote script or deploy
 key. Each invocation writes one root-private JSON report at the specified
 new path; reports contain booleans only, not keys or host data. The dedicated
 **public** key is committed at `deploy/portable/host/github-vps-deploy.pub`;
-its private half exists only in the protected GitHub environment secret.
+its private half is supplied through the selected organization Actions secret.
+An environment or repository secret of the same name would override it.
 When `/opt` is root-owned and protected but the dedicated destination does not
 exist, inspect accepts that baseline and install creates only
 `/opt/rsl-siege-manager` and its `scripts` child under root ownership. An
@@ -118,7 +119,7 @@ OpenSSH private key used by `VPS_DEPLOY_SSH_KEY`. If that separate SSH secret is
 unusable, generate a new passphrase-free ED25519 pair, validate the private
 half locally with `ssh-keygen -y -P ''`, and verify that its derived public key
 matches `deploy/portable/host/github-vps-deploy.pub`. Store the private half
-only as the `vps-prod` environment secret; never commit or print it. The former
+as the selected organization Actions secret; never commit or print it. The former
 public key remains in `github-vps-deploy-previous.pub` for exact matching.
 
 From the pinned reviewed checkout, run `rotate-key` with the new
