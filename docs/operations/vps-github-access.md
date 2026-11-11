@@ -58,6 +58,11 @@ key. Each invocation writes one root-private JSON report at the specified
 new path; reports contain booleans only, not keys or host data. The dedicated
 **public** key is committed at `deploy/portable/host/github-vps-deploy.pub`;
 its private half exists only in the protected GitHub environment secret.
+When `/opt` is root-owned and protected but the dedicated destination does not
+exist, inspect accepts that baseline and install creates only
+`/opt/rsl-siege-manager` and its `scripts` child under root ownership. An
+existing symlink or writable directory fails closed. Rollback leaves the
+new directories and script as inert evidence after removing the key.
 
 Run the phases separately, using a distinct report path for each:
 

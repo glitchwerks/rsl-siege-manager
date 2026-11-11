@@ -26,7 +26,9 @@ def test_install_then_rollback_preserves_existing_key(tmp_path):
         host_access, "REMOTE_SCRIPT", destination
     ), mock.patch.object(host_access, "SOURCE_SCRIPT", source), mock.patch.object(
         host_access, "preflight", side_effect=lambda: {"baseline": True}
-    ), mock.patch.object(host_access, "checked_file", return_value=True):
+    ), mock.patch.object(host_access, "checked_file", return_value=True), mock.patch.object(
+        host_access, "prepare_destination", return_value=True
+    ):
         with mock.patch.object(host_access, "FORCED_COMMAND", f'restrict,command="/usr/bin/python3 {destination}"'):
             installed = host_access.install(key)
             assert all(installed.values())
@@ -59,3 +61,23 @@ def test_install_stops_on_existing_deploy_marker(tmp_path):
     assert checks["no_existing_deploy_key"] is False
     assert authorized.read_bytes() == original
     assert not destination.exists()
+
+
+def test_destination_path_creation_is_limited_to_missing_directories(tmp_path):
+    opt = tmp_path / "opt"
+    opt.mkdir()
+    manager = opt / "rsl-siege-manager"
+    scripts = manager / "scripts"
+    with mock.patch.object(
+        host_access, "destination_directories", return_value=(opt, manager, scripts)
+    ), mock.patch.object(
+        host_access, "protected_directory", side_effect=lambda path: path.is_dir() and not path.is_symlink()
+    ):
+        assert host_access.destination_path_safe()
+        assert host_access.prepare_destination()
+        assert manager.is_dir() and scripts.is_dir()
+        assert host_access.destination_path_safe()
+        scripts.rmdir()
+        manager.rmdir()
+        manager.symlink_to(tmp_path)
+        assert not host_access.destination_path_safe()
