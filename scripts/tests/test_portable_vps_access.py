@@ -33,7 +33,7 @@ class AccessTests(unittest.TestCase):
                     "VPS_TAILSCALE_HOST": "100.117.110.57",
                     "VPS_SSH_USER": "root",
                     "VPS_SSH_HOST_FINGERPRINT": "SHA256:" + "A" * 43,
-                    "VPS_DEPLOY_SSH_KEY": "-----BEGIN OPENSSH PRIVATE KEY-----\n" + "x" * 100,
+                    "VPS_DEPLOY_SSH_KEY": "-----BEGIN OPENSSH PRIVATE KEY-----\n" + "x" * 100 + "\n-----END OPENSSH PRIVATE KEY-----\n",
                     "VPS_SSH_KNOWN_HOSTS": "100.117.110.57 " + algorithm + " " + "a" * 80,
                 }
                 results = [(True, ""), (True, "256 SHA256:" + "A" * 43 + " host"), (True, "PASS\n")]
@@ -47,6 +47,15 @@ class AccessTests(unittest.TestCase):
             checks = LOCAL.check()
         self.assertFalse(all(checks.values()))
         runner.assert_not_called()
+
+    def test_key_shape_reports_literal_newline_escapes_without_contents(self):
+        escaped = "-----BEGIN OPENSSH PRIVATE KEY-----\\n" + "x" * 100 + "\\n-----END OPENSSH PRIVATE KEY-----"
+        with patch.dict(os.environ, {"VPS_DEPLOY_SSH_KEY": escaped}, clear=True):
+            checks, *_ = LOCAL.settings()
+        self.assertFalse(checks["key_starts_with_header"])
+        self.assertFalse(checks["key_has_multiple_lines"])
+        self.assertFalse(checks["key_has_no_literal_newline_escapes"])
+        self.assertNotIn("PRIVATE KEY", str(checks))
 
     def test_remote_rejects_any_other_command(self):
         with patch.dict(os.environ, {"SSH_ORIGINAL_COMMAND": "docker compose up -d"}):

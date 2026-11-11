@@ -35,6 +35,10 @@ def settings():
         "user_setting": bool(USER.fullmatch(user)),
         "fingerprint_setting": bool(FINGERPRINT.fullmatch(fingerprint)),
         "key_setting": 100 <= len(key) <= 16384 and "PRIVATE KEY" in key,
+        "key_starts_with_header": key.startswith("-----BEGIN OPENSSH PRIVATE KEY-----\n"),
+        "key_has_end_marker": key.rstrip().endswith("-----END OPENSSH PRIVATE KEY-----"),
+        "key_has_multiple_lines": len(key.splitlines()) >= 3,
+        "key_has_no_literal_newline_escapes": "\\n" not in key,
         "known_hosts_setting": 50 <= len(known_hosts) <= 4096,
     }
     return checks, host, user, fingerprint, key, known_hosts
