@@ -20,8 +20,6 @@ on:
 
 permissions:
   contents: read
-  actions: read
-  packages: read
 
 concurrency:
   group: vps-production-promotion
