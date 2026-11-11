@@ -112,3 +112,24 @@ def test_reviewed_remote_script_update_and_restore(tmp_path):
         restored = host_access.restore_script(key)
         assert all(restored.values())
         assert remote.read_bytes() == old_data
+
+
+def test_rotate_and_restore_only_the_restricted_key(tmp_path):
+    authorized = tmp_path / "authorized_keys"
+    old_key = "ssh-ed25519 OLD github-vps-deploy"
+    new_key = "ssh-ed25519 NEW github-vps-deploy"
+    with mock.patch.object(host_access, "AUTHORIZED_KEYS", authorized), mock.patch.object(
+        host_access, "preflight", side_effect=lambda: {"baseline": True}
+    ), mock.patch.object(host_access, "private_file", side_effect=lambda path: path.is_file()):
+        original = b"ssh-ed25519 OPERATOR admin\n" + host_access.key_entry(old_key).encode() + b"\n"
+        authorized.write_bytes(original)
+        assert not all(host_access.replace_restricted_key("ssh-ed25519 WRONG github-vps-deploy", new_key, "rotation").values())
+        assert authorized.read_bytes() == original
+        rotated = host_access.replace_restricted_key(old_key, new_key, "rotation")
+        assert all(rotated.values())
+        assert authorized.read_bytes().startswith(b"ssh-ed25519 OPERATOR admin\n")
+        assert authorized.read_bytes().splitlines()[-1] == host_access.key_entry(new_key).encode()
+        assert list(tmp_path.glob("authorized_keys.before-github-deploy-rotation.*"))[0].read_bytes() == original
+        restored = host_access.replace_restricted_key(new_key, old_key, "restore")
+        assert all(restored.values())
+        assert authorized.read_bytes() == original
