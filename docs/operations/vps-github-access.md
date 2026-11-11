@@ -1,7 +1,8 @@
 # GitHub Actions to VPS access gate
 
 The production VPS already uses ordinary OpenSSH over Tailscale. The reviewed
-deployment directory is `/srv/rsl-siege`; the backup timer is `rsl-backup.timer`.
+deployment directory is `/srv/rsl-siege`; the installed production backup timer
+is `rsl-production-backup.timer` (the repository template is named differently).
 The workflow in this change is **manual and read-only**. It does not deploy,
 install a runner, modify SSH, run backups or migrations, or change Compose.
 
@@ -83,7 +84,9 @@ only that exact key entry and retains the backup and script for inspection.
 
 The forced command currently accepts only the literal `access-check` request.
 It checks the protected directories, Docker access, and active backup timer,
-then returns `PASS` or `STOP`. An arbitrary SSH command must fail. Install and
+then returns `PASS` or `STOP`. Timer activity only confirms scheduling; release
+promotion must separately verify recent successful backup and recovery evidence.
+An arbitrary SSH command must fail. Install and
 key activation are a separately reviewed host change; first verify the existing
 admin connection remains available, then dispatch the access-check workflow
 from `main` and approve the `vps-prod` job. Preserve its sanitized report. Also
@@ -94,3 +97,16 @@ the new OAuth client/grant. Restore the preserved `authorized_keys` copy if its
 contents changed unexpectedly. Keep the original admin access and provider
 console available throughout. No release promotion is authorized by an access
 check PASS; backup, migration and service activation need separate gates.
+
+## Correct an already installed access command
+
+The first production access verification exposed a template-versus-installed
+timer name mismatch. From the reviewed updated checkout, use the independent
+`update-script` phase with `--confirm update-script` and a new report path.
+This phase requires the exact previously reviewed script and restricted key,
+preserves the old script in a root-private backup beside it, and atomically
+replaces only the forced-command script. It does not change the timer, SSH
+configuration, authorized keys, Compose or services. Run `verify` again with a
+new report path before dispatching the protected GitHub workflow. If the new
+script fails, `restore-script --confirm restore-script` restores only the
+preserved old script after checking both versions; use a fresh report path.

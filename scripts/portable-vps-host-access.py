@@ -2,6 +2,7 @@
 """Phase-gated installation of the restricted GitHub VPS access key."""
 
 import argparse
+import hashlib
 import json
 import os
 import stat
@@ -16,6 +17,16 @@ REMOTE_SCRIPT = Path("/opt/rsl-siege-manager/scripts/portable-vps-remote.py")
 SOURCE_SCRIPT = Path(__file__).with_name("portable-vps-remote.py")
 KEY_COMMENT = "github-vps-deploy"
 FORCED_COMMAND = f'restrict,command="/usr/bin/python3 {REMOTE_SCRIPT}"'
+OLD_REMOTE_SHA256 = "84f5de9a0e819603f94faa40f33d1470999ae92bd1a86317f14a41b0e3b35b39"
+NEW_REMOTE_SHA256 = "f965a4edc244c7ece696bbeb30b650f67c3c21e82584c44185ca57a94db31da7"
+
+
+def script_backup_path():
+    return REMOTE_SCRIPT.with_name("portable-vps-remote.py.before-production-backup-timer")
+
+
+def digest(data):
+    return hashlib.sha256(data).hexdigest()
 
 
 def checked_file(path, uid=0):
@@ -190,6 +201,59 @@ def verify(key):
     return checks
 
 
+def update_script(key):
+    checks = preflight()
+    checks["public_key_valid"] = bool(key)
+    if not all(checks.values()):
+        return checks
+    entry = key_entry(key).encode()
+    checks["restricted_key_exactly_once"] = AUTHORIZED_KEYS.read_bytes().splitlines().count(entry) == 1
+    checks["old_script_reviewed"] = checked_file(REMOTE_SCRIPT) and digest(REMOTE_SCRIPT.read_bytes()) == OLD_REMOTE_SHA256
+    checks["new_script_reviewed"] = digest(SOURCE_SCRIPT.read_bytes()) == NEW_REMOTE_SHA256
+    backup = script_backup_path()
+    checks["backup_path_unused"] = not backup.exists() and not backup.is_symlink()
+    if not all(checks.values()):
+        return checks
+    old_data = REMOTE_SCRIPT.read_bytes()
+    new_data = SOURCE_SCRIPT.read_bytes()
+    descriptor = os.open(backup, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(descriptor, "wb") as stream:
+        stream.write(old_data)
+        stream.flush()
+        os.fsync(stream.fileno())
+    checks["old_script_backup"] = private_file(backup) and backup.read_bytes() == old_data
+    if not checks["old_script_backup"]:
+        return checks
+    try:
+        atomic_write(REMOTE_SCRIPT, new_data, 0o700)
+        checks["updated_script_installed"] = checked_file(REMOTE_SCRIPT) and REMOTE_SCRIPT.read_bytes() == new_data
+    except OSError:
+        checks["script_update"] = False
+    if not checks.get("updated_script_installed"):
+        atomic_write(REMOTE_SCRIPT, old_data, 0o700)
+        checks["old_script_restored"] = REMOTE_SCRIPT.read_bytes() == old_data
+    return checks
+
+
+def restore_script(key):
+    checks = preflight()
+    checks["public_key_valid"] = bool(key)
+    if not all(checks.values()):
+        return checks
+    entry = key_entry(key).encode()
+    checks["restricted_key_exactly_once"] = AUTHORIZED_KEYS.read_bytes().splitlines().count(entry) == 1
+    checks["updated_script_present"] = checked_file(REMOTE_SCRIPT) and digest(REMOTE_SCRIPT.read_bytes()) == NEW_REMOTE_SHA256
+    checks["new_script_reviewed"] = digest(SOURCE_SCRIPT.read_bytes()) == NEW_REMOTE_SHA256
+    backup = script_backup_path()
+    checks["reviewed_old_script_backup"] = private_file(backup) and digest(backup.read_bytes()) == OLD_REMOTE_SHA256
+    if not all(checks.values()):
+        return checks
+    old_data = backup.read_bytes()
+    atomic_write(REMOTE_SCRIPT, old_data, 0o700)
+    checks["old_script_restored"] = REMOTE_SCRIPT.read_bytes() == old_data
+    return checks
+
+
 def rollback(key):
     checks = preflight()
     checks["public_key_valid"] = bool(key)
@@ -211,9 +275,9 @@ def rollback(key):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("phase", choices=("inspect", "install", "verify", "rollback"))
+    parser.add_argument("phase", choices=("inspect", "install", "verify", "rollback", "update-script", "restore-script"))
     parser.add_argument("--public-key", type=Path)
-    parser.add_argument("--confirm", choices=("install", "rollback"))
+    parser.add_argument("--confirm", choices=("install", "rollback", "update-script", "restore-script"))
     parser.add_argument("--report", required=True, type=Path)
     args = parser.parse_args()
     checks = preflight()
@@ -222,12 +286,16 @@ def main():
             key = public_key(args.public_key) if args.public_key else ""
         except (OSError, ValueError, subprocess.TimeoutExpired):
             key = ""
-        if args.phase in ("install", "rollback") and args.confirm != args.phase:
+        if args.phase in ("install", "rollback", "update-script", "restore-script") and args.confirm != args.phase:
             checks["explicit_phase_confirmation"] = False
         elif args.phase == "install":
             checks = install(key)
         elif args.phase == "verify":
             checks = verify(key)
+        elif args.phase == "update-script":
+            checks = update_script(key)
+        elif args.phase == "restore-script":
+            checks = restore_script(key)
         else:
             checks = rollback(key)
     status = "PASS" if all(checks.values()) else "STOP"

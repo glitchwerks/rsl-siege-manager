@@ -1,6 +1,7 @@
 """The host access installer preserves existing SSH keys and removes only its own."""
 
 import importlib.util
+import hashlib
 from pathlib import Path
 from unittest import mock
 
@@ -81,3 +82,33 @@ def test_destination_path_creation_is_limited_to_missing_directories(tmp_path):
         manager.rmdir()
         manager.symlink_to(tmp_path)
         assert not host_access.destination_path_safe()
+
+
+def test_reviewed_remote_script_update_and_restore(tmp_path):
+    authorized = tmp_path / "authorized_keys"
+    remote = tmp_path / "portable-vps-remote.py"
+    source = tmp_path / "new-remote.py"
+    old_data = b"old reviewed forced command\n"
+    new_data = b"new reviewed forced command\n"
+    remote.write_bytes(old_data)
+    source.write_bytes(new_data)
+    key = "ssh-ed25519 DEDICATED github-vps-deploy"
+    with mock.patch.object(host_access, "AUTHORIZED_KEYS", authorized), mock.patch.object(
+        host_access, "REMOTE_SCRIPT", remote
+    ), mock.patch.object(host_access, "SOURCE_SCRIPT", source), mock.patch.object(
+        host_access, "OLD_REMOTE_SHA256", hashlib.sha256(old_data).hexdigest()
+    ), mock.patch.object(
+        host_access, "NEW_REMOTE_SHA256", hashlib.sha256(new_data).hexdigest()
+    ), mock.patch.object(host_access, "preflight", side_effect=lambda: {"baseline": True}
+    ), mock.patch.object(host_access, "checked_file", side_effect=lambda path: path.is_file()
+    ), mock.patch.object(host_access, "private_file", side_effect=lambda path: path.is_file()
+    ), mock.patch.object(host_access, "FORCED_COMMAND", f'restrict,command="/usr/bin/python3 {remote}"'):
+        authorized.write_text(host_access.key_entry(key) + "\n")
+        result = host_access.update_script(key)
+        assert all(result.values())
+        assert remote.read_bytes() == new_data
+        assert host_access.script_backup_path().read_bytes() == old_data
+        assert not all(host_access.update_script(key).values())
+        restored = host_access.restore_script(key)
+        assert all(restored.values())
+        assert remote.read_bytes() == old_data

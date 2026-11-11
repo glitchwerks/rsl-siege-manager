@@ -36,7 +36,7 @@ def access_check():
         for command in (
             ["docker", "compose", "version"],
             ["docker", "info"],
-            ["systemctl", "is-active", "--quiet", "rsl-backup.timer"],
+            ["systemctl", "is-active", "--quiet", "rsl-production-backup.timer"],
         )
     )
 
