@@ -3,10 +3,12 @@
 Production remains on its currently approved image digests. A successful
 connection check grants no permission to replace them. The release path has
 separate candidate, access, staging, backup, migration, promotion, acceptance,
-and recovery phases. The first two phases are automated by
-`.github/workflows/vps-release-readiness.yml`; the other phases must remain
-unavailable to the GitHub deploy key until their reviewed, phase-scoped host
-implementation and isolated rehearsal are complete.
+and recovery phases. Candidate and access checks are automated by
+`.github/workflows/vps-release-readiness.yml`. A separate
+`.github/workflows/vps-release-stage.yml` can store the same reviewed candidate
+as private host evidence after another explicit approval. Backup, migration,
+promotion, acceptance and recovery remain unavailable to the GitHub deploy key
+until their reviewed, phase-scoped host implementation and isolated rehearsal.
 
 ## Candidate and read-only access
 
@@ -54,13 +56,56 @@ sanitized reports; a STOP ends this attempt. This workflow does not stage a
 release, run a backup or migration, pull an image on the VPS, or restart a
 service.
 
+## Bounded candidate staging
+
+After the host command upgrade below passes local `verify`, manually dispatch
+**VPS release stage** from Siege `main` with the same three candidate inputs.
+This run repeats CI/digest provenance verification, then requests a separate
+`vps-prod` approval. The candidate job passes only the verified manifest bytes
+to the protected job; it does not pass the cross-repository credentials. The
+protected job rechecks the digest, performs the pinned-host read-only baseline,
+and sends `stage-release <digest> <run-id>-<attempt> confirm-stage` with at most
+16 KiB of candidate JSON through the restricted SSH key. No arbitrary shell
+command is accepted.
+
+The host rechecks the digest and manifest shape, then creates exactly one
+root-private `/srv/rsl-siege/evidence/release-stages/<run-id>-<attempt>/`
+directory containing `candidate.json` and a boolean-only `report.json`. An
+existing run directory, changed digest, duplicate JSON key, malformed manifest,
+or unsafe path is a STOP. The runner preserves a separate sanitized stage report.
+Staging does not alter `stack.env`, pull images, run preflight against runtime
+configuration, execute backup/migration, or touch Compose services. Keep the
+candidate and reports for the later preflight/promotion phases.
+
+The host-side forced-command script must be installed separately from a reviewed
+commit. Its `update-script` phase requires the exact currently installed
+read-only script hash, preserves a root-private copy at
+`/opt/rsl-siege-manager/scripts/portable-vps-remote.py.before-release-stage`,
+and atomically changes only that script. Keep an admin SSH session and provider
+console recovery available. From the reviewed checkout on the VPS, run the
+phase-scoped installer and verification with fresh report paths:
+
+```sh
+python3 scripts/portable-vps-host-access.py update-script \
+  --public-key deploy/portable/host/github-vps-deploy.pub \
+  --confirm update-script --report /root/vps-stage-script-update.json
+python3 scripts/portable-vps-host-access.py verify \
+  --public-key deploy/portable/host/github-vps-deploy.pub \
+  --report /root/vps-stage-script-verify.json
+```
+
+Require both reports to pass and recheck a fresh admin login and the existing
+read-only GitHub access check before any staging dispatch. If the new script
+must be removed, use `restore-script --confirm restore-script` with the same
+public key and a new report path; it restores only the preserved script. The
+stage command is a state-changing validation and needs its own approval after
+the host update.
+
 ## Promotion phases to implement and rehearse
 
-1. **Stage:** transfer the reviewed manifest through a bounded, authenticated
-   forced-command request. The host checks its digest and provenance, compares
-   exact image references with the protected runtime configuration, preserves
-   the installed source/image/configuration baseline, and runs the portable
-   configuration preflight. Staging must not activate services.
+1. **Preflight:** compare the staged candidate with protected runtime
+   configuration, preserve the installed source/image/configuration baseline,
+   and run the portable configuration preflight without activating services.
 2. **Backup:** run the already reviewed production backup job as a distinct
    confirmed phase. Require a fresh complete local and off-host readback report
    and the independent restore evidence before migration or promotion. Timer
@@ -82,7 +127,7 @@ service.
    or new writes, stop and use reviewed database reconciliation and recovery;
    never automatically roll back the database or reenable Azure deployment.
 
-The stage, backup, migration, promote, accept, and recover operations need
+The preflight, backup, migration, promote, accept, and recover operations need
 separate phase-scoped host commands, explicit confirmations, bounded input,
 sanitized private reports, and narrow rollback behavior. Review their host
 dependencies and remote-access impact before installing them. Rehearse with an

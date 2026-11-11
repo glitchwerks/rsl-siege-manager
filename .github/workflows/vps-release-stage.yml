@@ -1,0 +1,176 @@
+name: VPS release stage
+
+# A manual, candidate-bound write of private release evidence only. It does not
+# pull images, run migrations, change Compose, or activate services.
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_ref:
+        description: Full rsl-mom-apps commit SHA containing the candidate JSON
+        required: true
+        type: string
+      candidate_path:
+        description: Path under releases/ in rsl-mom-apps (for example releases/v1.6.0.json)
+        required: true
+        type: string
+      candidate_sha256:
+        description: SHA-256 of the exact candidate JSON file
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vps-production-promotion
+  cancel-in-progress: false
+
+jobs:
+  candidate:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      manifest_b64: ${{ steps.payload.outputs.manifest_b64 }}
+    steps:
+      - name: Require cross-repository read credential
+        env:
+          VPS_RELEASE_REPO_READ_TOKEN: ${{ secrets.VPS_RELEASE_REPO_READ_TOKEN }}
+          VPS_RELEASE_PACKAGE_READ_TOKEN: ${{ secrets.VPS_RELEASE_PACKAGE_READ_TOKEN }}
+          VPS_RELEASE_READ_USER: ${{ vars.VPS_RELEASE_READ_USER }}
+        run: |
+          set -euo pipefail
+          test -n "$VPS_RELEASE_REPO_READ_TOKEN"
+          test -n "$VPS_RELEASE_PACKAGE_READ_TOKEN"
+          test -n "$VPS_RELEASE_READ_USER"
+
+      - name: Validate data-only candidate selector
+        id: input
+        shell: bash
+        env:
+          CANDIDATE_REF: ${{ inputs.candidate_ref }}
+          CANDIDATE_PATH: ${{ inputs.candidate_path }}
+          CANDIDATE_SHA256: ${{ inputs.candidate_sha256 }}
+        run: |
+          set -euo pipefail
+          [[ "$CANDIDATE_REF" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$CANDIDATE_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$CANDIDATE_PATH" =~ ^releases/[a-z0-9][a-z0-9._-]{2,63}\.json$ ]]
+          echo "candidate_file=candidate/$CANDIDATE_PATH" >> "$GITHUB_OUTPUT"
+
+      - name: Check out reviewed verifier
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: glitchwerks/rsl-mom-apps
+          ref: 7f654cbb57b3e185207edf9fc70a04601f1125a0
+          path: contract
+          token: ${{ secrets.VPS_RELEASE_REPO_READ_TOKEN }}
+          persist-credentials: false
+
+      - name: Check out data-only candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: glitchwerks/rsl-mom-apps
+          ref: ${{ inputs.candidate_ref }}
+          path: candidate
+          fetch-depth: 0
+          token: ${{ secrets.VPS_RELEASE_REPO_READ_TOKEN }}
+          persist-credentials: false
+
+      - name: Bind candidate to exact file digest
+        shell: bash
+        env:
+          CANDIDATE_REF: ${{ inputs.candidate_ref }}
+          CANDIDATE_PATH: ${{ inputs.candidate_path }}
+          CANDIDATE_SHA256: ${{ inputs.candidate_sha256 }}
+        run: |
+          set -euo pipefail
+          file="candidate/$CANDIDATE_PATH"
+          test -f "$file" && test ! -L "$file"
+          resolved=$(realpath -e -- "$file")
+          [[ "$resolved" == "$GITHUB_WORKSPACE/candidate/releases/"* ]]
+          test "$(git -C candidate rev-parse HEAD)" = "$CANDIDATE_REF"
+          git -C candidate merge-base --is-ancestor "$CANDIDATE_REF" origin/main
+          actual=$(sha256sum -- "$file" | cut -d ' ' -f 1)
+          test "$actual" = "$CANDIDATE_SHA256"
+
+      - name: Sign in to GHCR for read-only digest checks
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ vars.VPS_RELEASE_READ_USER }}
+          password: ${{ secrets.VPS_RELEASE_PACKAGE_READ_TOKEN }}
+
+      - name: Verify CI runs and immutable GHCR image digests
+        env:
+          GH_TOKEN: ${{ secrets.VPS_RELEASE_REPO_READ_TOKEN }}
+        run: |
+          python3 contract/scripts/verify-vps-candidate.py \
+            --manifest '${{ steps.input.outputs.candidate_file }}' \
+            --report "$RUNNER_TEMP/vps-candidate-report.json"
+
+      - name: Carry verified data-only manifest to protected job
+        id: payload
+        env:
+          CANDIDATE_FILE: ${{ steps.input.outputs.candidate_file }}
+        run: echo "manifest_b64=$(base64 -w0 -- "$CANDIDATE_FILE")" >> "$GITHUB_OUTPUT"
+
+      - name: Upload sanitized candidate report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: vps-candidate-report
+          path: ${{ runner.temp }}/vps-candidate-report.json
+          if-no-files-found: ignore
+          retention-days: 30
+
+  stage:
+    needs: candidate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: vps-prod
+    steps:
+      - name: Check out reviewed main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Restore exact verified manifest
+        env:
+          MANIFEST_B64: ${{ needs.candidate.outputs.manifest_b64 }}
+          CANDIDATE_SHA256: ${{ inputs.candidate_sha256 }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$MANIFEST_B64" | base64 -d > "$RUNNER_TEMP/candidate.json"
+          actual=$(sha256sum "$RUNNER_TEMP/candidate.json" | cut -d ' ' -f 1)
+          test "$actual" = "$CANDIDATE_SHA256"
+
+      - name: Join tailnet as ephemeral deployment runner
+        uses: tailscale/github-action@064b10558093f38325e838ddea35486bdc6b1d5c # v4.4.0
+        with:
+          oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
+          tags: tag:github-deploy
+
+      - name: Stage exact candidate through restricted SSH command
+        env:
+          VPS_TAILSCALE_HOST: ${{ secrets.VPS_TAILSCALE_HOST }}
+          VPS_SSH_USER: ${{ vars.VPS_SSH_USER }}
+          VPS_SSH_HOST_FINGERPRINT: ${{ secrets.VPS_SSH_HOST_FINGERPRINT }}
+          VPS_DEPLOY_SSH_KEY: ${{ secrets.VPS_DEPLOY_SSH_KEY }}
+          VPS_SSH_KNOWN_HOSTS: ${{ secrets.VPS_SSH_KNOWN_HOSTS }}
+        run: |
+          python3 scripts/portable-vps-stage.py \
+            --manifest "$RUNNER_TEMP/candidate.json" \
+            --digest '${{ inputs.candidate_sha256 }}' \
+            --run-id '${{ github.run_id }}-${{ github.run_attempt }}' \
+            --report "$RUNNER_TEMP/vps-stage-report.json"
+
+      - name: Upload sanitized stage report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: vps-stage-report
+          path: ${{ runner.temp }}/vps-stage-report.json
+          if-no-files-found: ignore
+          retention-days: 30
