@@ -58,6 +58,10 @@ class AccessTests(unittest.TestCase):
         ), patch.object(REMOTE, "succeeds", return_value=True) as runner:
             self.assertEqual(REMOTE.main(), 0)
         self.assertEqual(runner.call_count, 3)
+        self.assertEqual(
+            runner.call_args.args[0],
+            ["systemctl", "is-active", "--quiet", "rsl-production-backup.timer"],
+        )
 
     def test_report_exclusive_and_sanitized(self):
         with tempfile.TemporaryDirectory() as directory:
