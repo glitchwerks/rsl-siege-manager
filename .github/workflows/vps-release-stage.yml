@@ -62,7 +62,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: glitchwerks/rsl-mom-apps
-          ref: 771fcc890ed88d013e6f4988362e8fe386b50a4d
+          ref: 7d5eb0323e5e8a5e916f75a574674a610d483c95
           path: contract
           token: ${{ secrets.VPS_RELEASE_REPO_READ_TOKEN }}
           persist-credentials: false
