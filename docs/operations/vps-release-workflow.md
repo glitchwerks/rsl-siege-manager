@@ -23,8 +23,8 @@ Manually dispatch **VPS release readiness** from Siege `main` with those three
 inputs. Its first job checks the selector, requires the candidate commit to be
 reachable from coordination `main`, verifies the exact file digest, and runs the
 reviewed validator pinned to coordination commit
-`0b32245d77ff3cc33b9e6002e0a84e5160cf8ee0` (coordination PR #30). It verifies the two CI runs
-and the three SHA-tagged GHCR image digests. The candidate checkout is data only:
+`771fcc890ed88d013e6f4988362e8fe386b50a4d` (coordination PR #30). It verifies the two CI runs,
+three SHA-tagged GHCR image digests, and the API/Mom image Alembic heads. The candidate checkout is data only:
 the workflow never executes its code. The pinned validator can be updated only
 through a reviewed Siege workflow change.
 
