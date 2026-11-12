@@ -5,6 +5,7 @@ on:
       - ".github/workflows/vps-access-*.yml"
       - "scripts/portable-vps-*.py"
       - "scripts/tests/test_portable_vps_access.py"
+      - "scripts/tests/test_portable_vps_migration_baseline.py"
       - "docs/operations/vps-github-access.md"
   push:
     branches: [main]
@@ -12,6 +13,7 @@ on:
       - ".github/workflows/vps-access-*.yml"
       - "scripts/portable-vps-*.py"
       - "scripts/tests/test_portable_vps_access.py"
+      - "scripts/tests/test_portable_vps_migration_baseline.py"
       - "docs/operations/vps-github-access.md"
 permissions:
   contents: read
@@ -24,3 +26,5 @@ jobs:
           persist-credentials: false
       - name: Test fixed read-only SSH request and sanitized reporting
         run: python3 -m unittest discover -s scripts/tests -p test_portable_vps_access.py -v
+      - name: Test exact live migration revision baseline without Docker writes
+        run: python3 -m unittest discover -s scripts/tests -p test_portable_vps_migration_baseline.py -v
