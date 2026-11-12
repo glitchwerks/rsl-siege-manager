@@ -136,3 +136,24 @@ isolated Discord identity and target before requesting a distinct production
 release approval. Completion is tracked by [Siege #583](https://github.com/glitchwerks/rsl-siege-manager/issues/583),
 [Mom #387](https://github.com/glitchwerks/rsl-mom-bot/issues/387), and
 [coordination #25](https://github.com/glitchwerks/rsl-mom-apps/issues/25).
+
+## Live migration revision baseline
+
+Before approving any database migration, compare the exact staged manifest to
+the revisions in both running databases. The read-only
+`scripts/portable-vps-migration-baseline.py` command requires a root-private
+manifest, its SHA-256 digest from the approved stage, and the protected
+`/srv/rsl-siege` project directory. It invokes `alembic current` inside the
+existing `backend` and `mom` containers through the local Docker socket. Both
+revisions must exactly match the manifest's `from_revision` values, including
+when that database has `mode: none`. Any missing, multiple, unexpected, or
+unreadable revision stops the gate. The report is a new root-private JSON file
+containing booleans only.
+
+This baseline does not pause writers, establish a fresh backup, execute
+migrations, pull images, or change the running stack. A passing report is
+evidence for a later deployment phase, not authorization to promote. Before a
+schema change, separately verify a fresh successful encrypted off-host backup
+and restore proof from the existing backup workflow after writers are paused.
+Keep the backup and migration phases independently gated; a mismatch or failed
+migration leaves writers stopped for manual recovery.
