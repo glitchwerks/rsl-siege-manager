@@ -17,6 +17,7 @@ SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 RUN = re.compile(r"[1-9][0-9]{0,19}-[1-9][0-9]{0,2}\Z")
 SOURCE_SHA = re.compile(r"[0-9a-f]{40}\Z")
 RELEASE_ID = re.compile(r"[a-z0-9][a-z0-9._-]{2,63}\Z")
+REVISION = re.compile(r"[a-zA-Z0-9_]{1,64}\Z")
 
 
 def private_directory(path):
@@ -73,14 +74,39 @@ def image(value, name):
     )
 
 
+def valid_migrations(value):
+    if not exact_keys(value, ("siege", "mom", "order")):
+        return False
+    changed = []
+    for name in ("siege", "mom"):
+        item = value[name]
+        if not exact_keys(item, ("mode", "from_revision", "to_revision")):
+            return False
+        before, after = item["from_revision"], item["to_revision"]
+        if not all(isinstance(revision, str) and REVISION.fullmatch(revision)
+                   and revision.lower() not in {"head", "heads", "base", "current"}
+                   for revision in (before, after)):
+            return False
+        if item["mode"] == "none" and before == after:
+            continue
+        if item["mode"] == "upgrade" and before != after:
+            changed.append(name)
+            continue
+        return False
+    order = value["order"]
+    return (isinstance(order, list)
+            and all(type(name) is str and name in ("siege", "mom") for name in order)
+            and len(order) == len(set(order)) and set(order) == set(changed))
+
+
 def valid_manifest(raw):
     try:
         data = json.loads(raw.decode("utf-8"), object_pairs_hook=no_duplicate_keys)
     except (UnicodeError, ValueError, TypeError, RecursionError):
         return False
-    if not exact_keys(data, ("schema_version", "release_id", "siege", "mom", "configuration")):
+    if not exact_keys(data, ("schema_version", "release_id", "siege", "mom", "configuration", "migrations")):
         return False
-    if type(data["schema_version"]) is not int or data["schema_version"] != 1:
+    if type(data["schema_version"]) is not int or data["schema_version"] != 2:
         return False
     if not isinstance(data["release_id"], str) or not RELEASE_ID.fullmatch(data["release_id"]):
         return False
@@ -101,6 +127,8 @@ def valid_manifest(raw):
            for item in (siege, mom)):
         return False
     if mom["portable_auth"] is not True or mom["scheduler_progress"] is not True:
+        return False
+    if not valid_migrations(data["migrations"]):
         return False
     return (image(siege["api_image"], "siege-api")
             and image(siege["frontend_image"], "siege-frontend")

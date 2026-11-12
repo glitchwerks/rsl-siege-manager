@@ -28,7 +28,7 @@ STAGE = load("vps_stage", "scripts/portable-vps-stage.py")
 class AccessTests(unittest.TestCase):
     def candidate(self):
         return {
-            "schema_version": 1,
+            "schema_version": 2,
             "release_id": "test-candidate",
             "siege": {
                 "source_sha": "1" * 40,
@@ -44,6 +44,11 @@ class AccessTests(unittest.TestCase):
                 "scheduler_progress": True,
             },
             "configuration": {"source_sha": "1" * 40, "topology": "mom"},
+            "migrations": {
+                "siege": {"mode": "none", "from_revision": "0012", "to_revision": "0012"},
+                "mom": {"mode": "none", "from_revision": "b6_new_member_alert_subscription", "to_revision": "b6_new_member_alert_subscription"},
+                "order": [],
+            },
         }
 
     def test_private_host_identity_comes_from_environment_secrets(self):
@@ -125,9 +130,16 @@ class AccessTests(unittest.TestCase):
     def test_stage_refuses_digest_mismatch_oversize_and_duplicate_keys(self):
         raw = json.dumps(self.candidate()).encode()
         self.assertTrue(REMOTE.valid_manifest(raw))
-        duplicate = raw.replace(b'"schema_version": 1,', b'"schema_version": 1, "schema_version": 1,')
+        duplicate = raw.replace(b'"schema_version": 2,', b'"schema_version": 2, "schema_version": 2,')
         self.assertFalse(REMOTE.valid_manifest(duplicate))
         self.assertFalse(REMOTE.valid_manifest(b"[" * 1100 + b"0" + b"]" * 1100))
+        migration = self.candidate()
+        migration["migrations"]["siege"].update(mode="upgrade", to_revision="0013")
+        self.assertFalse(REMOTE.valid_manifest(json.dumps(migration).encode()))
+        migration["migrations"]["order"] = ["siege"]
+        self.assertTrue(REMOTE.valid_manifest(json.dumps(migration).encode()))
+        migration["migrations"]["siege"]["to_revision"] = "head"
+        self.assertFalse(REMOTE.valid_manifest(json.dumps(migration).encode()))
         with tempfile.TemporaryDirectory() as directory:
             evidence = Path(directory) / "evidence"
             evidence.mkdir(mode=0o700)

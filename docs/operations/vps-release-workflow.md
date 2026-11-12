@@ -68,7 +68,8 @@ and sends `stage-release <digest> <run-id>-<attempt> confirm-stage` with at most
 16 KiB of candidate JSON through the restricted SSH key. No arbitrary shell
 command is accepted.
 
-The host rechecks the digest and manifest shape, then creates exactly one
+The host rechecks the digest and schema-v2 manifest shape, including explicit
+per-database migration decisions, then creates exactly one
 root-private `/srv/rsl-siege/evidence/release-stages/<run-id>-<attempt>/`
 directory containing `candidate.json` and a boolean-only `report.json`. An
 existing run directory, changed digest, duplicate JSON key, malformed manifest,
