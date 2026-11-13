@@ -92,7 +92,7 @@ def docker_state(project, service):
     return BACKUP.moment(state.get("FinishedAt"))
 
 
-def inspect(project, run_id, digest, backup_root, backup_path, now=None):
+def inspect(project, run_id, digest, backup_owner, backup_root, backup_path, now=None):
     checks = {
         "root_execution": os.geteuid() == 0,
         "request_shape": bool(REMOTE.RUN.fullmatch(run_id)) and bool(REMOTE.SHA256.fullmatch(digest)),
@@ -122,15 +122,18 @@ def inspect(project, run_id, digest, backup_root, backup_path, now=None):
         checks["both_writers_stopped"] = all(stopped.values())
         if not checks["both_writers_stopped"]:
             return checks
-        backup_owner = pwd.getpwnam("rsl-backup").pw_uid
-        checks["backup_root_private"] = (protected(backup_root, backup_owner, directory=True)
-                                         and protected(backup_root / "runs", backup_owner, directory=True))
+        checks["backup_owner_supported"] = backup_owner in {"root", "rsl-backup"}
+        if not checks["backup_owner_supported"]:
+            return checks
+        backup_uid = pwd.getpwnam(backup_owner).pw_uid
+        checks["backup_root_private"] = (protected(backup_root, backup_uid, directory=True)
+                                         and protected(backup_root / "runs", backup_uid, directory=True))
         checks["managed_report_path"] = (checks["backup_root_private"]
                                          and backup_path.name == "job.json"
                                          and backup_path.parent.parent == backup_root / "runs")
         if not checks["managed_report_path"]:
             return checks
-        backup = json.loads(read_private(backup_path, backup_owner),
+        backup = json.loads(read_private(backup_path, backup_uid),
                             object_pairs_hook=REMOTE.no_duplicate_keys)
         checks["managed_backup"] = (isinstance(backup, dict)
                                     and backup.get("schema") == 1
@@ -163,12 +166,13 @@ def main(argv=None):
     parser.add_argument("--project-directory", required=True, type=Path)
     parser.add_argument("--stage-run-id", required=True)
     parser.add_argument("--manifest-sha256", required=True)
+    parser.add_argument("--backup-owner", required=True, choices=("root", "rsl-backup"))
     parser.add_argument("--backup-root", required=True, type=Path)
     parser.add_argument("--backup-report", required=True, type=Path)
     parser.add_argument("--report", required=True, type=Path)
     args = parser.parse_args(argv)
     checks = inspect(args.project_directory, args.stage_run_id, args.manifest_sha256,
-                     args.backup_root, args.backup_report)
+                     args.backup_owner, args.backup_root, args.backup_report)
     result = {"phase": "writer-pause-gate", "status": "PASS" if checks and all(checks.values()) else "STOP",
               "checks": checks}
     try:

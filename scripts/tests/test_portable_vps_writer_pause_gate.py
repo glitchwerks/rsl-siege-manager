@@ -60,14 +60,14 @@ class WriterPauseTests(unittest.TestCase):
             return b"COMPOSE_PROJECT_NAME=siege-pilot\n"
         return json.dumps(self.backup).encode()
 
-    def inspect(self, writer_state=None):
+    def inspect(self, writer_state=None, backup_owner="rsl-backup"):
         with patch.object(GATE.os, "geteuid", return_value=0), patch.object(
             GATE, "protected", return_value=True
         ), patch.object(GATE, "read_private", side_effect=self.read), patch.object(
             GATE.pwd, "getpwnam", return_value=SimpleNamespace(pw_uid=1001)
         ), patch.object(GATE, "docker_state", side_effect=writer_state or [self.stopped] * 4):
             return GATE.inspect(Path("/protected/project"), "123-1", self.digest,
-                                self.backup_root, self.backup_path, now=self.now)
+                                backup_owner, self.backup_root, self.backup_path, now=self.now)
 
     def test_matching_stopped_services_and_later_backup_pass(self):
         self.assertTrue(all(self.inspect().values()))
@@ -88,6 +88,10 @@ class WriterPauseTests(unittest.TestCase):
         self.backup_path = self.backup_root / "runs" / str(uuid.uuid4()) / "job.json"
         self.assertFalse(self.inspect()["managed_backup"])
 
+    def test_root_backup_owner_is_supported_but_unknown_owner_stops(self):
+        self.assertTrue(all(self.inspect(backup_owner="root").values()))
+        self.assertFalse(self.inspect(backup_owner="unreviewed")["backup_owner_supported"])
+
     def test_wrong_candidate_digest_stops_before_docker(self):
         with patch.object(GATE.os, "geteuid", return_value=0), patch.object(
             GATE, "protected", return_value=True
@@ -95,7 +99,7 @@ class WriterPauseTests(unittest.TestCase):
             GATE, "docker_state"
         ) as docker:
             checks = GATE.inspect(Path("/protected/project"), "123-1", "0" * 64,
-                                  self.backup_root, self.backup_path, now=self.now)
+                                  "rsl-backup", self.backup_root, self.backup_path, now=self.now)
         self.assertFalse(checks["staged_manifest"])
         docker.assert_not_called()
 
@@ -123,6 +127,7 @@ class WriterPauseTests(unittest.TestCase):
             ):
                 code = GATE.main(["--project-directory", directory, "--stage-run-id", "123-1",
                                   "--manifest-sha256", self.digest,
+                                  "--backup-owner", "root",
                                   "--backup-root", str(Path(directory) / "backup"),
                                   "--backup-report", str(Path(directory) / "job.json"),
                                   "--report", str(report)])

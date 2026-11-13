@@ -186,8 +186,10 @@ read-only `scripts/portable-vps-writer-pause-gate.py` verifies the order of
 events. It binds to the root-private staged candidate by run ID and SHA-256,
 reads the protected Compose project name, and checks the local Docker socket
 for exactly one exited container for each writer service. It then reads the
-private successful managed backup report owned by `rsl-backup`, under the
-selected protected backup root's `runs/<run-UUID>/job.json`, and requires
+private successful managed backup report under the selected protected backup
+root's `runs/<run-UUID>/job.json`. The caller must provide the installed job's
+reviewed owner (`root` or `rsl-backup`) and exact root path; the production
+owner must be inspected before use. The gate requires
 both container stop times to precede the backup start. A second Docker state
 check catches a writer that restarted while evidence was inspected. Any missing,
 duplicate, running, or replaced writer state stops the gate. It writes a new
