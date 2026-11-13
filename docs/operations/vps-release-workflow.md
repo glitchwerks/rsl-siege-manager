@@ -211,3 +211,55 @@ afterward. The synthetic report is never uploaded or treated as backup/restore
 acceptance. This verifies Docker CLI behavior without a standing VMware pilot;
 an actual isolated application and database rehearsal is still required before
 production promotion.
+
+## Confirmed writer pause and managed backup phases
+
+`scripts/portable-vps-release-pause-backup.py` adds three independent host
+phases. It is not installed in the forced SSH command and is not invoked by a
+GitHub workflow. The root-private profile names the protected Compose project,
+the installed backup root and owner (`root` or `rsl-backup`), and the exact
+backup service/timer and unit-file SHA-256. The unit file must be root-owned,
+non-writable by group/others, and match systemd's active fragment path. Profile
+changes invalidate an earlier plan. Inspect and record the installed values
+before creating this profile; the repository service template does not attest
+to the production unit or account.
+
+The **plan** phase verifies the staged candidate digest, four unique running
+Compose containers (`backend`, `mom`, `postgres`, `proxy`), health of the writers
+and PostgreSQL, an active backup timer, an idle backup service, and no running
+bundled bot or maintenance service. It saves the exact container IDs and
+profile/candidate digests in a root-private plan, with a sanitized PASS/STOP
+report. No service changes occur.
+
+The **pause** phase requires the exact plan SHA-256 and `--confirm-pause`. It
+rechecks the running IDs and health, reserves an INCOMPLETE marker, stops only
+the recorded Mom and backend containers in that order, then requires those
+same containers to be exited while PostgreSQL remains healthy, proxy keeps
+running, and the backup timer stays active. The **backup** phase independently
+requires `--confirm-backup`, the accepted pause report, the same stopped
+identities, an idle backup service,
+and the reviewed unit. It starts only that unit once, requires exactly one new
+managed run, and reuses the writer/backup ordering gate. Each phase writes a
+new root-private boolean-only report to a caller-selected private directory
+outside the Compose project. No phase automatically retries or restarts a
+writer. The backup phase stores only the new run UUID in a separate private
+selector for later recovery proof.
+
+Partial stop, command timeout, new container, unit drift, a failed backup, or
+missing evidence is STOP. Preserve all markers and reports. Do not migrate or
+promote after STOP. Before a migration, the existing backup/restore evidence
+gate still requires recovery and isolated restore of that exact encrypted
+copy. There is no automatic writer resume: an operator must first confirm no
+migration or new writes occurred, recheck database revisions and original
+container identities, then separately approve targeted restart of only the
+stopped original services and verify app, gateway, PostgreSQL, proxy, backup
+timer, and remote access. If the schema or writer state is uncertain, keep the
+writers stopped for coordinated recovery. This branch supplies code and tests
+only; isolated rehearsal and a separately approved production deployment are
+still required.
+
+The disposable Docker CI job exercises the pause against four uniquely labeled
+synthetic containers. It verifies that Mom and backend stop while PostgreSQL
+and proxy stay running, then removes only those four fixture containers. The
+backup service itself is mocked in CI; this test is not backup recovery or
+application acceptance evidence.
