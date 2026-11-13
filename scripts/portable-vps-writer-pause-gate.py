@@ -89,7 +89,8 @@ def docker_state(project, service):
         return None
     if not isinstance(state, dict) or state.get("Running") is not False or state.get("Status") != "exited":
         return None
-    return BACKUP.moment(state.get("FinishedAt"))
+    finished = BACKUP.moment(state.get("FinishedAt"))
+    return (lines[0], finished) if finished else None
 
 
 def inspect(project, run_id, digest, backup_owner, backup_root, backup_path, now=None):
@@ -150,7 +151,7 @@ def inspect(project, run_id, digest, backup_owner, backup_root, backup_path, now
         finished = BACKUP.moment(backup.get("finished_at"))
         current = now or datetime.now(timezone.utc)
         checks["backup_after_pause"] = bool(
-            started and finished and all(value <= started for value in stopped.values())
+            started and finished and all(value[1] <= started for value in stopped.values())
             and started <= finished <= current and current - finished <= timedelta(hours=2)
         )
         # A second state read narrows the race between timestamp comparison and report creation.

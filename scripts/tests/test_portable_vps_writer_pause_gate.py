@@ -61,11 +61,14 @@ class WriterPauseTests(unittest.TestCase):
         return json.dumps(self.backup).encode()
 
     def inspect(self, writer_state=None, backup_owner="rsl-backup"):
+        states = writer_state or [self.stopped] * 4
+        identities = [("a" * 64 if index % 2 == 0 else "b" * 64, value)
+                      if value is not None else None for index, value in enumerate(states)]
         with patch.object(GATE.os, "geteuid", return_value=0), patch.object(
             GATE, "protected", return_value=True
         ), patch.object(GATE, "read_private", side_effect=self.read), patch.object(
             GATE.pwd, "getpwnam", return_value=SimpleNamespace(pw_uid=1001)
-        ), patch.object(GATE, "docker_state", side_effect=writer_state or [self.stopped] * 4):
+        ), patch.object(GATE, "docker_state", side_effect=identities):
             return GATE.inspect(Path("/protected/project"), "123-1", self.digest,
                                 backup_owner, self.backup_root, self.backup_path, now=self.now)
 
@@ -80,6 +83,19 @@ class WriterPauseTests(unittest.TestCase):
     def test_restart_between_checks_stops(self):
         later = self.stopped + timedelta(minutes=1)
         checks = self.inspect([self.stopped, self.stopped, later, self.stopped])
+        self.assertFalse(checks["writers_still_stopped"])
+
+    def test_replaced_container_with_same_stop_time_stops(self):
+        with patch.object(GATE.os, "geteuid", return_value=0), patch.object(
+            GATE, "protected", return_value=True
+        ), patch.object(GATE, "read_private", side_effect=self.read), patch.object(
+            GATE.pwd, "getpwnam", return_value=SimpleNamespace(pw_uid=1001)
+        ), patch.object(GATE, "docker_state", side_effect=[
+            ("a" * 64, self.stopped), ("b" * 64, self.stopped),
+            ("c" * 64, self.stopped), ("b" * 64, self.stopped),
+        ]):
+            checks = GATE.inspect(Path("/protected/project"), "123-1", self.digest,
+                                  "root", self.backup_root, self.backup_path, now=self.now)
         self.assertFalse(checks["writers_still_stopped"])
 
     def test_report_must_belong_to_managed_run(self):
@@ -109,7 +125,7 @@ class WriterPauseTests(unittest.TestCase):
         results = [SimpleNamespace(returncode=0, stdout=identifier + "\n"),
                    SimpleNamespace(returncode=0, stdout=json.dumps(state))]
         with patch.object(GATE.subprocess, "run", side_effect=results) as run:
-            self.assertEqual(GATE.docker_state("siege-pilot", "backend"), self.stopped)
+            self.assertEqual(GATE.docker_state("siege-pilot", "backend"), (identifier, self.stopped))
         self.assertEqual(run.call_count, 2)
         self.assertEqual(run.call_args_list[0].kwargs["env"]["DOCKER_HOST"],
                          "unix:///var/run/docker.sock")
