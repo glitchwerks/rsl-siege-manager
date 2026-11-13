@@ -9,6 +9,7 @@ on:
       - "scripts/tests/test_portable_vps_backup_evidence.py"
       - "scripts/tests/test_portable_vps_writer_pause_gate.py"
       - "scripts/tests/test_portable_vps_writer_docker.py"
+      - "scripts/tests/test_portable_vps_release_pause_backup.py"
       - "docs/operations/vps-github-access.md"
   push:
     branches: [main]
@@ -20,6 +21,7 @@ on:
       - "scripts/tests/test_portable_vps_backup_evidence.py"
       - "scripts/tests/test_portable_vps_writer_pause_gate.py"
       - "scripts/tests/test_portable_vps_writer_docker.py"
+      - "scripts/tests/test_portable_vps_release_pause_backup.py"
       - "docs/operations/vps-github-access.md"
 permissions:
   contents: read
@@ -38,6 +40,8 @@ jobs:
         run: python3 -m unittest discover -s scripts/tests -p test_portable_vps_backup_evidence.py -v
       - name: Test read-only writer pause and backup ordering gate
         run: python3 -m unittest discover -s scripts/tests -p test_portable_vps_writer_pause_gate.py -v
+      - name: Test confirmed pause and managed backup phases
+        run: python3 -m unittest discover -s scripts/tests -p test_portable_vps_release_pause_backup.py -v
   docker-rehearsal:
     runs-on: ubuntu-latest
     timeout-minutes: 10
