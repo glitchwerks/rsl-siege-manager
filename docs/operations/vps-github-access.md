@@ -83,7 +83,9 @@ the old one. If the new key must be revoked, run the separately confirmed
 `rollback` phase with the same public key and a new report path; it removes
 only that exact key entry and retains the backup and script for inspection.
 
-The forced command currently accepts only the literal `access-check` request.
+The initially installed forced command accepts only the literal `access-check`
+request. The separately reviewed [release staging upgrade](vps-release-workflow.md#bounded-candidate-staging)
+adds one bounded, confirmed request after its own host update and verification.
 It checks the protected directories, Docker access, and active backup timer,
 then returns `PASS` or `STOP`. Timer activity only confirms scheduling; release
 promotion must separately verify recent successful backup and recovery evidence.
@@ -99,11 +101,13 @@ contents changed unexpectedly. Keep the original admin access and provider
 console available throughout. No release promotion is authorized by an access
 check PASS; backup, migration and service activation need separate gates.
 
-## Correct an already installed access command
+## Historical access command correction
 
 The first production access verification exposed a template-versus-installed
-timer name mismatch. From the reviewed updated checkout, use the independent
-`update-script` phase with `--confirm update-script` and a new report path.
+timer name mismatch. The historical update used the reviewed #592 checkout and
+the independent `update-script` phase with `--confirm update-script` and a new
+report path. The current checkout's `update-script` phase is reserved for the
+later release staging upgrade; it refuses the earlier script hash.
 This phase requires the exact previously reviewed script and restricted key,
 preserves the old script in a root-private backup beside it, and atomically
 replaces only the forced-command script. It does not change the timer, SSH

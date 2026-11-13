@@ -17,12 +17,12 @@ REMOTE_SCRIPT = Path("/opt/rsl-siege-manager/scripts/portable-vps-remote.py")
 SOURCE_SCRIPT = Path(__file__).with_name("portable-vps-remote.py")
 KEY_COMMENT = "github-vps-deploy"
 FORCED_COMMAND = f'restrict,command="/usr/bin/python3 {REMOTE_SCRIPT}"'
-OLD_REMOTE_SHA256 = "84f5de9a0e819603f94faa40f33d1470999ae92bd1a86317f14a41b0e3b35b39"
-NEW_REMOTE_SHA256 = "f965a4edc244c7ece696bbeb30b650f67c3c21e82584c44185ca57a94db31da7"
+OLD_REMOTE_SHA256 = "f965a4edc244c7ece696bbeb30b650f67c3c21e82584c44185ca57a94db31da7"
+NEW_REMOTE_SHA256 = "70030e03fa566033397d876bf408883b86e0de8d626edb177feac839907b28b4"
 
 
 def script_backup_path():
-    return REMOTE_SCRIPT.with_name("portable-vps-remote.py.before-production-backup-timer")
+    return REMOTE_SCRIPT.with_name("portable-vps-remote.py.before-release-stage")
 
 
 def digest(data):

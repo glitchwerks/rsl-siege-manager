@@ -5,6 +5,10 @@ on:
       - ".github/workflows/vps-access-*.yml"
       - "scripts/portable-vps-*.py"
       - "scripts/tests/test_portable_vps_access.py"
+      - "scripts/tests/test_portable_vps_migration_baseline.py"
+      - "scripts/tests/test_portable_vps_backup_evidence.py"
+      - "scripts/tests/test_portable_vps_writer_pause_gate.py"
+      - "scripts/tests/test_portable_vps_writer_docker.py"
       - "docs/operations/vps-github-access.md"
   push:
     branches: [main]
@@ -12,6 +16,10 @@ on:
       - ".github/workflows/vps-access-*.yml"
       - "scripts/portable-vps-*.py"
       - "scripts/tests/test_portable_vps_access.py"
+      - "scripts/tests/test_portable_vps_migration_baseline.py"
+      - "scripts/tests/test_portable_vps_backup_evidence.py"
+      - "scripts/tests/test_portable_vps_writer_pause_gate.py"
+      - "scripts/tests/test_portable_vps_writer_docker.py"
       - "docs/operations/vps-github-access.md"
 permissions:
   contents: read
@@ -24,3 +32,18 @@ jobs:
           persist-credentials: false
       - name: Test fixed read-only SSH request and sanitized reporting
         run: python3 -m unittest discover -s scripts/tests -p test_portable_vps_access.py -v
+      - name: Test exact live migration revision baseline without Docker writes
+        run: python3 -m unittest discover -s scripts/tests -p test_portable_vps_migration_baseline.py -v
+      - name: Test fresh same-copy backup and isolated restore evidence
+        run: python3 -m unittest discover -s scripts/tests -p test_portable_vps_backup_evidence.py -v
+      - name: Test read-only writer pause and backup ordering gate
+        run: python3 -m unittest discover -s scripts/tests -p test_portable_vps_writer_pause_gate.py -v
+  docker-rehearsal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Exercise writer gate against disposable Docker containers
+        run: sudo env VPS_WRITER_DOCKER_TEST=1 python3 -m unittest discover -s scripts/tests -p test_portable_vps_writer_docker.py -v
