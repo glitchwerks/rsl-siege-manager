@@ -7,6 +7,7 @@ on:
       - "scripts/tests/test_portable_vps_access.py"
       - "scripts/tests/test_portable_vps_migration_baseline.py"
       - "scripts/tests/test_portable_vps_backup_evidence.py"
+      - "scripts/tests/test_portable_vps_writer_pause_gate.py"
       - "docs/operations/vps-github-access.md"
   push:
     branches: [main]
@@ -16,6 +17,7 @@ on:
       - "scripts/tests/test_portable_vps_access.py"
       - "scripts/tests/test_portable_vps_migration_baseline.py"
       - "scripts/tests/test_portable_vps_backup_evidence.py"
+      - "scripts/tests/test_portable_vps_writer_pause_gate.py"
       - "docs/operations/vps-github-access.md"
 permissions:
   contents: read
@@ -32,3 +34,5 @@ jobs:
         run: python3 -m unittest discover -s scripts/tests -p test_portable_vps_migration_baseline.py -v
       - name: Test fresh same-copy backup and isolated restore evidence
         run: python3 -m unittest discover -s scripts/tests -p test_portable_vps_backup_evidence.py -v
+      - name: Test read-only writer pause and backup ordering gate
+        run: python3 -m unittest discover -s scripts/tests -p test_portable_vps_writer_pause_gate.py -v
