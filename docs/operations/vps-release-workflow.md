@@ -178,3 +178,26 @@ were paused before its release backup, bind this evidence to the staged
 candidate, and recheck freshness immediately before migration. A historical
 restore proof for a different copy fails this release gate even when it remains
 valid as a retention anchor.
+
+## Writer pause and backup ordering gate
+
+After a separately approved pause of the `backend` and `mom` writers, the
+read-only `scripts/portable-vps-writer-pause-gate.py` verifies the order of
+events. It binds to the root-private staged candidate by run ID and SHA-256,
+reads the protected Compose project name, and checks the local Docker socket
+for exactly one exited container for each writer service. It then reads the
+private successful managed backup report under the selected protected backup
+root's `runs/<run-UUID>/job.json`. The caller must provide the installed job's
+reviewed owner (`root` or `rsl-backup`) and exact root path; the production
+owner must be inspected before use. The gate requires
+both container stop times to precede the backup start. A second Docker state
+check catches a writer that restarted while evidence was inspected. Any missing,
+duplicate, running, or replaced writer state stops the gate. It writes a new
+root-private boolean-only report.
+
+The check does not stop a service, run a backup, or inspect other possible
+database writers. Before an actual release, inventory any external writer or
+worker outside this Compose project and include it in the approved pause plan.
+The gate must be rerun immediately before migration, together with the
+same-copy backup and restore evidence gate. No forced SSH command currently
+exposes the writer gate, and it must first be rehearsed on the isolated target.
