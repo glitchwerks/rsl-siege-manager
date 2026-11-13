@@ -32,7 +32,7 @@ target. Do not place them in repository files or PR comments:
 | Secret | `VPS_SSH_HOST_FINGERPRINT` | Trusted ED25519 or ECDSA P-256 host-key fingerprint from the provider console |
 | Secret | `TAILSCALE_OAUTH_CLIENT_ID` | Tailnet OAuth client ID |
 | Secret | `TAILSCALE_OAUTH_SECRET` | Tailnet OAuth client secret |
-| Secret | `VPS_DEPLOY_SSH_KEY` | Dedicated passphrase-free ED25519 private key for the forced command |
+| Secret | `VPS_DEPLOY_SSH_KEY` | Dedicated passphrase-free ED25519 private key for the forced command; currently a selected organization Actions secret |
 | Secret | `VPS_SSH_KNOWN_HOSTS` | One `ssh-ed25519` or `ecdsa-sha2-nistp256` known-hosts entry for the exact tailnet host |
 
 The private key must be new and dedicated to this workflow, not the operator's
@@ -58,7 +58,8 @@ script beside it. It refuses to replace an existing remote script or deploy
 key. Each invocation writes one root-private JSON report at the specified
 new path; reports contain booleans only, not keys or host data. The dedicated
 **public** key is committed at `deploy/portable/host/github-vps-deploy.pub`;
-its private half exists only in the protected GitHub environment secret.
+its private half is supplied through the selected organization Actions secret.
+An environment or repository secret of the same name would override it.
 When `/opt` is root-owned and protected but the dedicated destination does not
 exist, inspect accepts that baseline and install creates only
 `/opt/rsl-siege-manager` and its `scripts` child under root ownership. An
@@ -82,7 +83,9 @@ the old one. If the new key must be revoked, run the separately confirmed
 `rollback` phase with the same public key and a new report path; it removes
 only that exact key entry and retains the backup and script for inspection.
 
-The forced command currently accepts only the literal `access-check` request.
+The initially installed forced command accepts only the literal `access-check`
+request. The separately reviewed [release staging upgrade](vps-release-workflow.md#bounded-candidate-staging)
+adds one bounded, confirmed request after its own host update and verification.
 It checks the protected directories, Docker access, and active backup timer,
 then returns `PASS` or `STOP`. Timer activity only confirms scheduling; release
 promotion must separately verify recent successful backup and recovery evidence.
@@ -98,11 +101,13 @@ contents changed unexpectedly. Keep the original admin access and provider
 console available throughout. No release promotion is authorized by an access
 check PASS; backup, migration and service activation need separate gates.
 
-## Correct an already installed access command
+## Historical access command correction
 
 The first production access verification exposed a template-versus-installed
-timer name mismatch. From the reviewed updated checkout, use the independent
-`update-script` phase with `--confirm update-script` and a new report path.
+timer name mismatch. The historical update used the reviewed #592 checkout and
+the independent `update-script` phase with `--confirm update-script` and a new
+report path. The current checkout's `update-script` phase is reserved for the
+later release staging upgrade; it refuses the earlier script hash.
 This phase requires the exact previously reviewed script and restricted key,
 preserves the old script in a root-private backup beside it, and atomically
 replaces only the forced-command script. It does not change the timer, SSH
@@ -118,7 +123,7 @@ OpenSSH private key used by `VPS_DEPLOY_SSH_KEY`. If that separate SSH secret is
 unusable, generate a new passphrase-free ED25519 pair, validate the private
 half locally with `ssh-keygen -y -P ''`, and verify that its derived public key
 matches `deploy/portable/host/github-vps-deploy.pub`. Store the private half
-only as the `vps-prod` environment secret; never commit or print it. The former
+as the selected organization Actions secret; never commit or print it. The former
 public key remains in `github-vps-deploy-previous.pub` for exact matching.
 
 From the pinned reviewed checkout, run `rotate-key` with the new

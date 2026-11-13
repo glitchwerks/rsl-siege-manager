@@ -12,6 +12,10 @@ host_access = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(host_access)
 
 
+def test_host_update_pin_matches_reviewed_remote_script():
+    assert hashlib.sha256(host_access.SOURCE_SCRIPT.read_bytes()).hexdigest() == host_access.NEW_REMOTE_SHA256
+
+
 def test_install_then_rollback_preserves_existing_key(tmp_path):
     ssh = tmp_path / "root" / ".ssh"
     ssh.mkdir(parents=True)
