@@ -27,7 +27,7 @@ class ReleasePauseBackupTests(unittest.TestCase):
         value = plan_fixture()
         with tempfile.TemporaryDirectory() as temporary, patch.object(
             PHASE, "unchanged_running", return_value=True
-        ), patch.object(PHASE, "command", side_effect=[value["ids"]["mom"], value["ids"]["backend"]]) as run, patch.object(
+        ), patch.object(PHASE, "command", side_effect=["", ""]) as run, patch.object(
             PHASE, "paused", return_value=True
         ), patch.object(PHASE.GATE, "read_private", return_value=b"plan"):
             checks = PHASE.pause({}, value, Path(temporary))

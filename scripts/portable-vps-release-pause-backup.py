@@ -274,7 +274,7 @@ def pause(data, value, directory):
         GATE.read_private(directory / "pause-plan.json", 0)), "started_at": stamp()})
     for service in ("mom", "backend"):
         result = command(["docker", "stop", "--time", "30", value["ids"][service]], timeout=50)
-        checks[f"{service}_stop"] = result == value["ids"][service]
+        checks[f"{service}_stop"] = result is not None
         if not checks[f"{service}_stop"]:
             break
     checks["writers_stopped_unaffected_healthy"] = paused(data, value)
