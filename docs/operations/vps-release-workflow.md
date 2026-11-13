@@ -157,3 +157,24 @@ schema change, separately verify a fresh successful encrypted off-host backup
 and restore proof from the existing backup workflow after writers are paused.
 Keep the backup and migration phases independently gated; a mismatch or failed
 migration leaves writers stopped for manual recovery.
+
+## Backup and restore evidence gate
+
+The read-only `scripts/portable-vps-backup-evidence.py` command checks three
+private reports from the existing backup system: the managed job, off-host
+recovery, and isolated restore. Run it as the account that owns the evidence
+(normally `rsl-backup`) with `--backup-report`, `--recover-report`,
+`--restore-report`, and a fresh `--report` path in a private directory. It
+requires the successful managed backup's full encrypted remote readback and
+monitor acknowledgement, a finish time within two hours, and successful
+off-host recovery and both database restore controls for that **same copy**.
+The recovery and restore proofs must follow the backup. The new report contains
+only boolean checks and is created privately without overwriting earlier
+evidence.
+
+This command does not run a backup or restore, pause writers, or authorize a
+schema change. A future migration phase must separately prove that the writers
+were paused before its release backup, bind this evidence to the staged
+candidate, and recheck freshness immediately before migration. A historical
+restore proof for a different copy fails this release gate even when it remains
+valid as a retention anchor.

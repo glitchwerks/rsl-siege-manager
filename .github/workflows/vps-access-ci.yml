@@ -6,6 +6,7 @@ on:
       - "scripts/portable-vps-*.py"
       - "scripts/tests/test_portable_vps_access.py"
       - "scripts/tests/test_portable_vps_migration_baseline.py"
+      - "scripts/tests/test_portable_vps_backup_evidence.py"
       - "docs/operations/vps-github-access.md"
   push:
     branches: [main]
@@ -14,6 +15,7 @@ on:
       - "scripts/portable-vps-*.py"
       - "scripts/tests/test_portable_vps_access.py"
       - "scripts/tests/test_portable_vps_migration_baseline.py"
+      - "scripts/tests/test_portable_vps_backup_evidence.py"
       - "docs/operations/vps-github-access.md"
 permissions:
   contents: read
@@ -28,3 +30,5 @@ jobs:
         run: python3 -m unittest discover -s scripts/tests -p test_portable_vps_access.py -v
       - name: Test exact live migration revision baseline without Docker writes
         run: python3 -m unittest discover -s scripts/tests -p test_portable_vps_migration_baseline.py -v
+      - name: Test fresh same-copy backup and isolated restore evidence
+        run: python3 -m unittest discover -s scripts/tests -p test_portable_vps_backup_evidence.py -v
