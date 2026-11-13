@@ -201,3 +201,13 @@ worker outside this Compose project and include it in the approved pause plan.
 The gate must be rerun immediately before migration, together with the
 same-copy backup and restore evidence gate. No forced SSH command currently
 exposes the writer gate, and it must first be rehearsed on the isolated target.
+
+The `VPS access contract` CI workflow also runs a disposable Docker rehearsal.
+It starts two synthetic containers with a unique Compose project label, verifies
+the gate refuses them while running, stops only those containers, checks the
+recorded stop times against a synthetic managed-job report, and verifies a
+restart stops the gate again. The runner removes only its two fixture containers
+afterward. The synthetic report is never uploaded or treated as backup/restore
+acceptance. This verifies Docker CLI behavior without a standing VMware pilot;
+an actual isolated application and database rehearsal is still required before
+production promotion.
