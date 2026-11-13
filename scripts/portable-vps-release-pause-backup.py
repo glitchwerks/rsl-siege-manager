@@ -311,7 +311,8 @@ def backup(data, value, directory, manifest_digest):
     gate = GATE.inspect(data["project_directory"], directory.name, manifest_digest,
                         data["backup_owner"], data["backup_root"], report)
     checks["pause_backup_order_verified"] = bool(gate) and all(gate.values())
-    if checks["pause_backup_order_verified"]:
+    checks["post_backup_baseline"] = paused(data, value)
+    if checks["pause_backup_order_verified"] and checks["post_backup_baseline"]:
         write_private(directory / "backup-selector.json", {"schema": 1, "run_id": run_id})
     return checks
 

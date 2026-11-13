@@ -91,6 +91,29 @@ class ReleasePauseBackupTests(unittest.TestCase):
             self.assertTrue(all(checks.values()))
             self.assertEqual(json.loads((directory / "backup-selector.json").read_text())["run_id"], run_id)
 
+    def test_backup_rejects_writer_started_during_run(self):
+        value = plan_fixture()
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            (directory / "pause-report.json").write_text('{"phase":"pause","status":"PASS"}')
+            (directory / "pause-plan.json").write_text("plan")
+            runs = directory / "runs"
+            runs.mkdir()
+            run_id = str(uuid.uuid4())
+            def start(arguments, timeout=20):
+                (runs / run_id).mkdir()
+                return ""
+            data = {"backup_root": directory, "backup_unit": "rsl-pilot-backup.service",
+                    "project_directory": directory, "backup_owner": "root"}
+            with patch.object(PHASE.GATE, "read_private", side_effect=lambda path, owner: path.read_bytes()), patch.object(
+                PHASE, "paused", side_effect=[True, False]
+            ), patch.object(PHASE, "backup_idle", return_value=True), patch.object(
+                PHASE, "command", side_effect=start
+            ), patch.object(PHASE.GATE, "inspect", return_value={"backup_after_pause": True}):
+                checks = PHASE.backup(data, value, directory, "a" * 64)
+            self.assertFalse(checks["post_backup_baseline"])
+            self.assertFalse((directory / "backup-selector.json").exists())
+
     def test_stage_and_plan_are_digest_bound(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

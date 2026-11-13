@@ -243,7 +243,8 @@ managed run, and reuses the writer/backup ordering gate. Each phase writes a
 new root-private boolean-only report to a caller-selected private directory
 outside the Compose project. No phase automatically retries or restarts a
 writer. The backup phase stores only the new run UUID in a separate private
-selector for later recovery proof.
+selector for later recovery proof, after rechecking the complete paused
+baseline so a writer or migration container started during backup causes STOP.
 
 Partial stop, command timeout, new container, unit drift, a failed backup, or
 missing evidence is STOP. Preserve all markers and reports. Do not migrate or
