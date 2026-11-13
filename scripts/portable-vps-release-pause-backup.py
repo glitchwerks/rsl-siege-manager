@@ -91,7 +91,7 @@ def profile(path):
     data = json.loads(raw, object_pairs_hook=REMOTE.no_duplicate_keys)
     if not isinstance(data, dict) or set(data) != {
         "project_directory", "backup_owner", "backup_root", "backup_unit",
-        "backup_unit_file", "backup_unit_sha256", "backup_timer",
+        "backup_unit_file", "backup_unit_sha256", "backup_unit_effective_sha256", "backup_timer",
     }:
         raise ValueError("invalid profile")
     if data["backup_owner"] not in {"root", "rsl-backup"}:
@@ -100,8 +100,9 @@ def profile(path):
         raise ValueError("invalid backup unit")
     if data["backup_timer"] != data["backup_unit"].removesuffix(".service") + ".timer":
         raise ValueError("invalid backup timer")
-    if not isinstance(data["backup_unit_sha256"], str) or not REMOTE.SHA256.fullmatch(data["backup_unit_sha256"]):
-        raise ValueError("invalid unit digest")
+    for name in ("backup_unit_sha256", "backup_unit_effective_sha256"):
+        if not isinstance(data[name], str) or not REMOTE.SHA256.fullmatch(data[name]):
+            raise ValueError("invalid unit digest")
     for name in ("project_directory", "backup_root", "backup_unit_file"):
         if not isinstance(data[name], str) or not Path(data[name]).is_absolute():
             raise ValueError("invalid profile path")
@@ -117,7 +118,17 @@ def profile(path):
     fragment = command(["systemctl", "show", "--property=FragmentPath", "--value", data["backup_unit"]])
     if fragment != str(data["backup_unit_file"]):
         raise ValueError("active unit mismatch")
+    if not effective_unit(data):
+        raise ValueError("effective unit drift")
     return data, digest(raw)
+
+
+def effective_unit(data):
+    if command(["systemctl", "show", "--property=NeedDaemonReload", "--value",
+                data["backup_unit"]]) != "no":
+        return False
+    loaded = command(["systemctl", "cat", data["backup_unit"]])
+    return loaded is not None and digest(loaded.encode()) == data["backup_unit_effective_sha256"]
 
 
 def stage(project, run_id, expected):
@@ -289,6 +300,7 @@ def backup(data, value, directory, manifest_digest):
                             and prior.get("status") == "PASS")
     checks["writers_paused"] = paused(data, value)
     checks["backup_idle"] = backup_idle(data)
+    checks["effective_unit_unchanged"] = effective_unit(data)
     if not all(checks.values()):
         return checks
     before = {item.name for item in (data["backup_root"] / "runs").iterdir()}

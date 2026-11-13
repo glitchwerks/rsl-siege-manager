@@ -23,6 +23,19 @@ def plan_fixture():
 
 
 class ReleasePauseBackupTests(unittest.TestCase):
+    def test_effective_unit_requires_reviewed_drop_ins_and_loaded_state(self):
+        unit = "# /etc/systemd/system/rsl-pilot-backup.service\n[Service]\nExecStart=/bin/true"
+        data = {"backup_unit": "rsl-pilot-backup.service",
+                "backup_unit_effective_sha256": PHASE.digest(unit.encode())}
+        with patch.object(PHASE, "command", side_effect=["no", unit]) as run:
+            self.assertTrue(PHASE.effective_unit(data))
+            self.assertEqual(run.call_count, 2)
+        with patch.object(PHASE, "command", side_effect=["no", unit + "# drop-in override\n"]):
+            self.assertFalse(PHASE.effective_unit(data))
+        with patch.object(PHASE, "command", return_value="yes") as run:
+            self.assertFalse(PHASE.effective_unit(data))
+            self.assertEqual(run.call_count, 1)
+
     def test_only_two_recorded_writers_stop_in_order(self):
         value = plan_fixture()
         with tempfile.TemporaryDirectory() as temporary, patch.object(
@@ -62,9 +75,25 @@ class ReleasePauseBackupTests(unittest.TestCase):
             (directory / "pause-report.json").write_text('{"phase":"pause","status":"STOP"}')
             with patch.object(PHASE.GATE, "read_private", side_effect=lambda path, owner: path.read_bytes()), patch.object(
                 PHASE, "paused", return_value=True
-            ), patch.object(PHASE, "backup_idle", return_value=True), patch.object(PHASE, "command") as run:
+            ), patch.object(PHASE, "backup_idle", return_value=True), patch.object(
+                PHASE, "effective_unit", return_value=True
+            ), patch.object(PHASE, "command") as run:
                 checks = PHASE.backup({"backup_root": directory}, value, directory, "a" * 64)
             self.assertFalse(checks["pause_pass"])
+            run.assert_not_called()
+
+    def test_backup_rejects_effective_unit_drift_before_start(self):
+        value = plan_fixture()
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            (directory / "pause-report.json").write_text('{"phase":"pause","status":"PASS"}')
+            with patch.object(PHASE.GATE, "read_private", side_effect=lambda path, owner: path.read_bytes()), patch.object(
+                PHASE, "paused", return_value=True
+            ), patch.object(PHASE, "backup_idle", return_value=True), patch.object(
+                PHASE, "effective_unit", return_value=False
+            ), patch.object(PHASE, "command") as run:
+                checks = PHASE.backup({"backup_root": directory}, value, directory, "a" * 64)
+            self.assertFalse(checks["effective_unit_unchanged"])
             run.assert_not_called()
 
     def test_backup_uses_one_new_managed_run_and_rechecks_ordering(self):
@@ -85,6 +114,8 @@ class ReleasePauseBackupTests(unittest.TestCase):
             with patch.object(PHASE.GATE, "read_private", side_effect=lambda path, owner: path.read_bytes()), patch.object(
                 PHASE, "paused", return_value=True
             ), patch.object(PHASE, "backup_idle", return_value=True), patch.object(
+                PHASE, "effective_unit", return_value=True
+            ), patch.object(
                 PHASE, "command", side_effect=start
             ), patch.object(PHASE.GATE, "inspect", return_value={"backup_after_pause": True}):
                 checks = PHASE.backup(data, value, directory, "a" * 64)
@@ -108,6 +139,8 @@ class ReleasePauseBackupTests(unittest.TestCase):
             with patch.object(PHASE.GATE, "read_private", side_effect=lambda path, owner: path.read_bytes()), patch.object(
                 PHASE, "paused", side_effect=[True, False]
             ), patch.object(PHASE, "backup_idle", return_value=True), patch.object(
+                PHASE, "effective_unit", return_value=True
+            ), patch.object(
                 PHASE, "command", side_effect=start
             ), patch.object(PHASE.GATE, "inspect", return_value={"backup_after_pause": True}):
                 checks = PHASE.backup(data, value, directory, "a" * 64)

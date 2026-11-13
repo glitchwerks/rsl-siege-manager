@@ -218,8 +218,11 @@ production promotion.
 phases. It is not installed in the forced SSH command and is not invoked by a
 GitHub workflow. The root-private profile names the protected Compose project,
 the installed backup root and owner (`root` or `rsl-backup`), and the exact
-backup service/timer and unit-file SHA-256. The unit file must be root-owned,
-non-writable by group/others, and match systemd's active fragment path. Profile
+backup service/timer, unit-file SHA-256, and SHA-256 of the trimmed `systemctl
+cat` output, including any drop-ins. The unit file must be root-owned,
+non-writable by group/others, and match systemd's active fragment path.
+`NeedDaemonReload` must be `no`, and the effective unit digest is checked
+again immediately before starting the backup service. Profile
 changes invalidate an earlier plan. Inspect and record the installed values
 before creating this profile; the repository service template does not attest
 to the production unit or account.
