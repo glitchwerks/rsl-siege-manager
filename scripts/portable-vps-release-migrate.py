@@ -176,10 +176,10 @@ def migrate(data, directory, plan, manifest_digest, plan_digest, readiness_diges
     heads = compose_run(data["project_directory"], service, "heads", None, context["overrides"])
     checks["candidate_migration_head_exact"] = heads is not None and heads.strip() == f"{target} (head)"
     checks["maintenance_idle_after_heads"] = PAUSE.no_extra_writers(plan["project"])
-    checks["proof_current_before_write"] = READY.proof_current(
-        data, directory, plan, plan_digest, manifest_digest, context["proof"])
     checks["revisions_exact_before_write"] = revisions_match(
         context["readiness"]["postgres_id"], context["expected"])
+    checks["proof_current_before_write"] = READY.proof_current(
+        data, directory, plan, plan_digest, manifest_digest, context["proof"])
     if not all(checks.values()):
         return checks
     PAUSE.write_private(directory / f"migrate-{database}-start.json", {

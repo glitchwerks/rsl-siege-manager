@@ -91,15 +91,20 @@ class ReleaseMigrateTests(unittest.TestCase):
                 self.assertFalse(checks["candidate_migration_head_exact"])
                 self.assertEqual(run.call_count, 1)
                 self.assertFalse((directory / "migrate-siege-start.json").exists())
+            events = []
             with patch.object(MIGRATE, "inspect", return_value=({"ready": True}, context())), patch.object(
-                MIGRATE, "compose_run", side_effect=["0013 (head)\n", ""]
+                MIGRATE, "compose_run", side_effect=lambda project, service, operation, revision, overrides:
+                    events.append(operation) or ("0013 (head)\n" if operation == "heads" else "")
             ) as run, patch.object(MIGRATE.PAUSE, "no_extra_writers", return_value=True), patch.object(
-                MIGRATE.READY, "proof_current", return_value=True), patch.object(
-                MIGRATE, "revisions_match", return_value=True):
+                MIGRATE.READY, "proof_current", side_effect=lambda *args:
+                    events.append("proof") or True), patch.object(
+                MIGRATE, "revisions_match", side_effect=lambda *args:
+                    events.append("revisions") or True):
                 checks = MIGRATE.migrate(data, directory, plan, "a" * 64, "b" * 64, "c" * 64, "siege")
             self.assertTrue(all(checks.values()), checks)
             self.assertEqual(run.call_count, 2)
             self.assertEqual(run.call_args.args[2:4], ("upgrade", "0013"))
+            self.assertEqual(events, ["heads", "revisions", "proof", "upgrade", "revisions", "proof"])
             marker = json.loads((directory / "migrate-siege-start.json").read_text())
             self.assertEqual(marker["to_revision"], "0013")
             self.assertNotIn("password", json.dumps(marker).lower())
