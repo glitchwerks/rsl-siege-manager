@@ -23,6 +23,11 @@ SPEC = importlib.util.spec_from_file_location(
 )
 PHASE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(PHASE)
+SPEC = importlib.util.spec_from_file_location(
+    "release_preflight_docker", SCRIPT.with_name("portable-vps-release-preflight.py")
+)
+RELEASE = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(RELEASE)
 
 
 def private(path, content):
@@ -64,7 +69,7 @@ class DisposableDockerWriterTests(unittest.TestCase):
             with tempfile.TemporaryDirectory() as temporary:
                 project = Path(temporary)
                 private(project / "stack.env", f"COMPOSE_PROJECT_NAME={name}\n".encode())
-                for service in ("backend", "mom", "postgres", "proxy"):
+                for service in ("backend", "mom", "postgres", "proxy", "frontend"):
                     command = ["docker", "run", "--detach", "--network", "none",
                                "--label", f"com.docker.compose.project={name}",
                                "--label", f"com.docker.compose.service={service}"]
@@ -73,17 +78,24 @@ class DisposableDockerWriterTests(unittest.TestCase):
                     command += ["alpine:3.21", "sleep", "300"]
                     containers[service] = subprocess.run(command, check=True, capture_output=True,
                                                          text=True, timeout=90).stdout.strip()
+                rendered = {"services": {service: {"image": "alpine:3.21"}
+                                         for service in containers}}
                 data = {"project_directory": project}
                 with patch.object(PHASE, "timer_active", return_value=True), patch.object(
                     PHASE, "backup_idle", return_value=True
                 ):
                     for _ in range(15):
                         value = PHASE.planned(data, "a" * 64)
-                        if value:
+                        live = RELEASE.running_services(name, rendered)
+                        if value and live:
                             break
                         time.sleep(1)
                     self.assertIsNotNone(value)
-                    self.assertEqual(value["ids"], containers)
+                    self.assertIsNotNone(live)
+                    self.assertEqual(value["ids"], {name: containers[name] for name in value["ids"]})
+                    self.assertEqual({name: item["id"] for name, item in live.items()}, containers)
+                    rendered["services"]["mom"]["image"] = "unreviewed:image"
+                    self.assertIsNone(RELEASE.running_services(name, rendered))
                     private(project / "pause-plan.json", json.dumps(value).encode())
                     checks = PHASE.pause(data, value, project)
                     self.assertTrue(all(checks.values()), checks)

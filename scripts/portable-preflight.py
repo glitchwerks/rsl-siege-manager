@@ -307,12 +307,19 @@ def deployment_bind_sources_current(project_directory):
         return False
 
 
-def render(topology, stack_env, project_directory):
+def render(topology, stack_env, project_directory, image_overrides=None):
     command = ["docker", "compose", "--env-file", str(stack_env), "--project-directory",
                str(project_directory), "-f", str(PORTABLE / "compose.yml"), "-f",
                str(PORTABLE / f"compose.{topology}.yml"), "--profile", "maintenance",
                "config", "--format", "json"]
-    result = subprocess.run(command, capture_output=True, text=True, timeout=30, check=False)
+    environment = None
+    if image_overrides is not None:
+        if set(image_overrides) not in (set(), {"BACKEND_IMAGE", "FRONTEND_IMAGE", "MOM_IMAGE"}):
+            raise ValueError("invalid candidate image overrides")
+        environment = {"PATH": "/usr/bin:/bin:/usr/local/bin", "HOME": str(Path.home()),
+                       "LANG": "C", **image_overrides}
+    result = subprocess.run(command, capture_output=True, text=True, timeout=30,
+                            check=False, env=environment)
     if result.returncode:
         raise RuntimeError("compose_render_failed")
     return json.loads(result.stdout)
