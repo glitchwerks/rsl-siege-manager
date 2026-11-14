@@ -143,16 +143,19 @@ promotion concurrency group, and sends only
 `preflight-release <digest> <run-id> confirm-readonly-preflight` through the
 restricted SSH key. The host rechecks the private stage candidate and its
 successful report, then requires a clean root-owned checkout at the candidate's
-configuration source SHA before executing the fixed preflight script. It keeps
-the script's root-private baseline and reports under that stage and returns
-only boolean checks to GitHub. It does not change images or services.
+configuration source SHA before executing the fixed preflight script. The one
+previous installer backup is permitted in that checkout only if root-private
+and equal to its reviewed hash; any other untracked file is a STOP. It keeps
+the preflight baseline under the private stage, puts the script's separate
+report under `/root/vps-release-reports/`, and returns only boolean checks to
+GitHub. It does not change images or services.
 
 Before dispatch, separately review and install the new forced-command script
 from the exact reviewed checkout with `portable-vps-host-access.py
 update-script --confirm update-script`, a fresh root-private report, and the
 dedicated public key. The updater accepts only either of the two reviewed
 earlier script hashes, backs up the current script to
-`/opt/rsl-siege-manager/scripts/portable-vps-remote.py.before-release-preflight`,
+`/root/portable-vps-remote.py.before-release-preflight`,
 and requires the new reviewed hash. Verify the installation with a second
 fresh report, a new admin login, and the existing read-only GitHub access
 check. `restore-script --confirm restore-script` restores only that exact

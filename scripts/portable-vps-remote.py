@@ -15,6 +15,9 @@ EVIDENCE = Path("/srv/rsl-siege/evidence")
 PROJECT = Path("/srv/rsl-siege")
 REVIEWED_SOURCE = Path("/opt/rsl-siege-manager")
 PREFLIGHT_SCRIPT = REVIEWED_SOURCE / "scripts/portable-vps-release-preflight.py"
+EXTERNAL_REPORTS = Path("/root/vps-release-reports")
+STAGE_SCRIPT_BACKUP = REVIEWED_SOURCE / "scripts/portable-vps-remote.py.before-release-stage"
+INITIAL_REMOTE_SHA256 = "f965a4edc244c7ece696bbeb30b650f67c3c21e82584c44185ca57a94db31da7"
 MAX_MANIFEST = 16 * 1024
 SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 RUN = re.compile(r"[1-9][0-9]{0,19}-[1-9][0-9]{0,2}\Z")
@@ -49,6 +52,25 @@ def private_file(path):
     except OSError:
         return False
     return stat.S_ISREG(info.st_mode) and info.st_uid == 0 and not info.st_mode & 0o077
+
+
+def reviewed_checkout(source_sha):
+    head = subprocess.run(
+        ["git", "-C", str(REVIEWED_SOURCE), "rev-parse", "HEAD"],
+        capture_output=True, timeout=10, check=False,
+    )
+    changed = subprocess.run(
+        ["git", "-C", str(REVIEWED_SOURCE), "status", "--porcelain", "--untracked-files=all"],
+        capture_output=True, timeout=10, check=False,
+    )
+    if head.returncode != 0 or head.stdout.strip() != source_sha.encode() or changed.returncode != 0:
+        return False
+    entries = changed.stdout.splitlines()
+    if not entries:
+        return True
+    return (entries == [b"?? scripts/portable-vps-remote.py.before-release-stage"]
+            and private_file(STAGE_SCRIPT_BACKUP)
+            and hashlib.sha256(STAGE_SCRIPT_BACKUP.read_bytes()).hexdigest() == INITIAL_REMOTE_SHA256)
 
 
 def succeeds(arguments):
@@ -239,30 +261,22 @@ def preflight_release(expected, run_id):
                 )
             if checks.get("staged_candidate_bound"):
                 source_sha = json.loads(raw, object_pairs_hook=no_duplicate_keys)["configuration"]["source_sha"]
-                head = subprocess.run(
-                    ["git", "-C", str(REVIEWED_SOURCE), "rev-parse", "HEAD"],
-                    capture_output=True, timeout=10, check=False,
-                )
-                changed = subprocess.run(
-                    ["git", "-C", str(REVIEWED_SOURCE), "status", "--porcelain", "--untracked-files=all"],
-                    capture_output=True, timeout=10, check=False,
-                )
-                checks["reviewed_checkout"] = (
-                    head.returncode == 0 and head.stdout.strip() == source_sha.encode()
-                    and changed.returncode == 0 and changed.stdout == b""
-                )
+                checks["reviewed_checkout"] = reviewed_checkout(source_sha)
                 checks["reviewed_script"] = reviewed_script(PREFLIGHT_SCRIPT)
             if checks.get("reviewed_checkout") and checks.get("reviewed_script"):
+                EXTERNAL_REPORTS.mkdir(mode=0o700, exist_ok=True)
+                checks["external_report_directory_private"] = private_directory(EXTERNAL_REPORTS)
+            if checks.get("external_report_directory_private"):
+                private_report = EXTERNAL_REPORTS / f"{run_id}-preflight.json"
                 result = subprocess.run(
                     ["/usr/bin/python3", "-I", "-B", str(PREFLIGHT_SCRIPT),
                      "--project-directory", str(PROJECT), "--stage-run-id", run_id,
                      "--manifest-sha256", expected,
-                     "--report", str(stage / "preflight-external-report.json")],
+                     "--report", str(private_report)],
                     env={"PATH": "/usr/bin:/bin", "PYTHONNOUSERSITE": "1",
                          "PYTHONDONTWRITEBYTECODE": "1", "PYTHONSAFEPATH": "1"},
                     capture_output=True, timeout=300, check=False,
                 )
-                private_report = stage / "preflight-external-report.json"
                 evidence = json.loads(private_report.read_bytes(), object_pairs_hook=no_duplicate_keys)
                 checks["preflight_passed"] = (
                     result.returncode == 0 and result.stdout.strip() == b"PASS"

@@ -117,6 +117,31 @@ class AccessTests(unittest.TestCase):
                 self.assertEqual(REMOTE.main(), 1)
                 preflight.assert_not_called()
 
+    def test_reviewed_checkout_allows_only_hash_verified_prior_backup(self):
+        with tempfile.TemporaryDirectory() as directory:
+            backup = Path(directory) / "portable-vps-remote.py.before-release-stage"
+            backup.write_bytes(b"reviewed prior script")
+            sha = "1" * 40
+            git_results = [
+                SimpleNamespace(returncode=0, stdout=(sha + "\n").encode()),
+                SimpleNamespace(returncode=0, stdout=b"?? scripts/portable-vps-remote.py.before-release-stage\n"),
+            ]
+            with patch.object(REMOTE, "STAGE_SCRIPT_BACKUP", backup), patch.object(
+                REMOTE, "INITIAL_REMOTE_SHA256", hashlib.sha256(backup.read_bytes()).hexdigest()
+            ), patch.object(REMOTE, "private_file", return_value=True), patch.object(
+                REMOTE.subprocess, "run", side_effect=git_results
+            ):
+                self.assertTrue(REMOTE.reviewed_checkout(sha))
+            with patch.object(REMOTE, "STAGE_SCRIPT_BACKUP", backup), patch.object(
+                REMOTE, "INITIAL_REMOTE_SHA256", "a" * 64
+            ), patch.object(REMOTE, "private_file", return_value=True), patch.object(
+                REMOTE.subprocess, "run", side_effect=git_results
+            ):
+                self.assertFalse(REMOTE.reviewed_checkout(sha))
+            git_results[1] = SimpleNamespace(returncode=0, stdout=b"?? scripts/unknown.py\n")
+            with patch.object(REMOTE.subprocess, "run", side_effect=git_results):
+                self.assertFalse(REMOTE.reviewed_checkout(sha))
+
     def test_preflight_runs_only_staged_candidate_and_reviewed_source(self):
         raw = (json.dumps(self.candidate(), sort_keys=True) + "\n").encode()
         digest = hashlib.sha256(raw).hexdigest()
@@ -139,8 +164,9 @@ class AccessTests(unittest.TestCase):
                     return SimpleNamespace(returncode=0, stdout=b"")
                 self.assertEqual(arguments[0], "/usr/bin/python3")
                 self.assertIn("--manifest-sha256", arguments)
+                self.assertFalse(Path(arguments[arguments.index("--report") + 1]).is_relative_to(root / "project"))
                 self.assertEqual(kwargs["env"]["PYTHONSAFEPATH"], "1")
-                (stage / "preflight-external-report.json").write_text(
+                (root / "reports" / "123-1-preflight.json").write_text(
                     '{"phase":"release-preflight","status":"PASS","checks":{"safe":true}}'
                 )
                 return SimpleNamespace(returncode=0, stdout=b"PASS\n")
@@ -149,6 +175,7 @@ class AccessTests(unittest.TestCase):
                 REMOTE, "PROJECT", root / "project"
             ), patch.object(REMOTE, "REVIEWED_SOURCE", script.parents[1]), patch.object(
                 REMOTE, "PREFLIGHT_SCRIPT", script
+            ), patch.object(REMOTE, "EXTERNAL_REPORTS", root / "reports"
             ), patch.object(REMOTE, "access_check", return_value=True), patch.object(
                 REMOTE, "private_directory", side_effect=lambda path: path.is_dir() and not path.is_symlink()
             ), patch.object(REMOTE, "reviewed_script", return_value=True
@@ -162,7 +189,7 @@ class AccessTests(unittest.TestCase):
             self.assertNotIn("test-candidate", (stage / "preflight-dispatch-report.json").read_text())
 
             (stage / "preflight-dispatch-report.json").unlink()
-            (stage / "preflight-external-report.json").unlink()
+            (root / "reports" / "123-1-preflight.json").unlink()
             with patch.object(REMOTE, "EVIDENCE", root / "evidence"), patch.object(
                 REMOTE, "REVIEWED_SOURCE", script.parents[1]
             ), patch.object(REMOTE, "PREFLIGHT_SCRIPT", script), patch.object(
