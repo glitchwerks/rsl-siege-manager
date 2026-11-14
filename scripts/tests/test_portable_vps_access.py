@@ -28,6 +28,7 @@ PLAN_DISPATCH = load("vps_plan_dispatch", "scripts/portable-vps-release-plan-dis
 PAUSE_DISPATCH = load("vps_pause_dispatch", "scripts/portable-vps-release-pause-dispatch.py")
 BACKUP_DISPATCH = load("vps_backup_dispatch", "scripts/portable-vps-release-backup-dispatch.py")
 PROOF_DISPATCH = load("vps_proof_dispatch", "scripts/portable-vps-release-proof-dispatch.py")
+READY_DISPATCH = load("vps_ready_dispatch", "scripts/portable-vps-release-ready-dispatch.py")
 
 
 class AccessTests(unittest.TestCase):
@@ -278,6 +279,95 @@ class AccessTests(unittest.TestCase):
             ), patch.object(REMOTE, "proof_release") as proof:
                 self.assertEqual(REMOTE.main(), 1)
                 proof.assert_not_called()
+
+    def test_migration_ready_requires_exact_readonly_command(self):
+        base = "ready-release " + "a" * 64 + " 123-1 " + "b" * 64
+        for command in (base, base + " confirm-readonly-ready; id", base + " confirm-readonly-ready extra"):
+            with self.subTest(command=command), patch.dict(
+                os.environ, {"SSH_ORIGINAL_COMMAND": command}
+            ), patch.object(REMOTE, "ready_release") as ready:
+                self.assertEqual(REMOTE.main(), 1)
+                ready.assert_not_called()
+
+    def test_migration_ready_client_reports_rejected_input_without_ssh(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+            READY_DISPATCH.ACCESS, "check"
+        ) as baseline:
+            report = Path(directory) / "report.json"
+            with redirect_stdout(io.StringIO()):
+                self.assertEqual(READY_DISPATCH.main([
+                    "--manifest-sha256", "bad", "--stage-run-id", "123-1",
+                    "--plan-sha256", "b" * 64, "--report", str(report)]), 1)
+            baseline.assert_not_called()
+            self.assertEqual(json.loads(report.read_text())["status"], "STOP")
+
+    def test_migration_ready_rejects_missing_proof_before_subprocess(self):
+        raw = (json.dumps(self.candidate(), sort_keys=True) + "\n").encode()
+        digest = hashlib.sha256(raw).hexdigest()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            stage = root / "evidence" / "release-stages" / "123-1"
+            stage.mkdir(parents=True)
+            (stage / "candidate.json").write_bytes(raw)
+            (stage / "pause-plan.json").write_text("reviewed plan")
+            (stage / "recovery-proof-report.json").write_text(
+                '{"phase":"release-recovery-proof","status":"STOP","checks":{"safe":false}}')
+            (stage / "recovery-proof-baseline.json").write_text("private proof")
+            plan_digest = hashlib.sha256((stage / "pause-plan.json").read_bytes()).hexdigest()
+            with patch.object(REMOTE, "EVIDENCE", root / "evidence"), patch.object(
+                REMOTE, "access_check", return_value=True
+            ), patch.object(REMOTE, "private_directory", return_value=True), patch.object(
+                REMOTE, "private_file", return_value=True
+            ), patch.object(REMOTE.os, "geteuid", return_value=0), patch.object(
+                REMOTE.subprocess, "run"
+            ) as runner, redirect_stdout(io.StringIO()):
+                self.assertEqual(REMOTE.ready_release(digest, "123-1", plan_digest), 1)
+                runner.assert_not_called()
+            self.assertFalse((stage / "ready-dispatch-report.json").exists())
+
+    def test_migration_ready_invokes_reviewed_readonly_script(self):
+        raw = (json.dumps(self.candidate(), sort_keys=True) + "\n").encode()
+        digest = hashlib.sha256(raw).hexdigest()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            stage = root / "evidence" / "release-stages" / "123-1"
+            stage.mkdir(parents=True)
+            (stage / "candidate.json").write_bytes(raw)
+            (stage / "pause-plan.json").write_text("reviewed plan")
+            (stage / "recovery-proof-report.json").write_text(
+                '{"phase":"release-recovery-proof","status":"PASS","checks":{"safe":true}}')
+            (stage / "recovery-proof-baseline.json").write_text("private proof")
+            plan_digest = hashlib.sha256((stage / "pause-plan.json").read_bytes()).hexdigest()
+            script = root / "reviewed" / "scripts" / "portable-vps-release-migration-ready.py"
+            script.parent.mkdir(parents=True)
+            script.write_text("# reviewed\n")
+
+            def run(arguments, **kwargs):
+                if arguments[0] == "git" and "rev-parse" in arguments:
+                    return SimpleNamespace(returncode=0, stdout=("1" * 40 + "\n").encode())
+                if arguments[0] == "git":
+                    return SimpleNamespace(returncode=0, stdout=b"")
+                self.assertEqual(arguments[:4], ["/usr/bin/python3", "-I", "-B", str(script)])
+                self.assertNotIn("--confirm-pause", arguments)
+                self.assertNotIn("--confirm-backup", arguments)
+                (root / "reports" / "123-1-migration-ready.json").write_text(
+                    '{"phase":"release-migration-ready","status":"PASS","checks":{"safe":true}}')
+                return SimpleNamespace(returncode=0, stdout=b"PASS\n")
+
+            with patch.object(REMOTE, "EVIDENCE", root / "evidence"), patch.object(
+                REMOTE, "MIGRATION_READY_SCRIPT", script
+            ), patch.object(REMOTE, "BACKUP_PROFILE", root / "profile.json"), patch.object(
+                REMOTE, "EXTERNAL_REPORTS", root / "reports"
+            ), patch.object(REMOTE, "access_check", return_value=True), patch.object(
+                REMOTE, "private_directory", side_effect=lambda path: path.is_dir()
+            ), patch.object(REMOTE, "private_file", return_value=True), patch.object(
+                REMOTE, "reviewed_script", return_value=True
+            ), patch.object(REMOTE.os, "geteuid", return_value=0), patch.object(
+                REMOTE.subprocess, "run", side_effect=run
+            ) as runner, redirect_stdout(io.StringIO()):
+                self.assertEqual(REMOTE.ready_release(digest, "123-1", plan_digest), 0)
+                self.assertEqual(runner.call_count, 3)
+            self.assertEqual(json.loads((stage / "ready-dispatch-report.json").read_text())["status"], "PASS")
 
     def test_recovery_proof_client_rejects_unbounded_paths_without_ssh(self):
         for path in ("relative/recover.json", "/private/../secret.json", "/private/report;id"):
