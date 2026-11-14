@@ -25,6 +25,7 @@ REMOTE = load("vps_remote", "scripts/portable-vps-remote.py")
 STAGE = load("vps_stage", "scripts/portable-vps-stage.py")
 PREFLIGHT_DISPATCH = load("vps_preflight_dispatch", "scripts/portable-vps-release-preflight-dispatch.py")
 PLAN_DISPATCH = load("vps_plan_dispatch", "scripts/portable-vps-release-plan-dispatch.py")
+PAUSE_DISPATCH = load("vps_pause_dispatch", "scripts/portable-vps-release-pause-dispatch.py")
 
 
 class AccessTests(unittest.TestCase):
@@ -129,6 +130,80 @@ class AccessTests(unittest.TestCase):
             ), patch.object(REMOTE, "plan_release") as plan:
                 self.assertEqual(REMOTE.main(), 1)
                 plan.assert_not_called()
+
+    def test_writer_pause_requires_exact_confirmed_command(self):
+        base = "pause-release " + "a" * 64 + " 123-1 " + "b" * 64
+        for command in (base, base + " confirm-pause; id", base + " confirm-pause extra"):
+            with self.subTest(command=command), patch.dict(
+                os.environ, {"SSH_ORIGINAL_COMMAND": command}
+            ), patch.object(REMOTE, "pause_release") as pause:
+                self.assertEqual(REMOTE.main(), 1)
+                pause.assert_not_called()
+
+    def test_writer_pause_rejects_wrong_plan_before_subprocess(self):
+        raw = (json.dumps(self.candidate(), sort_keys=True) + "\n").encode()
+        digest = hashlib.sha256(raw).hexdigest()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            stage = root / "evidence" / "release-stages" / "123-1"
+            stage.mkdir(parents=True)
+            (stage / "candidate.json").write_bytes(raw)
+            (stage / "pause-plan.json").write_text("reviewed plan")
+            (stage / "plan-report.json").write_text('{"phase":"plan","status":"PASS","checks":{"safe":true}}')
+            with patch.object(REMOTE, "EVIDENCE", root / "evidence"), patch.object(
+                REMOTE, "access_check", return_value=True
+            ), patch.object(REMOTE, "private_directory", return_value=True), patch.object(
+                REMOTE, "private_file", return_value=True
+            ), patch.object(REMOTE.os, "geteuid", return_value=0), patch.object(
+                REMOTE.subprocess, "run"
+            ) as runner, redirect_stdout(io.StringIO()):
+                self.assertEqual(REMOTE.pause_release(digest, "123-1", "b" * 64), 1)
+                runner.assert_not_called()
+
+    def test_writer_pause_calls_only_reviewed_phase_with_bound_plan(self):
+        raw = (json.dumps(self.candidate(), sort_keys=True) + "\n").encode()
+        digest = hashlib.sha256(raw).hexdigest()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            stage = root / "evidence" / "release-stages" / "123-1"
+            stage.mkdir(parents=True)
+            (stage / "candidate.json").write_bytes(raw)
+            (stage / "pause-plan.json").write_text("reviewed plan")
+            (stage / "plan-report.json").write_text('{"phase":"plan","status":"PASS","checks":{"safe":true}}')
+            plan_digest = hashlib.sha256((stage / "pause-plan.json").read_bytes()).hexdigest()
+            script = root / "reviewed" / "scripts" / "portable-vps-release-pause-backup.py"
+            script.parent.mkdir(parents=True)
+            script.write_text("# reviewed\n")
+
+            def run(arguments, **kwargs):
+                if arguments[0] == "git" and "rev-parse" in arguments:
+                    return SimpleNamespace(returncode=0, stdout=("1" * 40 + "\n").encode())
+                if arguments[0] == "git":
+                    return SimpleNamespace(returncode=0, stdout=b"")
+                self.assertEqual(arguments[:5], ["/usr/bin/python3", "-I", "-B", str(script), "pause"])
+                self.assertIn("--confirm-pause", arguments)
+                self.assertNotIn("backup", arguments)
+                (root / "reports" / "123-1-pause.json").write_text(
+                    '{"phase":"pause","status":"PASS","checks":{"safe":true}}'
+                )
+                return SimpleNamespace(returncode=0, stdout=b"PASS\n")
+
+            output = io.StringIO()
+            with patch.object(REMOTE, "EVIDENCE", root / "evidence"), patch.object(
+                REMOTE, "PLAN_SCRIPT", script
+            ), patch.object(REMOTE, "BACKUP_PROFILE", root / "profile.json"), patch.object(
+                REMOTE, "EXTERNAL_REPORTS", root / "reports"
+            ), patch.object(REMOTE, "access_check", return_value=True), patch.object(
+                REMOTE, "private_directory", side_effect=lambda path: path.is_dir()
+            ), patch.object(REMOTE, "private_file", return_value=True), patch.object(
+                REMOTE, "reviewed_script", return_value=True
+            ), patch.object(REMOTE.os, "geteuid", return_value=0), patch.object(
+                REMOTE.subprocess, "run", side_effect=run
+            ) as runner, redirect_stdout(output):
+                self.assertEqual(REMOTE.pause_release(digest, "123-1", plan_digest), 0)
+                self.assertEqual(runner.call_count, 3)
+            self.assertEqual(json.loads(output.getvalue())["status"], "PASS")
+            self.assertEqual(json.loads((stage / "pause-dispatch-report.json").read_text())["status"], "PASS")
 
     def test_pause_plan_dispatch_records_only_bound_digest(self):
         raw = (json.dumps(self.candidate(), sort_keys=True) + "\n").encode()

@@ -368,6 +368,81 @@ def plan_release(expected, run_id):
     return 0 if report["status"] == "PASS" else 1
 
 
+def pause_release(expected, run_id, plan_sha256):
+    """Stop only the reviewed writers after binding the accepted plan."""
+    stage = EVIDENCE / "release-stages" / run_id
+    checks = {
+        "root_execution": os.geteuid() == 0,
+        "request_shape": all((SHA256.fullmatch(expected), RUN.fullmatch(run_id),
+                              SHA256.fullmatch(plan_sha256))),
+        "read_only_baseline": access_check(),
+    }
+    if all(checks.values()):
+        try:
+            checks["stage_private"] = private_directory(stage)
+            candidate = stage / "candidate.json"
+            plan_file = stage / "pause-plan.json"
+            plan_report = stage / "plan-report.json"
+            checks["bound_files_private"] = checks["stage_private"] and all(
+                private_file(path) and 0 < path.stat().st_size <= limit
+                for path, limit in ((candidate, MAX_MANIFEST), (plan_file, 4096),
+                                    (plan_report, 4096))
+            )
+            if checks["bound_files_private"]:
+                raw = candidate.read_bytes()
+                plan_evidence = json.loads(plan_report.read_bytes(), object_pairs_hook=no_duplicate_keys)
+                checks["candidate_bound"] = (hashlib.sha256(raw).hexdigest() == expected
+                                             and valid_manifest(raw))
+                checks["accepted_plan_bound"] = (
+                    hashlib.sha256(plan_file.read_bytes()).hexdigest() == plan_sha256
+                    and isinstance(plan_evidence, dict)
+                    and plan_evidence.get("phase") == "plan"
+                    and plan_evidence.get("status") == "PASS"
+                    and isinstance(plan_evidence.get("checks"), dict)
+                    and bool(plan_evidence["checks"])
+                    and all(value is True for value in plan_evidence["checks"].values())
+                )
+            if checks.get("candidate_bound") and checks.get("accepted_plan_bound"):
+                source_sha = json.loads(raw, object_pairs_hook=no_duplicate_keys)["configuration"]["source_sha"]
+                checks["reviewed_checkout"] = reviewed_checkout(source_sha)
+                checks["reviewed_script"] = reviewed_script(PLAN_SCRIPT)
+                checks["profile_private"] = private_file(BACKUP_PROFILE)
+            if (checks.get("reviewed_checkout") and checks.get("reviewed_script")
+                    and checks.get("profile_private")):
+                EXTERNAL_REPORTS.mkdir(mode=0o700, exist_ok=True)
+                checks["external_report_directory_private"] = private_directory(EXTERNAL_REPORTS)
+            if checks.get("external_report_directory_private"):
+                external = EXTERNAL_REPORTS / f"{run_id}-pause.json"
+                result = subprocess.run(
+                    ["/usr/bin/python3", "-I", "-B", str(PLAN_SCRIPT), "pause",
+                     "--profile", str(BACKUP_PROFILE), "--stage-run-id", run_id,
+                     "--manifest-sha256", expected, "--plan-sha256", plan_sha256,
+                     "--confirm-pause", "--report", str(external)],
+                    env={"PATH": "/usr/bin:/bin", "PYTHONNOUSERSITE": "1",
+                         "PYTHONDONTWRITEBYTECODE": "1", "PYTHONSAFEPATH": "1"},
+                    capture_output=True, timeout=180, check=False,
+                )
+                evidence = json.loads(external.read_bytes(), object_pairs_hook=no_duplicate_keys)
+                checks["pause_passed"] = (
+                    result.returncode == 0 and result.stdout.strip() == b"PASS"
+                    and isinstance(evidence, dict) and evidence.get("phase") == "pause"
+                    and evidence.get("status") == "PASS"
+                    and isinstance(evidence.get("checks"), dict) and bool(evidence["checks"])
+                    and all(value is True for value in evidence["checks"].values())
+                )
+        except (OSError, ValueError, TypeError, KeyError, subprocess.TimeoutExpired):
+            checks["pause_execution"] = False
+    status = "PASS" if all(checks.values()) else "STOP"
+    report = {"phase": "release-writer-pause-dispatch", "status": status, "checks": checks}
+    if checks.get("stage_private"):
+        try:
+            write_private(stage / "pause-dispatch-report.json", (json.dumps(report, sort_keys=True) + "\n").encode())
+        except OSError:
+            report = {"phase": "release-writer-pause-dispatch", "status": "STOP", "checks": {"report_write": False}}
+    print(json.dumps(report, sort_keys=True))
+    return 0 if report["status"] == "PASS" else 1
+
+
 def main():
     # The SSH key must be restricted to this absolute command in authorized_keys.
     # Never dispatch arbitrary SSH_ORIGINAL_COMMAND text to a shell.
@@ -385,6 +460,8 @@ def main():
         return preflight_release(parts[1], parts[2])
     if len(parts) == 4 and parts[0] == "plan-release" and parts[3] == "confirm-readonly-plan":
         return plan_release(parts[1], parts[2])
+    if len(parts) == 5 and parts[0] == "pause-release" and parts[4] == "confirm-pause":
+        return pause_release(parts[1], parts[2], parts[3])
     print("STOP")
     return 1
 
