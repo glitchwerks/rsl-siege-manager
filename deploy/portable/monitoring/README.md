@@ -113,8 +113,9 @@ sender for #584/#579. Neither is scheduled or connected to a live receiver by
 this repository change.
 
 The [database signal contract](../../../docs/operations/vps-database-monitoring.md)
-provides a local, read-only PostgreSQL producer for #585. Its receiver and
-production activation are separate gates.
+provides a local, read-only PostgreSQL producer and separately confirmed
+private receiver sender for #585/#579. Receiver setup and production activation
+are separate gates.
 
 `monitor-policy.json.example` is an inert, provider-neutral requirements template,
 not an executable monitor configuration. The chosen external monitoring service

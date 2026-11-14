@@ -1,7 +1,8 @@
 # Portable database signal contract
 
-This is the read-only signal producer for #585. It is repository code only:
-no monitoring schedule, receiver, restart or production query is enabled.
+This is the read-only signal producer for #585, with an optional sender for the
+private missed-signal receiver contract in #579. No monitoring schedule,
+receiver configuration, restart or production query is enabled.
 Run it on the reviewed VPS only after a separate target and read-only
 activation approval. The independent receiver in #579 must deliver down,
 recovery and missed-signal alerts even when this host is unavailable.
@@ -49,6 +50,39 @@ boolean check labels, a UTC timestamp, and numeric database-size,
 available-space and connection measurements. It excludes passwords, database
 URLs, host paths, container IDs, revisions, table data and raw errors. Preserve
 STOP/INCOMPLETE evidence and use a new path for another attempt.
+An exhausted overall observation deadline or an internal probe exception is
+`INCOMPLETE`, distinct from a completed failed database check.
+
+## Optional independent receiver delivery
+
+After separate approval for the read-only target and receiver notification,
+put the receiver's private success URL in a root-owned 0600 file under a
+root-owned 0700 directory, separate from the database configuration and
+evidence. The URL uses the same [empty POST/`OK` contract](../../deploy/portable/monitoring/signals.md)
+as the runtime sender. Do not place a Slack credential on the VPS. Use a
+database-specific receiver check; runtime and backup signals must not reset
+its missed-signal deadline.
+
+One phase-scoped invocation from a reviewed host checkout is:
+
+```sh
+python3 scripts/portable-vps-database-monitor.py \
+  --config /protected/database/database-signal.json \
+  --endpoint-file /protected/receiver/database-url \
+  --observation-report /protected/evidence/database-observation-001.json \
+  --report /protected/evidence/database-delivery-001.json \
+  --confirm-readonly-databases --confirm-notification
+```
+
+The root-only sender runs a fresh producer and checks its private report before
+it sends an empty success or `/fail` signal. Invalid inputs, overlap, exhausted
+observation deadline, interrupted/mismatched evidence or delivery failure never
+become a monitoring PASS. An incomplete observation sends nothing; the external
+receiver must detect silence. The atomic delivery report contains only a UTC
+timestamp, status and booleans for observation and receiver acknowledgement.
+It omits the URL, credentials, host paths, database measurements and raw errors.
+Receiver acknowledgement proves receipt, not Slack/email delivery. Keep both
+reports and use fresh paths for another attempt.
 
 ## Initial policy and acceptance
 
