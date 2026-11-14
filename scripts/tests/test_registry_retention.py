@@ -39,7 +39,7 @@ class RetentionTests(unittest.TestCase):
         repo = "siege-api"
         tag_ref = f"{r.REGISTRY}.azurecr.io/{repo}:{image(7)['tags'][0]}"
         digest_ref = f"{r.REGISTRY}.azurecr.io/{repo}@{image(8)['digest']}"
-        props = {"provisioningState": "Succeeded", "runningStatus": "Running",
+        props = {"provisioningState": "Succeeded", "runningStatus": "Stopped",
                  "latestReadyRevisionName": "current", "configuration": {},
                  "template": {"containers": [{"image": "public/current"}],
                               "initContainers": [{"image": tag_ref}]}}
@@ -51,6 +51,26 @@ class RetentionTests(unittest.TestCase):
         self.assertIn(digest_ref, result["references"])
         rows = {repo: [image(i, days=10+i) for i in range(1, 9)]}
         self.assertEqual(sum(row["candidate"] for row in r.plan(rows, result["references"], AT)), 1)
+
+    def test_frozen_sources_must_be_stopped_and_healthy(self):
+        def application(status, provisioning="Succeeded"):
+            return {"id": "/subscriptions/test/app", "properties": {
+                "provisioningState": provisioning, "runningStatus": status,
+                "template": {"containers": [{"image": "public/current"}]}}}
+
+        for prod_status in ("Running", None):
+            with self.subTest(prod_status=prod_status), patch.object(
+                    r, "listed", side_effect=[[application(prod_status)], []]):
+                with self.assertRaisesRegex(r.Stop, "Application baseline unhealthy"):
+                    r.applications()
+        with patch.object(r, "listed", side_effect=[[application("Stopped", "Failed")], []]):
+            with self.assertRaisesRegex(r.Stop, "Deployment in progress"):
+                r.applications()
+        with patch.object(r, "listed", side_effect=[
+                [application("Stopped")], [], [application("Running")], [],
+                [application("Stopped")], []]):
+            result = r.applications()
+        self.assertEqual([app["status"] for app in result["apps"]], ["Stopped", "Running", "Stopped"])
 
     def test_seven_day_boundary_and_newest_five(self):
         rows = {"siege-api": [image(i, days=i) for i in range(1, 10)]}

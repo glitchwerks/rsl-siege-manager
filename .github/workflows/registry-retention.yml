@@ -1,8 +1,6 @@
 name: Production Registry Retention
 
 on:
-  schedule:
-    - cron: '17 4 * * *'
   workflow_dispatch:
     inputs:
       phase:
@@ -54,17 +52,17 @@ jobs:
         run: python3 scripts/registry-retention.py preflight --report "$RUNNER_TEMP/registry-retention/report.json"
 
       # Activation is separate from deletion and only an explicit manual choice
-      # disables the legacy task. A scheduled run never changes the old schedule.
+      # disables the legacy task.
       - name: Activate guarded replacement
-        if: github.event_name == 'workflow_dispatch' && inputs.phase == 'activate'
+        if: inputs.phase == 'activate'
         run: python3 scripts/registry-retention.py activate --report "$RUNNER_TEMP/registry-retention/report.json" --confirm
 
       - name: Apply seven-day policy
-        if: github.event_name == 'schedule' || inputs.phase == 'apply'
+        if: inputs.phase == 'apply'
         run: python3 scripts/registry-retention.py apply --report "$RUNNER_TEMP/registry-retention/report.json" --confirm
 
       - name: Verify cleanup separately
-        if: github.event_name == 'schedule' || inputs.phase == 'apply'
+        if: inputs.phase == 'apply'
         run: python3 scripts/registry-retention.py verify --report "$RUNNER_TEMP/registry-retention/report.json"
 
       - name: Preserve sanitized report
