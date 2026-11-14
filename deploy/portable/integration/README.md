@@ -125,7 +125,32 @@ activation has its own recovery runbook; these scripts change no deployment
 configuration. Live receiver/Slack notification tests remain separate.
 
 #430 remains open: an approved execution target, exercised delivery/cleanup
-report, protected manual workflow and release-gate wiring are still needed.
+report, and release-gate wiring are still needed.
 A permanent Azure integration deployment or automatic Azure dev pairing is not
 required for this provider-neutral pilot. No live Discord test was executed as
 part of implementation or disposable fixture CI.
+
+## Protected GitHub dispatch
+
+The [Portable integration smoke workflow](../../../.github/workflows/portable-integration-smoke.yml)
+runs the same runner from reviewed `main` under the protected
+`integration-smoke` environment. Its repository-wide concurrency group keeps
+read-only and full **workflow dispatches** from overlapping. Local operator
+runs use a different lock and are not serialized with GitHub dispatches; check
+for an active local or GitHub run and do not start the other until it finishes.
+The environment must require an
+operator review and allow only `main` before any dispatch. Store the exact
+reviewed `pilot.json` content as `INTEGRATION_SMOKE_CONFIG_JSON` and its sidecar
+bearer as `INTEGRATION_SIDECAR_BEARER` **environment secrets**; never put the
+Discord gateway token in either secret. The runner writes both inputs to
+private temporary files, removes them after execution, and uploads only its
+sanitized JSON report. The workflow's own job fails if either secret is absent.
+
+Dispatch `readonly` after the reviewed isolated endpoint is reachable from a
+GitHub-hosted runner. Use `full` only after separate approval of the exact test
+recipient and channel, with `confirm_discord_writes` set to
+`send-test-discord-messages`. The protected environment approval and this
+literal confirmation are separate gates. Do not dispatch against production
+recipients or channels. A PASS report still requires a separate delivery and
+cleanup receipt as described above. This workflow does not create the isolated
+target or automatically run after deployment; those remain #430 acceptance.
