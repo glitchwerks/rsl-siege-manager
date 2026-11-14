@@ -1,0 +1,81 @@
+name: Portable integration smoke
+
+# Only the reviewed main branch can use the dedicated test identity. This
+# workflow never selects or writes to production Discord destinations.
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Read-only checks or explicitly approved test Discord writes
+        required: true
+        type: choice
+        options:
+          - readonly
+          - full
+      confirm_discord_writes:
+        description: For full mode, enter send-test-discord-messages
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: portable-integration-smoke
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: integration-smoke
+    steps:
+      - name: Check out reviewed main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run isolated integration smoke
+        shell: bash
+        env:
+          SMOKE_MODE: ${{ inputs.mode }}
+          WRITE_CONFIRMATION: ${{ inputs.confirm_discord_writes }}
+          SMOKE_CONFIG_JSON: ${{ secrets.INTEGRATION_SMOKE_CONFIG_JSON }}
+          SIDECAR_BEARER: ${{ secrets.INTEGRATION_SIDECAR_BEARER }}
+        run: |
+          set -euo pipefail
+          [[ "$SMOKE_MODE" == readonly || "$SMOKE_MODE" == full ]]
+          if [[ "$SMOKE_MODE" == full ]]; then
+            [[ "$WRITE_CONFIRMATION" == send-test-discord-messages ]]
+          else
+            [[ -z "$WRITE_CONFIRMATION" ]]
+          fi
+          test -n "$SMOKE_CONFIG_JSON"
+          test -n "$SIDECAR_BEARER"
+          private="$RUNNER_TEMP/integration-smoke-inputs"
+          evidence="$RUNNER_TEMP/integration-smoke-evidence"
+          umask 077
+          mkdir -m 700 -- "$private"
+          mkdir -m 700 -- "$evidence"
+          trap 'rm -f -- "$private/config.json" "$private/sidecar-key" "$private/.integration-smoke.lock"; rmdir -- "$private"' EXIT
+          printf '%s' "$SMOKE_CONFIG_JSON" > "$private/config.json"
+          printf '%s' "$SIDECAR_BEARER" > "$private/sidecar-key"
+          flags=(--confirm-isolated-target)
+          if [[ "$SMOKE_MODE" == full ]]; then
+            flags+=(--confirm-discord-writes)
+          fi
+          python3 scripts/portable-integration.py "$SMOKE_MODE" \
+            --config "$private/config.json" \
+            --token-file "$private/sidecar-key" \
+            --report "$evidence/report.json" \
+            "${flags[@]}"
+
+      - name: Upload sanitized smoke report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: portable-integration-smoke-report
+          path: ${{ runner.temp }}/integration-smoke-evidence/report.json
+          if-no-files-found: ignore
+          retention-days: 30
