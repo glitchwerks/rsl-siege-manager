@@ -82,9 +82,9 @@ configuration, execute backup/migration, or touch Compose services. Keep the
 candidate and reports for the later preflight/promotion phases.
 
 The host-side forced-command script must be installed separately from a reviewed
-commit. Its current `update-script` phase accepts only the seven reviewed prior
+commit. Its current `update-script` phase accepts only the eight reviewed prior
 script hashes, preserves a root-private copy at
-`/root/portable-vps-remote.py.before-release-ready`,
+`/root/portable-vps-remote.py.before-release-migrate`,
 and atomically changes only that script with its committed `0644` mode. An
 earlier stage-only installation may also have left the separate reviewed
 `scripts/portable-vps-remote.py.before-release-stage` backup in the checkout;
@@ -163,9 +163,9 @@ GitHub. It does not change images or services.
 Before dispatch, separately review and install the new forced-command script
 from the exact reviewed checkout with `portable-vps-host-access.py
 update-script --confirm update-script`, a fresh root-private report, and the
-dedicated public key. The current updater accepts only the seven reviewed
+dedicated public key. The current updater accepts only the eight reviewed
 earlier script hashes, backs up the current script to
-`/root/portable-vps-remote.py.before-release-ready`,
+`/root/portable-vps-remote.py.before-release-migrate`,
 and requires the new reviewed hash. Verify the installation with a second
 fresh report, a new admin login, and the existing read-only GitHub access
 check. `restore-script --confirm restore-script` restores only that exact
@@ -296,6 +296,30 @@ SHA-256 of the private readiness baseline for the separately confirmed
 migration phase. This workflow does not run a migration or
 restart writers. No VPS host update or readiness dispatch has been performed
 for this bridge.
+
+## Separately confirmed database migration workflow
+
+The manual **VPS release confirmed migration** workflow runs one database
+migration only after the read-only readiness baseline is accepted. It requires
+the exact candidate, plan, and readiness SHA-256 values, a `siege` or `mom`
+database selection, and a matching literal confirmation
+(`migrate-reviewed-siege` or `migrate-reviewed-mom`). It runs only from `main`
+under the protected `vps-prod` environment and production-promotion
+concurrency group. The restricted command is
+`migrate-release <digest> <run-id> <plan-sha256> <readiness-sha256> <database> confirm-migrate-<database>`.
+
+The host checks the private candidate and accepted readiness report, binds
+both baseline hashes, reviews the clean checkout and script, and reserves an
+exclusive private attempt for the selected database before invoking only the
+reviewed `portable-vps-release-migrate.py` script. That script rechecks the
+same-copy recovery proof, stopped writers, exact live revisions, migration
+order, candidate image, and migration head before running its one-off Compose
+maintenance service. It verifies the target revision afterward. Each database
+requires its own dispatch in the manifest order. GitHub receives only boolean
+checks; private evidence stays on the host. STOP leaves writers paused for
+manual diagnosis and recovery. Never blindly retry a timed-out or failed
+migration; database writes may already have occurred. No migration workflow
+has been dispatched and no VPS host script has been updated for this bridge.
 
 ## Promotion phases to implement and rehearse
 
