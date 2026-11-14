@@ -1,6 +1,7 @@
 """Post-promotion acceptance stays bound to exact images and hides credentials."""
 
 from contextlib import ExitStack
+from contextlib import contextmanager
 import importlib.util
 import json
 from pathlib import Path
@@ -29,6 +30,32 @@ def versions():
 
 
 class ReleaseAcceptanceTests(unittest.TestCase):
+    def test_public_response_read_is_inside_whole_request_deadline(self):
+        events = []
+        @contextmanager
+        def deadline():
+            events.append("enter")
+            try:
+                yield
+            finally:
+                events.append("exit")
+        class Response:
+            status = 200
+            def __enter__(self):
+                return self
+            def __exit__(self, *_args):
+                return False
+            def read(self, _limit):
+                events.append("read")
+                return b'{}'
+        opener = SimpleNamespace(open=lambda *_args, **_kwargs: Response())
+        with patch.object(ACCEPT.MONITOR, "delivery_deadline", side_effect=deadline), patch.object(
+            ACCEPT.urllib.request, "build_opener", return_value=opener
+        ):
+            self.assertEqual(ACCEPT.get_public("https://prod.example.net", "/version.json"),
+                             (200, {}))
+        self.assertEqual(events, ["enter", "read", "exit"])
+
     def test_missing_target_confirmation_never_loads_profile_or_creates_report(self):
         with tempfile.TemporaryDirectory() as temporary:
             report = Path(temporary) / "report.json"

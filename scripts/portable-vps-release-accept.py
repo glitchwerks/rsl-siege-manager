@@ -24,6 +24,7 @@ def module(name, filename):
 
 PROMOTE = module("release_promote_for_acceptance", "portable-vps-release-promote.py")
 PILOT = module("portable_pilot_for_acceptance", "portable-pilot.py")
+MONITOR = module("portable_monitor_for_acceptance", "portable-monitor.py")
 PAUSE = PROMOTE.PAUSE
 GATE = PROMOTE.GATE
 REMOTE = PROMOTE.REMOTE
@@ -73,14 +74,15 @@ def get_public(origin, path, cookie=None):
     if cookie is not None:
         headers["Cookie"] = "session=" + cookie
     request = urllib.request.Request(origin + path, headers=headers, method="GET")
-    try:
-        response = opener.open(request, timeout=10)
-    except urllib.error.HTTPError as error:
-        response = error
-    with response:
-        if response.status != 200:
-            return response.status, None
-        raw = response.read(65537)
+    with MONITOR.delivery_deadline():
+        try:
+            response = opener.open(request, timeout=10)
+        except urllib.error.HTTPError as error:
+            response = error
+        with response:
+            if response.status != 200:
+                return response.status, None
+            raw = response.read(65537)
     return 200, json.loads(raw) if len(raw) <= 65536 else None
 
 
