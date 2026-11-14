@@ -217,6 +217,25 @@ class ReleasePauseBackupTests(unittest.TestCase):
             mutation.assert_not_called()
             self.assertEqual(json.loads(report.read_text())["status"], "STOP")
 
+    def test_render_failure_writes_sanitized_stop_report(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            stage = root / "stage"
+            stage.mkdir()
+            report = root / "report.json"
+            with patch.object(PHASE.os, "geteuid", return_value=0), patch.object(
+                PHASE.GATE, "protected", return_value=True
+            ), patch.object(PHASE, "profile", return_value=({"project_directory": root / "project"}, "b" * 64)), patch.object(
+                PHASE, "stage", return_value=stage
+            ), patch.object(PHASE, "plan", side_effect=RuntimeError("sensitive render detail")):
+                result = PHASE.main(["plan", "--profile", str(root / "profile.json"),
+                    "--stage-run-id", "123-1", "--manifest-sha256", "a" * 64,
+                    "--report", str(report)])
+            self.assertEqual(result, 1)
+            self.assertEqual(json.loads(report.read_text())["status"], "STOP")
+            self.assertEqual(json.loads((stage / "plan-report.json").read_text())["status"], "STOP")
+            self.assertNotIn("sensitive", report.read_text())
+
 
 if __name__ == "__main__":
     unittest.main()

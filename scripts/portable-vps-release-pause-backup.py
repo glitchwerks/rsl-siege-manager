@@ -395,7 +395,8 @@ def main(argv=None):
             value = load_plan(directory, args.plan_sha256, profile_digest, args.manifest_sha256)
             checks.update(pause(data, value, directory) if args.phase == "pause"
                           else backup(data, value, directory, args.manifest_sha256))
-    except (OSError, ValueError, TypeError, KeyError, UnicodeError):
+    except (OSError, ValueError, TypeError, KeyError, UnicodeError, RuntimeError,
+            subprocess.TimeoutExpired):
         checks["phase_preflight"] = False
     result = {"phase": args.phase, "status": "PASS" if checks and all(checks.values()) else "STOP",
               "checks": checks}
