@@ -82,9 +82,9 @@ configuration, execute backup/migration, or touch Compose services. Keep the
 candidate and reports for the later preflight/promotion phases.
 
 The host-side forced-command script must be installed separately from a reviewed
-commit. Its current `update-script` phase accepts only the five reviewed prior
+commit. Its current `update-script` phase accepts only the six reviewed prior
 script hashes, preserves a root-private copy at
-`/root/portable-vps-remote.py.before-release-backup`,
+`/root/portable-vps-remote.py.before-release-proof`,
 and atomically changes only that script with its committed `0644` mode. An
 earlier stage-only installation may also have left the separate reviewed
 `scripts/portable-vps-remote.py.before-release-stage` backup in the checkout;
@@ -163,9 +163,9 @@ GitHub. It does not change images or services.
 Before dispatch, separately review and install the new forced-command script
 from the exact reviewed checkout with `portable-vps-host-access.py
 update-script --confirm update-script`, a fresh root-private report, and the
-dedicated public key. The current updater accepts only the five reviewed
+dedicated public key. The current updater accepts only the six reviewed
 earlier script hashes, backs up the current script to
-`/root/portable-vps-remote.py.before-release-backup`,
+`/root/portable-vps-remote.py.before-release-proof`,
 and requires the new reviewed hash. Verify the installation with a second
 fresh report, a new admin login, and the existing read-only GitHub access
 check. `restore-script --confirm restore-script` restores only that exact
@@ -250,6 +250,30 @@ private stage reports before recovery; do not retry the same stage or resume
 writers until backup state is known. The workflow must only be dispatched as
 part of an approved full release. No host update or backup dispatch has been
 performed for this bridge.
+
+## Read-only recovery proof workflow
+
+The manual **VPS release recovery proof** workflow binds the exact selected
+managed backup to off-host recovery and isolated restore evidence. It accepts
+the staged candidate digest, stage run ID, accepted pause-plan digest, and two
+absolute private report paths from the operator. The path inputs allow only
+letters, digits, `/`, `.`, `_`, and `-`, reject `..`, and must be distinct.
+This is an evidence selector, not a credential; do not put secret values or
+workload content in these inputs. The workflow runs only from `main` under the
+protected `vps-prod` environment and production-promotion concurrency group.
+The restricted SSH command is
+`proof-release <digest> <run-id> <plan-sha256> <recover-report> <restore-report> confirm-readonly-proof`.
+
+The host checks the private staged candidate, accepted plan, pause, and backup
+reports, reviewed checkout and script, root-private backup profile, and an
+exclusive stage attempt reservation. The reviewed proof script then verifies
+the selected backup's same-copy off-host readback and isolated database restore,
+rechecks paused writers and evidence hashes, and records a private proof
+baseline for migration readiness. GitHub receives boolean checks only. This
+workflow does not run recovery, restore, migration, or promotion; those reports
+must be produced and reviewed separately. Inspect the private host report on
+STOP and use a fresh stage for a corrected proof. No VPS host update or proof
+dispatch has been performed for this bridge.
 
 ## Promotion phases to implement and rehearse
 
