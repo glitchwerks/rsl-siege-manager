@@ -25,8 +25,11 @@ TCP per database, authenticated as `siege_app` and `mom_app` using the existing
 passwords already inside the PostgreSQL container. A socket listener or
 `pg_isready` alone does not pass. Queries verify the database and role,
 single expected Alembic revision, and presence of the `member` or `reminders`
-bootstrap table. They read database size and global connection count only;
-they do not read roster, message or reminder rows. The SQL transaction is
+bootstrap table. They read database size and a global count of backends
+connected to databases from `pg_stat_database.numbackends`; this conservative
+pressure count can include a database-connected maintenance worker, but it
+cannot miss sessions owned by the other application role. They do not read
+roster, message or reminder rows. The SQL transaction is
 read-only with a three-second statement timeout. The script rechecks the
 PostgreSQL container after both queries. Every Docker command has a bounded
 timeout, with a 60-second observation budget.

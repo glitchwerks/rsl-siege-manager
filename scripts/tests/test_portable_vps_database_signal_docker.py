@@ -60,6 +60,17 @@ class DisposableDatabaseSignalTests(unittest.TestCase):
             deadline = time.monotonic() + 60
             self.assertEqual(SIGNAL.database(identifier, "siege", deadline)["revision"], "0012")
             self.assertEqual(SIGNAL.database(identifier, "mom_bot", deadline)["revision"], "b6_member")
+            # Both unprivileged roles must observe the same cluster-wide pressure.
+            for name in ("siege", "mom_bot"):
+                sleeper = subprocess.run(["docker", "exec", "--detach", "--user", "postgres",
+                    identifier, "sh", "-eu", "-c", SIGNAL.PSQL, "database-signal", name,
+                    "SELECT pg_sleep(12);"], capture_output=True, timeout=20, check=False)
+                self.assertEqual(sleeper.returncode, 0, "disposable sleeper failed to start")
+            time.sleep(1)
+            siege = SIGNAL.database(identifier, "siege", time.monotonic() + 30)
+            mom = SIGNAL.database(identifier, "mom_bot", time.monotonic() + 30)
+            self.assertGreaterEqual(siege["connections"], 3)
+            self.assertGreaterEqual(mom["connections"], 3)
             setup("postgres", "ALTER ROLE siege_app PASSWORD 'no-longer-matches-container';")
             self.assertIsNone(SIGNAL.database(identifier, "siege", time.monotonic() + 30))
         finally:

@@ -40,12 +40,14 @@ export PGPASSWORD
 exec psql --no-psqlrc --quiet --no-align --tuples-only --field-separator='|' \\
   --set ON_ERROR_STOP=1 --host 127.0.0.1 --port 5432 \\
   --username "$DB_USER" --dbname "$DB_NAME" --command "$2"'''
+# backend_type is hidden for other roles in pg_stat_activity. numbackends is
+# visible across databases and conservatively includes database-attached workers.
 QUERY = {name: ("BEGIN READ ONLY; SET LOCAL statement_timeout='3000ms'; "
     "SELECT current_user, current_database(), "
     "(SELECT version_num FROM public.alembic_version), "
     f"to_regclass('public.{table}') IS NOT NULL, "
     "pg_database_size(current_database()), "
-    "(SELECT count(*) FROM pg_stat_activity WHERE backend_type = 'client backend'), "
+    "(SELECT COALESCE(sum(numbackends), 0) FROM pg_stat_database WHERE datname IS NOT NULL), "
     "current_setting('max_connections')::int, "
     "current_setting('transaction_read_only'); COMMIT;")
     for name, table in (("siege", "member"), ("mom_bot", "reminders"))}
