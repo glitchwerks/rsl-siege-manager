@@ -20,7 +20,7 @@ from urllib.parse import urlsplit
 
 
 VERSION_KEYS = {"backend_version", "frontend_version", "bot_version", "git_sha"}
-CHECKS = ("apex_home", "www_redirect", "api_health", "release_identity",
+CHECKS = ("apex_home", "frontend_marker", "www_redirect", "api_health", "release_identity",
           "apex_tls_expiry", "www_tls_expiry")
 MAX_CONFIG = 4096
 MAX_API = 4096
@@ -101,6 +101,7 @@ def inspect(settings):
     checks = {name: False for name in CHECKS}
     tls_seen = set()
     probes = (("apex_home", settings["host"], "/", False),
+              ("frontend_marker", settings["host"], "/version.json", True),
               ("www_redirect", "www." + settings["host"], "/", False),
               ("api_health", settings["host"], "/api/health", True),
               ("release_identity", settings["host"], "/api/version", True))
@@ -116,6 +117,10 @@ def inspect(settings):
                 tls_seen.add(tls_label)
                 if label == "apex_home":
                     checks[label] = response["status"] == 200
+                elif label == "frontend_marker":
+                    checks[label] = (response["status"] == 200 and response["json"] == {
+                        "frontend_version": settings["versions"]["frontend_version"],
+                        "git_sha": settings["versions"]["git_sha"]})
                 elif label == "www_redirect":
                     checks[label] = (response["status"] in (301, 308)
                         and response["location"] == "https://" + settings["host"] + "/")

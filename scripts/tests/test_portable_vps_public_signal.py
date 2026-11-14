@@ -24,6 +24,9 @@ def settings():
 def responses(data):
     expiry = time.time() + 30 * 86400
     return [{"status": 200, "location": None, "tls_expiry": expiry},
+            {"status": 200, "location": None, "tls_expiry": expiry,
+             "json": {"frontend_version": data["versions"]["frontend_version"],
+                      "git_sha": data["versions"]["git_sha"]}},
             {"status": 308, "location": "https://siege.example.io/", "tls_expiry": expiry},
             {"status": 200, "location": None, "tls_expiry": expiry,
              "json": {"status": "healthy"}},
@@ -38,14 +41,15 @@ class PublicSignalTests(unittest.TestCase):
             result = SIGNAL.inspect(data)
         self.assertTrue(all(result.values()), result)
         self.assertEqual([(call.args[0], call.args[1]) for call in request.call_args_list], [
-            ("siege.example.io", "/"), ("www.siege.example.io", "/"),
+            ("siege.example.io", "/"), ("siege.example.io", "/version.json"),
+            ("www.siege.example.io", "/"),
             ("siege.example.io", "/api/health"), ("siege.example.io", "/api/version")])
 
     def test_unexpected_redirect_and_stale_certificate_fail_independently(self):
         data = settings()
         reply = responses(data)
-        reply[1]["location"] = "https://other.example.io/"
-        reply[2]["tls_expiry"] = time.time() + 2 * 86400
+        reply[2]["location"] = "https://other.example.io/"
+        reply[3]["tls_expiry"] = time.time() + 2 * 86400
         with patch.object(SIGNAL, "request", side_effect=reply):
             result = SIGNAL.inspect(data)
         self.assertFalse(result["www_redirect"])
@@ -56,7 +60,7 @@ class PublicSignalTests(unittest.TestCase):
     def test_api_failure_is_distinct_from_site_failure(self):
         data = settings()
         reply = responses(data)
-        reply[2]["json"] = {"status": "degraded"}
+        reply[3]["json"] = {"status": "degraded"}
         with patch.object(SIGNAL, "request", side_effect=reply):
             result = SIGNAL.inspect(data)
         self.assertTrue(result["apex_home"])

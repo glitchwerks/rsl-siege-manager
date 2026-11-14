@@ -17,10 +17,11 @@ requires the approved HTTPS `www` to apex redirect at `/`. It does not accept
 an arbitrary destination or follow redirects. The canonical-only Caddy
 configuration needs a separately reviewed monitoring rule before activation.
 
-One invocation makes four public `GET` requests: apex `/`, `www` `/`, apex
-`/api/health`, and apex `/api/version`. It checks exact 200 HTML-route status,
-the 301/308 `www` redirect target, exact `{"status":"healthy"}`, and exact
-component versions. TLS uses the system trust store and hostname verification;
+One invocation makes five public `GET` requests: apex `/` and `/version.json`,
+`www` `/`, and apex `/api/health` and `/api/version`. It checks exact 200
+HTML-route status, the frontend marker's exact version/SHA, the 301/308 `www`
+redirect target, exact `{"status":"healthy"}`, and exact component versions.
+TLS uses the system trust store and hostname verification;
 the served apex and `www` certificates must have at least 14 days remaining.
 No private route, cookie, auth header, member data or Discord API is accessed.
 Ambient proxy settings are not used. Each connection has a five-second socket
