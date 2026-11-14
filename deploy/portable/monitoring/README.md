@@ -111,6 +111,10 @@ The off-host [public web/API/TLS signal contract](../../../docs/operations/vps-p
 provides a bounded read-only producer for #584. It is not scheduled or connected
 to an alert receiver by this repository change.
 
+The [database signal contract](../../../docs/operations/vps-database-monitoring.md)
+provides a local, read-only PostgreSQL producer for #585. Its receiver and
+production activation are separate gates.
+
 `monitor-policy.json.example` is an inert, provider-neutral requirements template,
 not an executable monitor configuration. The chosen external monitoring service
 must implement HTTPS health/identity checks, certificate-expiry alerts, failure

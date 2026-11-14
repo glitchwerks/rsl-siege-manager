@@ -1,0 +1,18 @@
+{
+  "project": "REPLACE-project",
+  "postgres_image": "REPLACE-immutable-postgres-digest",
+  "postgres_id": "REPLACE-exact-container-id",
+  "postgres_started_at": "REPLACE-exact-Docker-start-time",
+  "postgres_restarts": 0,
+  "storage_path": "/REPLACE/verified/postgres/volume/source",
+  "minimum_disk_bytes": 10737418240,
+  "max_database_bytes": {
+    "siege": 4294967296,
+    "mom_bot": 3221225472
+  },
+  "max_connection_percent": 80,
+  "revisions": {
+    "siege": "REPLACE",
+    "mom_bot": "REPLACE"
+  }
+}
