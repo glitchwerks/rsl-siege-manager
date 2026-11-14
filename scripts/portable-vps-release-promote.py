@@ -7,8 +7,10 @@ import json
 import os
 from pathlib import Path
 import re
+import signal
 import subprocess
 import tempfile
+from contextlib import contextmanager
 
 
 HERE = Path(__file__).resolve().parent
@@ -28,6 +30,22 @@ IMAGE_KEYS = {"BACKEND_IMAGE": ("siege", "api_image"),
               "MOM_IMAGE": ("mom", "image")}
 SERVICES = {"backend": "BACKEND_IMAGE", "frontend": "FRONTEND_IMAGE", "mom": "MOM_IMAGE"}
 ASSIGNMENT = re.compile(r"^\s*(?:export\s+)?([A-Z][A-Z0-9_]*)\s*=")
+PROMOTION_DEADLINE_SECONDS = 550  # Leave the 700 s SSH parent time to restore/report.
+
+
+@contextmanager
+def promotion_deadline():
+    """Interrupt the child while its pre-activation restore path can still run."""
+    def expired(_signum, _frame):
+        raise TimeoutError("promotion deadline exceeded")
+
+    previous = signal.signal(signal.SIGALRM, expired)
+    signal.setitimer(signal.ITIMER_REAL, PROMOTION_DEADLINE_SECONDS)
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
 
 
 def accepted_gate(directory, manifest_digest, plan_digest, readiness_digest):
@@ -229,7 +247,7 @@ def promote(data, directory, plan, manifest_digest, plan_digest, readiness_diges
             "started_at": PAUSE.stamp()})
         activation_started = True
         checks["targeted_compose_activation"] = compose_up(project)
-    except (OSError, ValueError, TypeError, KeyError, UnicodeError, RuntimeError,
+    except (OSError, ValueError, TypeError, KeyError, UnicodeError, RuntimeError, TimeoutError,
             subprocess.TimeoutExpired):
         checks["promotion_operation"] = False
     if not activation_started:
@@ -265,9 +283,10 @@ def run_locked(data, profile_digest, args):
                 "installed-stack.env", "installed-mom-image.json")):
             raise ValueError("promotion already attempted")
         plan = PAUSE.load_plan(directory, args.plan_sha256, profile_digest, args.manifest_sha256)
-        checks.update(promote(data, directory, plan, args.manifest_sha256, args.plan_sha256,
-                              args.readiness_sha256, args.promotion_ready_sha256))
-    except (OSError, ValueError, TypeError, KeyError, UnicodeError, RuntimeError,
+        with promotion_deadline():
+            checks.update(promote(data, directory, plan, args.manifest_sha256, args.plan_sha256,
+                                  args.readiness_sha256, args.promotion_ready_sha256))
+    except (OSError, ValueError, TypeError, KeyError, UnicodeError, RuntimeError, TimeoutError,
             subprocess.TimeoutExpired):
         checks["promotion_preflight"] = False
     result = {"phase": "release-promote",
