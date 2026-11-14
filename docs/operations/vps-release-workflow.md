@@ -82,9 +82,9 @@ configuration, execute backup/migration, or touch Compose services. Keep the
 candidate and reports for the later preflight/promotion phases.
 
 The host-side forced-command script must be installed separately from a reviewed
-commit. Its current `update-script` phase accepts only the ten reviewed prior
+commit. Its current `update-script` phase accepts only the eleven reviewed prior
 script hashes, preserves a root-private copy at
-`/root/portable-vps-remote.py.before-profile-binding`,
+`/root/portable-vps-remote.py.before-release-promote`,
 and atomically changes only that script with its committed `0644` mode. An
 earlier stage-only installation may also have left the separate reviewed
 `scripts/portable-vps-remote.py.before-release-stage` backup in the checkout;
@@ -163,9 +163,9 @@ GitHub. It does not change images or services.
 Before dispatch, separately review and install the new forced-command script
 from the exact reviewed checkout with `portable-vps-host-access.py
 update-script --confirm update-script`, a fresh root-private report, and the
-dedicated public key. The current updater accepts only the ten reviewed
+dedicated public key. The current updater accepts only the eleven reviewed
 earlier script hashes, backs up the current script to
-`/root/portable-vps-remote.py.before-profile-binding`,
+`/root/portable-vps-remote.py.before-release-promote`,
 and requires the new reviewed hash. Verify the installation with a second
 fresh report, a new admin login, and the existing read-only GitHub access
 check. `restore-script --confirm restore-script` restores only that exact
@@ -342,6 +342,32 @@ checks plus that baseline's SHA-256 to GitHub for the later separately
 confirmed promotion. STOP requires operator review; no image switch or writer
 restart occurs. No VPS host update or readiness dispatch has been performed
 for this bridge.
+
+## Separately confirmed candidate promotion workflow
+
+The manual **VPS release confirmed promotion** workflow changes the installed
+application image configuration and activates the reviewed candidate only
+after the final promotion-readiness baseline is accepted. It requires the
+staged candidate, pause-plan, migration-readiness, and promotion-readiness
+SHA-256 values plus the literal `promote-reviewed-<stage-run-id>` confirmation.
+It runs only from `main` under the protected `vps-prod` environment and
+production-promotion concurrency group. The restricted command is
+`promote-release <digest> <run-id> <plan-sha256> <readiness-sha256> <promotion-sha256> confirm-promote-<run-id>`.
+
+The host checks the private candidate and accepted promotion-ready report,
+binds the plan and promotion baseline, reviews the clean checkout and script,
+and reserves one exclusive private attempt before invoking only the reviewed
+`portable-vps-release-promote.py` script. That script checks the selected
+backup/restore proof, final database revisions, paused writers, protected
+configuration, and exact candidate images before changing `stack.env` and the
+Mom image approval. It activates only the application services and verifies
+healthy candidate containers without recreating the foundation. Before
+activation it restores the prior files on failure. After activation starts it
+never automatically restores images or databases because new writes may have
+occurred. GitHub receives only boolean checks; private snapshots and reports
+remain on the host. STOP requires operator diagnosis and the separately
+reviewed recovery path. No host update or promotion dispatch has been
+performed for this bridge.
 
 ## Promotion phases to implement and rehearse
 

@@ -82,6 +82,9 @@ class ReleasePromoteTests(unittest.TestCase):
     def test_pre_activation_failure_restores_files_and_never_runs_compose(self):
         self._exercise_operation(fail_before_activation=True)
 
+    def test_deadline_during_pre_activation_restores_files(self):
+        self._exercise_operation(fail_before_activation=True, deadline_expired=True)
+
     def test_activation_failure_does_not_automatically_restore_files(self):
         self._exercise_operation(fail_before_activation=False)
 
@@ -89,7 +92,8 @@ class ReleasePromoteTests(unittest.TestCase):
         checks = self._exercise_operation(fail_before_activation=False, compose_result=True)
         self.assertTrue(all(checks.values()), checks)
 
-    def _exercise_operation(self, fail_before_activation, compose_result=False):
+    def _exercise_operation(self, fail_before_activation, compose_result=False,
+                            deadline_expired=False):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             project = root / "project"
@@ -126,7 +130,9 @@ class ReleasePromoteTests(unittest.TestCase):
                 PROMOTE.PAUSE, "bound_preflight", return_value=(True, {"installed": {}})
             ), patch.object(PROMOTE.PREFLIGHT, "render", side_effect=render), patch.object(
                 PROMOTE.MIGRATE, "candidate_config", return_value=(True, {})
-            ), patch.object(PROMOTE, "unchanged_foundation", return_value=True), patch.object(
+            ), patch.object(PROMOTE, "unchanged_foundation",
+                            side_effect=[True, TimeoutError("deadline")] if deadline_expired else None,
+                            return_value=True), patch.object(
                 PROMOTE, "write_exclusive", side_effect=save
             ), patch.object(PROMOTE.PAUSE, "write_private", side_effect=write), patch.object(
                 PROMOTE, "replace_bytes", side_effect=replace
@@ -138,7 +144,10 @@ class ReleasePromoteTests(unittest.TestCase):
                 checks = PROMOTE.promote({"project_directory": project}, directory, plan,
                                          "a" * 64, "c" * 64, "e" * 64, "d" * 64)
             if fail_before_activation:
-                self.assertFalse(checks["writers_paused_before_activation"])
+                if deadline_expired:
+                    self.assertFalse(checks["promotion_operation"])
+                else:
+                    self.assertFalse(checks["writers_paused_before_activation"])
                 self.assertTrue(checks["pre_activation_config_restored"])
                 self.assertEqual(files[stack], old_stack)
                 self.assertEqual(files[approval], old_approval())
