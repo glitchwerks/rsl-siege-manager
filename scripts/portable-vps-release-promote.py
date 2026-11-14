@@ -2,11 +2,14 @@
 """Confirm one candidate image switch after accepted, read-only promotion readiness."""
 
 import argparse
+from contextlib import contextmanager
+import fcntl
 import importlib.util
 import json
 import os
 from pathlib import Path
 import re
+import stat
 import subprocess
 import tempfile
 
@@ -87,6 +90,24 @@ def write_exclusive(path, raw):
         output.write(raw)
         output.flush()
         os.fsync(output.fileno())
+
+
+@contextmanager
+def project_lock(project):
+    """Serialize every promotion attempt for this project across stage directories."""
+    if not GATE.protected(project, 0, directory=True):
+        raise ValueError("unsafe project directory")
+    path = project / ".release-promotion.lock"
+    fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    try:
+        info = os.fstat(fd)
+        if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid()
+                or info.st_mode & 0o077):
+            raise ValueError("unsafe promotion lock")
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        yield
+    finally:
+        os.close(fd)
 
 
 def replace_bytes(path, raw):
@@ -251,35 +272,8 @@ def promote(data, directory, plan, manifest_digest, plan_digest, readiness_diges
     return checks
 
 
-def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--profile", required=True, type=Path)
-    parser.add_argument("--stage-run-id", required=True)
-    parser.add_argument("--manifest-sha256", required=True)
-    parser.add_argument("--plan-sha256", required=True)
-    parser.add_argument("--readiness-sha256", required=True)
-    parser.add_argument("--promotion-ready-sha256", required=True)
-    parser.add_argument("--confirm-promote", required=True)
-    parser.add_argument("--report", required=True, type=Path)
-    args = parser.parse_args(argv)
-    if (not args.report.is_absolute() or ".." in args.report.parts
-            or args.confirm_promote != args.stage_run_id
-            or not REMOTE.SHA256.fullmatch(args.promotion_ready_sha256)):
-        print("STOP invalid_request")
-        return 2
-    try:
-        if os.geteuid() != 0:
-            raise ValueError("root required")
-        data, profile_digest = PAUSE.profile(args.profile)
-        if args.report.is_relative_to(data["project_directory"]):
-            raise ValueError("report outside project required")
-        if not GATE.protected(args.report.parent, 0, directory=True):
-            raise ValueError("unsafe report directory")
-        PAUSE.write_private(args.report, {"phase": "release-promote", "status": "INCOMPLETE"})
-    except (OSError, ValueError, TypeError, KeyError, UnicodeError, RuntimeError,
-            subprocess.TimeoutExpired):
-        print("STOP profile_preflight_failed")
-        return 2
+def run_locked(data, profile_digest, args):
+    """Hold the project lock until both private and external reports are complete."""
     directory = None
     checks = {"root_execution": True}
     try:
@@ -309,6 +303,49 @@ def main(argv=None):
         return 2
     print(result["status"])
     return 0 if result["status"] == "PASS" else 1
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--profile", required=True, type=Path)
+    parser.add_argument("--stage-run-id", required=True)
+    parser.add_argument("--manifest-sha256", required=True)
+    parser.add_argument("--plan-sha256", required=True)
+    parser.add_argument("--readiness-sha256", required=True)
+    parser.add_argument("--promotion-ready-sha256", required=True)
+    parser.add_argument("--confirm-promote", required=True)
+    parser.add_argument("--report", required=True, type=Path)
+    args = parser.parse_args(argv)
+    if (not args.report.is_absolute() or ".." in args.report.parts
+            or args.confirm_promote != args.stage_run_id
+            or not REMOTE.SHA256.fullmatch(args.promotion_ready_sha256)):
+        print("STOP invalid_request")
+        return 2
+    try:
+        if os.geteuid() != 0:
+            raise ValueError("root required")
+        data, profile_digest = PAUSE.profile(args.profile)
+        if args.report.is_relative_to(data["project_directory"]):
+            raise ValueError("report outside project required")
+        if not GATE.protected(args.report.parent, 0, directory=True):
+            raise ValueError("unsafe report directory")
+        PAUSE.write_private(args.report, {"phase": "release-promote", "status": "INCOMPLETE"})
+    except (OSError, ValueError, TypeError, KeyError, UnicodeError, RuntimeError,
+            subprocess.TimeoutExpired):
+        print("STOP profile_preflight_failed")
+        return 2
+    try:
+        with project_lock(data["project_directory"]):
+            return run_locked(data, profile_digest, args)
+    except (OSError, ValueError):
+        result = {"phase": "release-promote", "status": "STOP", "checks": {"project_lock": False}}
+        try:
+            PAUSE.replace_private(args.report, result)
+        except OSError:
+            print("STOP report_write_failed")
+            return 2
+        print("STOP")
+        return 1
 
 
 if __name__ == "__main__":

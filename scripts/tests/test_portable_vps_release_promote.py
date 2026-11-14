@@ -29,6 +29,15 @@ def old_approval():
 
 
 class ReleasePromoteTests(unittest.TestCase):
+    def test_project_lock_rejects_parallel_attempt(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary)
+            with patch.object(PROMOTE.GATE, "protected", return_value=True):
+                with PROMOTE.project_lock(project):
+                    with self.assertRaises(BlockingIOError):
+                        with PROMOTE.project_lock(project):
+                            self.fail("parallel promotion acquired the lock")
+
     def test_image_config_changes_only_unique_assignments(self):
         raw = (b"# keep this comment\nCOMPOSE_PROJECT_NAME=prod\nBACKEND_IMAGE=old-api\r\n"
                b"FRONTEND_IMAGE=old-frontend\nMOM_IMAGE=old-mom\n"
@@ -96,11 +105,15 @@ class ReleasePromoteTests(unittest.TestCase):
                     "preflight_baseline_sha256": "b" * 64}
             gate = {"revisions": {"siege": "s2", "mom": "m1"}, "postgres_id": "f" * 64}
             recorded = []
+            backups = []
             def read(path, *_args):
                 return files[path]
             def replace(path, raw):
                 files[path] = raw
-                recorded.append((path, raw))
+                recorded.append(("replace", path, raw))
+            def save(path, raw):
+                backups.append((path, raw))
+                recorded.append(("save", path, raw))
             def write(path, value):
                 path.write_text(json.dumps(value))
             def render(_topology, _stack, _project, overrides):
@@ -114,7 +127,7 @@ class ReleasePromoteTests(unittest.TestCase):
             ), patch.object(PROMOTE.PREFLIGHT, "render", side_effect=render), patch.object(
                 PROMOTE.MIGRATE, "candidate_config", return_value=(True, {})
             ), patch.object(PROMOTE, "unchanged_foundation", return_value=True), patch.object(
-                PROMOTE, "write_exclusive"
+                PROMOTE, "write_exclusive", side_effect=save
             ), patch.object(PROMOTE.PAUSE, "write_private", side_effect=write), patch.object(
                 PROMOTE, "replace_bytes", side_effect=replace
             ), patch.object(PROMOTE.PAUSE, "paused", return_value=not fail_before_activation), patch.object(
@@ -137,6 +150,9 @@ class ReleasePromoteTests(unittest.TestCase):
                 self.assertNotEqual(files[approval], old_approval())
                 compose.assert_called_once_with(project)
                 self.assertTrue((directory / "promote-activation-start.json").exists())
+            self.assertEqual(backups, [(directory / "installed-stack.env", old_stack),
+                                       (directory / "installed-mom-image.json", old_approval())])
+            self.assertEqual([event[0] for event in recorded[:3]], ["save", "save", "replace"])
             return checks
 
 

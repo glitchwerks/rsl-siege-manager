@@ -151,7 +151,11 @@ that accepted baseline by exact digest and re-runs its checks immediately before
 writing. It preserves the original protected `stack.env` and Mom image approval
 bytes in the stage directory, replaces only the three application image
 assignments and the Mom approval, and verifies the rendered candidate. Before
-activation it rechecks paused writers, database revisions, and the existing
+reading the stage, it takes a project-wide nonblocking exclusive lock and holds
+it through both private and external reporting, so another promotion cannot
+race a partially completed activation. The lock file remains in the protected
+project directory between attempts. Before activation it rechecks paused
+writers, database revisions, and the existing
 PostgreSQL/proxy container identities. It then runs `docker compose up` for
 `backend`, `mom`, and `frontend` only, with `--no-deps`, `--no-build`, and
 `--pull never`. It requires one healthy container for each candidate service,
