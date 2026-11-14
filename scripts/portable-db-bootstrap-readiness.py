@@ -101,19 +101,21 @@ def inspect(project):
         return checks
     for role in ("siege_app", "mom_app"):
         sql = ("SELECT rolcanlogin AND NOT rolsuper AND NOT rolcreatedb AND "
-               "NOT rolcreaterole AND NOT rolreplication AND NOT rolbypassrls "
+               "NOT rolcreaterole AND NOT rolreplication AND NOT rolbypassrls AND "
+               "NOT EXISTS (SELECT 1 FROM pg_auth_members m WHERE m.member=pg_roles.oid) "
                f"FROM pg_roles WHERE rolname='{role}'")
         checks[f"{role}_least_privilege"] = query(container, "postgres", sql) == "t"
     for database, owner, other in (("siege", "siege_app", "mom_app"),
                                    ("mom_bot", "mom_app", "siege_app")):
-        sql = (f"SELECT pg_get_userbyid(datdba)='{owner}' AND NOT EXISTS "
+        sql = (f"SELECT pg_get_userbyid(datdba)='{owner}' AND "
+               f"has_database_privilege('{owner}','{database}','CONNECT') AND NOT EXISTS "
                "(SELECT 1 FROM aclexplode(COALESCE(datacl, acldefault('d', datdba))) "
                "WHERE grantee=0 AND privilege_type='CONNECT') AND "
                f"NOT has_database_privilege('{other}','{database}','CONNECT') "
                f"FROM pg_database WHERE datname='{database}'")
         checks[f"{database}_owner_and_isolation"] = query(container, "postgres", sql) == "t"
         empty = ("SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace "
-                 "WHERE c.relkind IN ('r','p','v','m','f') AND n.nspname NOT IN "
+                 "WHERE c.relkind IN ('r','p','v','m','f','S') AND n.nspname NOT IN "
                  "('pg_catalog','information_schema') AND n.nspname NOT LIKE 'pg_toast%'")
         checks[f"{database}_empty"] = query(container, database, empty) == "0"
     return checks

@@ -78,6 +78,30 @@ jobs:
           python3 scripts/portable-db-bootstrap-readiness.py \
             --project-directory "$evidence_root" --report "$evidence_root/complete.json"
           python3 -c 'import json,sys; report=json.load(open(sys.argv[1])); assert report["status"] == "PASS" and all(report["checks"].values())' "$evidence_root/complete.json"
+          expect_bootstrap_stop() {
+            local name="$1" check="$2"
+            if python3 scripts/portable-db-bootstrap-readiness.py \
+              --project-directory "$evidence_root" --report "$evidence_root/$name.json"; then
+              echo 'Unsafe database bootstrap unexpectedly passed'
+              exit 1
+            fi
+            python3 -c 'import json,sys; report=json.load(open(sys.argv[1])); assert report["status"] == "STOP" and report["checks"][sys.argv[2]] is False' "$evidence_root/$name.json" "$check"
+          }
+          docker exec "$container" psql -U postgres -d postgres -c \
+            'GRANT pg_execute_server_program TO siege_app' >/dev/null
+          expect_bootstrap_stop privileged-membership siege_app_least_privilege
+          docker exec "$container" psql -U postgres -d postgres -c \
+            'REVOKE pg_execute_server_program FROM siege_app' >/dev/null
+          docker exec "$container" psql -U postgres -d postgres -c \
+            'REVOKE CONNECT ON DATABASE siege FROM siege_app' >/dev/null
+          expect_bootstrap_stop missing-owner-connect siege_owner_and_isolation
+          docker exec "$container" psql -U postgres -d postgres -c \
+            'GRANT CONNECT ON DATABASE siege TO siege_app' >/dev/null
+          docker exec "$container" psql -U postgres -d siege -c \
+            'CREATE SEQUENCE public.bootstrap_seq' >/dev/null
+          expect_bootstrap_stop sequence-only siege_empty
+          docker exec "$container" psql -U postgres -d siege -c \
+            'DROP SEQUENCE public.bootstrap_seq' >/dev/null
           docker run -d --name "$partial" \
             --label "com.docker.compose.project=${project}_partial" \
             --label 'com.docker.compose.service=postgres' \
