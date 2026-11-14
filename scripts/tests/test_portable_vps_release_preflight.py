@@ -30,6 +30,21 @@ def model(backend, frontend, mom):
 
 
 class ReleasePreflightTests(unittest.TestCase):
+    def test_report_inside_stage_is_rejected_before_any_write(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary) / "project"
+            project.mkdir()
+            stage = project / "evidence" / "release-stages" / "123-1"
+            stage.mkdir(parents=True)
+            report = stage / "preflight-baseline.json"
+            with patch.object(PHASE.PAUSE, "stage") as lookup:
+                result = PHASE.main(["--project-directory", str(project),
+                    "--stage-run-id", "123-1", "--manifest-sha256", "a" * 64,
+                    "--report", str(report)])
+            self.assertEqual(result, 2)
+            self.assertFalse(report.exists())
+            lookup.assert_not_called()
+
     def test_running_images_must_match_exact_healthy_containers(self):
         current = model("current-backend", "current-frontend", "current-mom")
         ids = {name: character * 64 for name, character in zip(PHASE.SERVICES, "abcde")}

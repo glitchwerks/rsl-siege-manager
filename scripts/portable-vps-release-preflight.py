@@ -166,6 +166,11 @@ def main(argv=None):
     parser.add_argument("--manifest-sha256", required=True)
     parser.add_argument("--report", required=True, type=Path)
     args = parser.parse_args(argv)
+    if (not args.project_directory.is_absolute() or not args.report.is_absolute()
+            or ".." in args.project_directory.parts or ".." in args.report.parts
+            or args.report.is_relative_to(args.project_directory)):
+        print("STOP invalid_report_path")
+        return 2
     try:
         if not GATE.protected(args.report.parent, 0, directory=True):
             raise OSError("unsafe report directory")
@@ -179,8 +184,6 @@ def main(argv=None):
         if not checks["root_execution"]:
             raise ValueError("root required")
         directory = PAUSE.stage(args.project_directory, args.stage_run_id, args.manifest_sha256)
-        if args.report.is_relative_to(args.project_directory):
-            raise ValueError("report outside project required")
         if any((directory / name).exists() for name in ("preflight-report.json", "preflight-baseline.json")):
             raise ValueError("preflight already attempted")
         checks, baseline = inspect(args.project_directory, directory, args.manifest_sha256)
