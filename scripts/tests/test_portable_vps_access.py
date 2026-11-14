@@ -24,6 +24,7 @@ LOCAL = load("vps_access", "scripts/portable-vps-access-check.py")
 REMOTE = load("vps_remote", "scripts/portable-vps-remote.py")
 STAGE = load("vps_stage", "scripts/portable-vps-stage.py")
 PREFLIGHT_DISPATCH = load("vps_preflight_dispatch", "scripts/portable-vps-release-preflight-dispatch.py")
+PLAN_DISPATCH = load("vps_plan_dispatch", "scripts/portable-vps-release-plan-dispatch.py")
 
 
 class AccessTests(unittest.TestCase):
@@ -116,6 +117,66 @@ class AccessTests(unittest.TestCase):
             ), patch.object(REMOTE, "preflight_release") as preflight:
                 self.assertEqual(REMOTE.main(), 1)
                 preflight.assert_not_called()
+
+    def test_pause_plan_requires_exact_readonly_command(self):
+        for command in (
+            "plan-release " + "a" * 64 + " 123-1",
+            "plan-release " + "a" * 64 + " 123-1 confirm-readonly-plan; id",
+            "plan-release " + "a" * 64 + " 123-1 confirm-readonly-plan extra",
+        ):
+            with self.subTest(command=command), patch.dict(
+                os.environ, {"SSH_ORIGINAL_COMMAND": command}
+            ), patch.object(REMOTE, "plan_release") as plan:
+                self.assertEqual(REMOTE.main(), 1)
+                plan.assert_not_called()
+
+    def test_pause_plan_dispatch_records_only_bound_digest(self):
+        raw = (json.dumps(self.candidate(), sort_keys=True) + "\n").encode()
+        digest = hashlib.sha256(raw).hexdigest()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            stage = root / "evidence" / "release-stages" / "123-1"
+            stage.mkdir(parents=True, mode=0o700)
+            (stage / "candidate.json").write_bytes(raw)
+            profile = root / "release-backup-profile.json"
+            profile.write_text("private profile")
+            script = root / "reviewed" / "scripts" / "portable-vps-release-pause-backup.py"
+            script.parent.mkdir(parents=True)
+            script.write_text("# reviewed\n")
+
+            def run(arguments, **kwargs):
+                if arguments[0] == "git" and "rev-parse" in arguments:
+                    return SimpleNamespace(returncode=0, stdout=("1" * 40 + "\n").encode())
+                if arguments[0] == "git":
+                    return SimpleNamespace(returncode=0, stdout=b"")
+                self.assertEqual(arguments[0:4], ["/usr/bin/python3", "-I", "-B", str(script)])
+                self.assertEqual(arguments[4], "plan")
+                self.assertNotIn("pause", arguments)
+                self.assertNotIn("backup", arguments)
+                (root / "reports" / "123-1-plan.json").write_text(
+                    '{"phase":"plan","status":"PASS","checks":{"safe":true}}'
+                )
+                (stage / "pause-plan.json").write_text('{"phase":"pause-plan"}')
+                return SimpleNamespace(returncode=0, stdout=b"PASS\n")
+
+            output = io.StringIO()
+            with patch.object(REMOTE, "EVIDENCE", root / "evidence"), patch.object(
+                REMOTE, "REVIEWED_SOURCE", script.parents[1]
+            ), patch.object(REMOTE, "PLAN_SCRIPT", script), patch.object(
+                REMOTE, "BACKUP_PROFILE", profile
+            ), patch.object(REMOTE, "EXTERNAL_REPORTS", root / "reports"), patch.object(
+                REMOTE, "access_check", return_value=True
+            ), patch.object(REMOTE, "private_directory", side_effect=lambda path: path.is_dir()), patch.object(
+                REMOTE, "private_file", return_value=True
+            ), patch.object(REMOTE, "reviewed_script", return_value=True), patch.object(
+                REMOTE.os, "geteuid", return_value=0
+            ), patch.object(REMOTE.subprocess, "run", side_effect=run) as runner, redirect_stdout(output):
+                self.assertEqual(REMOTE.plan_release(digest, "123-1"), 0)
+                self.assertEqual(runner.call_count, 3)
+            report = json.loads(output.getvalue())
+            self.assertEqual(report["plan_sha256"], hashlib.sha256((stage / "pause-plan.json").read_bytes()).hexdigest())
+            self.assertEqual(report["status"], "PASS")
+            self.assertNotIn("private profile", output.getvalue())
 
     def test_reviewed_checkout_allows_only_hash_verified_prior_backup(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -324,6 +385,31 @@ class AccessTests(unittest.TestCase):
         ) as ssh:
             checks = PREFLIGHT_DISPATCH.preflight(digest + "; id", "123-1")
         self.assertFalse(checks["request_shape"])
+        access.assert_not_called()
+        ssh.assert_not_called()
+
+    def test_runner_plan_returns_only_hash_from_exact_request(self):
+        digest = "a" * 64
+        plan_sha256 = "b" * 64
+        remote_report = {"phase": "release-pause-plan-dispatch", "status": "PASS",
+                         "checks": {"safe": True}, "plan_sha256": plan_sha256}
+        with patch.object(PLAN_DISPATCH.ACCESS, "check", return_value={"baseline": True}), patch.object(
+            PLAN_DISPATCH.ACCESS, "settings", return_value=({}, "host.example", "root", "", "private-key", "known-host")
+        ), patch.object(
+            PLAN_DISPATCH.subprocess, "run",
+            return_value=SimpleNamespace(returncode=0, stdout=json.dumps(remote_report).encode()),
+        ) as ssh:
+            checks, actual = PLAN_DISPATCH.plan(digest, "123-1")
+        self.assertTrue(all(checks.values()))
+        self.assertEqual(actual, plan_sha256)
+        self.assertEqual(ssh.call_args.args[0][-1], f"plan-release {digest} 123-1 confirm-readonly-plan")
+        self.assertNotIn("input", ssh.call_args.kwargs)
+        with patch.object(PLAN_DISPATCH.ACCESS, "check") as access, patch.object(
+            PLAN_DISPATCH.subprocess, "run"
+        ) as ssh:
+            checks, actual = PLAN_DISPATCH.plan(digest + "; id", "123-1")
+        self.assertFalse(checks["request_shape"])
+        self.assertIsNone(actual)
         access.assert_not_called()
         ssh.assert_not_called()
 

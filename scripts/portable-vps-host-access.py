@@ -20,12 +20,13 @@ FORCED_COMMAND = f'restrict,command="/usr/bin/python3 {REMOTE_SCRIPT}"'
 OLD_REMOTE_SHA256S = (
     "f965a4edc244c7ece696bbeb30b650f67c3c21e82584c44185ca57a94db31da7",
     "70030e03fa566033397d876bf408883b86e0de8d626edb177feac839907b28b4",
+    "379f6fa1709fd0490abc4820fddf1826492426349d239148a30d5dafa92dbf30",
 )
-NEW_REMOTE_SHA256 = "379f6fa1709fd0490abc4820fddf1826492426349d239148a30d5dafa92dbf30"
+NEW_REMOTE_SHA256 = "4664f652bcc15e7ba2f0c25fc3214d314e2b64fe5edacee960c8fa3ea9983fcb"
 
 
 def script_backup_path():
-    return Path("/root/portable-vps-remote.py.before-release-preflight")
+    return Path("/root/portable-vps-remote.py.before-release-plan")
 
 
 def digest(data):

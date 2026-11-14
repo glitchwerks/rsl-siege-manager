@@ -15,6 +15,8 @@ EVIDENCE = Path("/srv/rsl-siege/evidence")
 PROJECT = Path("/srv/rsl-siege")
 REVIEWED_SOURCE = Path("/opt/rsl-siege-manager")
 PREFLIGHT_SCRIPT = REVIEWED_SOURCE / "scripts/portable-vps-release-preflight.py"
+PLAN_SCRIPT = REVIEWED_SOURCE / "scripts/portable-vps-release-pause-backup.py"
+BACKUP_PROFILE = PROJECT / "runtime/release-backup-profile.json"
 EXTERNAL_REPORTS = Path("/root/vps-release-reports")
 STAGE_SCRIPT_BACKUP = REVIEWED_SOURCE / "scripts/portable-vps-remote.py.before-release-stage"
 INITIAL_REMOTE_SHA256 = "f965a4edc244c7ece696bbeb30b650f67c3c21e82584c44185ca57a94db31da7"
@@ -297,6 +299,75 @@ def preflight_release(expected, run_id):
     return 0 if report["status"] == "PASS" else 1
 
 
+def plan_release(expected, run_id):
+    """Record a candidate-bound pause plan without stopping a writer."""
+    stage = EVIDENCE / "release-stages" / run_id
+    checks = {
+        "root_execution": os.geteuid() == 0,
+        "request_shape": bool(SHA256.fullmatch(expected)) and bool(RUN.fullmatch(run_id)),
+        "read_only_baseline": access_check(),
+    }
+    plan_sha256 = None
+    if all(checks.values()):
+        try:
+            candidate = stage / "candidate.json"
+            checks["stage_private"] = private_directory(stage)
+            checks["candidate_private_bounded"] = (
+                private_file(candidate) and 0 < candidate.stat().st_size <= MAX_MANIFEST
+            ) if checks["stage_private"] else False
+            if checks["candidate_private_bounded"]:
+                raw = candidate.read_bytes()
+                checks["candidate_digest"] = (
+                    hashlib.sha256(raw).hexdigest() == expected and valid_manifest(raw)
+                )
+            if checks.get("candidate_digest"):
+                source_sha = json.loads(raw, object_pairs_hook=no_duplicate_keys)["configuration"]["source_sha"]
+                checks["reviewed_checkout"] = reviewed_checkout(source_sha)
+                checks["reviewed_script"] = reviewed_script(PLAN_SCRIPT)
+                checks["profile_private"] = private_file(BACKUP_PROFILE)
+            if (checks.get("reviewed_checkout") and checks.get("reviewed_script")
+                    and checks.get("profile_private")):
+                EXTERNAL_REPORTS.mkdir(mode=0o700, exist_ok=True)
+                checks["external_report_directory_private"] = private_directory(EXTERNAL_REPORTS)
+            if checks.get("external_report_directory_private"):
+                external = EXTERNAL_REPORTS / f"{run_id}-plan.json"
+                result = subprocess.run(
+                    ["/usr/bin/python3", "-I", "-B", str(PLAN_SCRIPT), "plan",
+                     "--profile", str(BACKUP_PROFILE), "--stage-run-id", run_id,
+                     "--manifest-sha256", expected, "--report", str(external)],
+                    env={"PATH": "/usr/bin:/bin", "PYTHONNOUSERSITE": "1",
+                         "PYTHONDONTWRITEBYTECODE": "1", "PYTHONSAFEPATH": "1"},
+                    capture_output=True, timeout=300, check=False,
+                )
+                evidence = json.loads(external.read_bytes(), object_pairs_hook=no_duplicate_keys)
+                checks["plan_passed"] = (
+                    result.returncode == 0 and result.stdout.strip() == b"PASS"
+                    and isinstance(evidence, dict) and evidence.get("phase") == "plan"
+                    and evidence.get("status") == "PASS" and isinstance(evidence.get("checks"), dict)
+                    and bool(evidence["checks"]) and all(value is True for value in evidence["checks"].values())
+                )
+            if checks.get("plan_passed"):
+                plan_file = stage / "pause-plan.json"
+                checks["plan_private_bounded"] = (
+                    private_file(plan_file) and 0 < plan_file.stat().st_size <= 4096
+                )
+                if checks["plan_private_bounded"]:
+                    plan_sha256 = hashlib.sha256(plan_file.read_bytes()).hexdigest()
+        except (OSError, ValueError, TypeError, KeyError, subprocess.TimeoutExpired):
+            checks["plan_execution"] = False
+    status = "PASS" if all(checks.values()) and plan_sha256 is not None else "STOP"
+    report = {"phase": "release-pause-plan-dispatch", "status": status, "checks": checks}
+    if status == "PASS":
+        report["plan_sha256"] = plan_sha256
+    if checks.get("stage_private"):
+        try:
+            write_private(stage / "plan-dispatch-report.json", (json.dumps(report, sort_keys=True) + "\n").encode())
+        except OSError:
+            report = {"phase": "release-pause-plan-dispatch", "status": "STOP", "checks": {"report_write": False}}
+    print(json.dumps(report, sort_keys=True))
+    return 0 if report["status"] == "PASS" else 1
+
+
 def main():
     # The SSH key must be restricted to this absolute command in authorized_keys.
     # Never dispatch arbitrary SSH_ORIGINAL_COMMAND text to a shell.
@@ -312,6 +383,8 @@ def main():
         return stage_release(parts[1], parts[2], sys.stdin.buffer)
     if len(parts) == 4 and parts[0] == "preflight-release" and parts[3] == "confirm-readonly-preflight":
         return preflight_release(parts[1], parts[2])
+    if len(parts) == 4 and parts[0] == "plan-release" and parts[3] == "confirm-readonly-plan":
+        return plan_release(parts[1], parts[2])
     print("STOP")
     return 1
 
