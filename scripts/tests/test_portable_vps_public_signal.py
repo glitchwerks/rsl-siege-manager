@@ -80,10 +80,21 @@ class PublicSignalTests(unittest.TestCase):
 
     def test_global_deadline_uses_exception_outside_socket_retry_family(self):
         self.assertFalse(issubclass(SIGNAL.DeadlineExpired, OSError))
-        with patch.object(SIGNAL, "request", side_effect=SIGNAL.DeadlineExpired("expired")) as request:
-            result = SIGNAL.inspect(settings())
+        with patch.object(SIGNAL, "request", side_effect=SIGNAL.DeadlineExpired("expired")) as request, self.assertRaises(SIGNAL.DeadlineExpired):
+            SIGNAL.inspect(settings())
         self.assertEqual(request.call_count, 1)
-        self.assertFalse(any(result.values()))
+
+    def test_expired_global_deadline_is_incomplete_not_completed_failure(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            configuration = root / "config.json"
+            report = root / "report.json"
+            configuration.write_text(json.dumps({"origin": "https://siege.example.io",
+                "versions": settings()["versions"], "minimum_tls_days": 14}))
+            with patch.object(SIGNAL, "request", side_effect=SIGNAL.DeadlineExpired("expired")):
+                self.assertEqual(SIGNAL.main(["--config", str(configuration), "--report", str(report),
+                    "--confirm-external-readonly"]), 2)
+            self.assertEqual(json.loads(report.read_text())["status"], "INCOMPLETE")
 
     def test_requires_explicit_dispatch_and_omits_origin_and_version_from_report(self):
         with tempfile.TemporaryDirectory() as temporary:

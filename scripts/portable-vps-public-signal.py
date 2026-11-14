@@ -118,7 +118,7 @@ def inspect(settings):
     with deadline() as end:
         for label, host, path, read_json in probes:
             if time.monotonic() >= end:
-                break
+                raise DeadlineExpired("observation deadline")
             try:
                 response = request(host, path, read_json)
                 tls_label = "www_tls_expiry" if label == "www_redirect" else "apex_tls_expiry"
@@ -139,7 +139,7 @@ def inspect(settings):
                 else:
                     checks[label] = response["status"] == 200 and response["json"] == settings["versions"]
             except DeadlineExpired:
-                break
+                raise
             except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError,
                     http.client.HTTPException, ssl.SSLError, TimeoutError):
                 continue
@@ -187,13 +187,13 @@ def main(argv=None):
             report["checks"] = inspect(settings)
             report["status"] = "PASS" if all(report["checks"].values()) else "STOP"
         except (OSError, ValueError, TimeoutError, DeadlineExpired):
-            pass
+            report["status"] = "INCOMPLETE"
         publish_report(args.report, report)
     except (OSError, ValueError, TypeError, KeyError, UnicodeError):
         print("STOP")
         return 2
     print(report["status"])
-    return 0 if report["status"] == "PASS" else 1
+    return 0 if report["status"] == "PASS" else (2 if report["status"] == "INCOMPLETE" else 1)
 
 
 if __name__ == "__main__":
