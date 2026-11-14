@@ -5,6 +5,7 @@ import importlib.util
 import json
 from pathlib import Path
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -23,6 +24,13 @@ def manifest():
 
 
 class ReleaseRecoveryTests(unittest.TestCase):
+    def test_prewrite_deadline_interrupts_slow_checks_and_clears_alarm(self):
+        with patch.object(RECOVER, "PREWRITE_DEADLINE_SECONDS", 0.01):
+            with self.assertRaises(TimeoutError):
+                with RECOVER.prewrite_deadline():
+                    time.sleep(0.05)
+        self.assertEqual(RECOVER.signal.getitimer(RECOVER.signal.ITIMER_REAL)[0], 0)
+
     def test_activation_or_any_migration_attempt_blocks_config_restore(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

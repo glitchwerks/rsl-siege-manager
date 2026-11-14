@@ -2,10 +2,12 @@
 """Classify release recovery and restore only pre-activation configuration."""
 
 import argparse
+from contextlib import contextmanager
 import importlib.util
 import json
 import os
 from pathlib import Path
+import signal
 import subprocess
 
 
@@ -21,6 +23,22 @@ MIGRATE = PROMOTE.MIGRATE
 PREFLIGHT = importlib.util.module_from_spec(importlib.util.spec_from_file_location(
     "release_preflight_for_recovery", HERE / "portable-vps-release-preflight.py"))
 PREFLIGHT.__spec__.loader.exec_module(PREFLIGHT)
+PREWRITE_DEADLINE_SECONDS = 600  # The restricted SSH parent waits up to 900 s.
+
+
+@contextmanager
+def prewrite_deadline():
+    """Bound all read-only restore gates before the first protected write."""
+    def expired(_signum, _frame):
+        raise TimeoutError("recovery prewrite deadline exceeded")
+
+    previous = signal.signal(signal.SIGALRM, expired)
+    signal.setitimer(signal.ITIMER_REAL, PREWRITE_DEADLINE_SECONDS)
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
 
 
 def promotion_evidence(directory, manifest_digest, plan_digest, promotion_digest, preflight):
@@ -154,27 +172,28 @@ def inspect(data, directory, plan, manifest_digest, plan_digest, readiness_diges
 
 def restore(data, directory, plan, manifest_digest, plan_digest, readiness_digest,
             promotion_digest):
-    checks, context = inspect(data, directory, plan, manifest_digest, plan_digest,
-                              readiness_digest, promotion_digest)
-    if context is None:
-        return checks
-    project = data["project_directory"]
-    stack = project / "stack.env"
-    approval = project / "runtime" / "mom-image.json"
-    # Recheck the boundary immediately before the first protected write.
-    checks["no_activation_or_migration_before_write"] = not migration_or_activation_started(directory)
-    if not checks["no_activation_or_migration_before_write"]:
-        return checks
-    checks["writers_paused_before_write"] = PAUSE.paused(data, plan)
-    checks["writers_never_restarted_before_write"] = writer_stop_times_match(data, directory, plan)
-    checks["revisions_original_before_write"] = MIGRATE.revisions_match(
-        plan["ids"]["postgres"], {name: context["manifest"]["migrations"][name]["from_revision"]
-                                   for name in ("siege", "mom")})
-    checks["configuration_unchanged_before_write"] = (
-        GATE.read_private(stack, 0) == context["current_stack"]
-        and GATE.read_private(approval, 0, 16384) == context["current_mom"])
-    if not all(checks.values()):
-        return checks
+    with prewrite_deadline():
+        checks, context = inspect(data, directory, plan, manifest_digest, plan_digest,
+                                  readiness_digest, promotion_digest)
+        if context is None:
+            return checks
+        project = data["project_directory"]
+        stack = project / "stack.env"
+        approval = project / "runtime" / "mom-image.json"
+        # Recheck the boundary immediately before the first protected write.
+        checks["no_activation_or_migration_before_write"] = not migration_or_activation_started(directory)
+        if not checks["no_activation_or_migration_before_write"]:
+            return checks
+        checks["writers_paused_before_write"] = PAUSE.paused(data, plan)
+        checks["writers_never_restarted_before_write"] = writer_stop_times_match(data, directory, plan)
+        checks["revisions_original_before_write"] = MIGRATE.revisions_match(
+            plan["ids"]["postgres"], {name: context["manifest"]["migrations"][name]["from_revision"]
+                                       for name in ("siege", "mom")})
+        checks["configuration_unchanged_before_write"] = (
+            GATE.read_private(stack, 0) == context["current_stack"]
+            and GATE.read_private(approval, 0, 16384) == context["current_mom"])
+        if not all(checks.values()):
+            return checks
     PAUSE.write_private(directory / "recover-preactivation-start.json", {
         "phase": "recover-preactivation-start", "manifest_sha256": manifest_digest,
         "plan_sha256": plan_digest, "promotion_ready_sha256": promotion_digest,
