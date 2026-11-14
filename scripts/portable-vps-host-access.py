@@ -17,12 +17,15 @@ REMOTE_SCRIPT = Path("/opt/rsl-siege-manager/scripts/portable-vps-remote.py")
 SOURCE_SCRIPT = Path(__file__).with_name("portable-vps-remote.py")
 KEY_COMMENT = "github-vps-deploy"
 FORCED_COMMAND = f'restrict,command="/usr/bin/python3 {REMOTE_SCRIPT}"'
-OLD_REMOTE_SHA256 = "f965a4edc244c7ece696bbeb30b650f67c3c21e82584c44185ca57a94db31da7"
-NEW_REMOTE_SHA256 = "70030e03fa566033397d876bf408883b86e0de8d626edb177feac839907b28b4"
+OLD_REMOTE_SHA256S = (
+    "f965a4edc244c7ece696bbeb30b650f67c3c21e82584c44185ca57a94db31da7",
+    "70030e03fa566033397d876bf408883b86e0de8d626edb177feac839907b28b4",
+)
+NEW_REMOTE_SHA256 = "038a7469f83977bed06b699c633e874093325661bdd90c320c4de1ba9654b781"
 
 
 def script_backup_path():
-    return REMOTE_SCRIPT.with_name("portable-vps-remote.py.before-release-stage")
+    return REMOTE_SCRIPT.with_name("portable-vps-remote.py.before-release-preflight")
 
 
 def digest(data):
@@ -208,7 +211,7 @@ def update_script(key):
         return checks
     entry = key_entry(key).encode()
     checks["restricted_key_exactly_once"] = AUTHORIZED_KEYS.read_bytes().splitlines().count(entry) == 1
-    checks["old_script_reviewed"] = checked_file(REMOTE_SCRIPT) and digest(REMOTE_SCRIPT.read_bytes()) == OLD_REMOTE_SHA256
+    checks["old_script_reviewed"] = checked_file(REMOTE_SCRIPT) and digest(REMOTE_SCRIPT.read_bytes()) in OLD_REMOTE_SHA256S
     checks["new_script_reviewed"] = digest(SOURCE_SCRIPT.read_bytes()) == NEW_REMOTE_SHA256
     backup = script_backup_path()
     checks["backup_path_unused"] = not backup.exists() and not backup.is_symlink()
@@ -245,7 +248,7 @@ def restore_script(key):
     checks["updated_script_present"] = checked_file(REMOTE_SCRIPT) and digest(REMOTE_SCRIPT.read_bytes()) == NEW_REMOTE_SHA256
     checks["new_script_reviewed"] = digest(SOURCE_SCRIPT.read_bytes()) == NEW_REMOTE_SHA256
     backup = script_backup_path()
-    checks["reviewed_old_script_backup"] = private_file(backup) and digest(backup.read_bytes()) == OLD_REMOTE_SHA256
+    checks["reviewed_old_script_backup"] = private_file(backup) and digest(backup.read_bytes()) in OLD_REMOTE_SHA256S
     if not all(checks.values()):
         return checks
     old_data = backup.read_bytes()

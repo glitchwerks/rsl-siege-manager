@@ -12,6 +12,9 @@ from pathlib import Path
 
 
 EVIDENCE = Path("/srv/rsl-siege/evidence")
+PROJECT = Path("/srv/rsl-siege")
+REVIEWED_SOURCE = Path("/opt/rsl-siege-manager")
+PREFLIGHT_SCRIPT = REVIEWED_SOURCE / "scripts/portable-vps-release-preflight.py"
 MAX_MANIFEST = 16 * 1024
 SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 RUN = re.compile(r"[1-9][0-9]{0,19}-[1-9][0-9]{0,2}\Z")
@@ -30,6 +33,22 @@ def private_directory(path):
         and metadata.st_uid == 0
         and metadata.st_mode & 0o077 == 0
     )
+
+
+def reviewed_script(path):
+    try:
+        info = path.lstat()
+    except OSError:
+        return False
+    return stat.S_ISREG(info.st_mode) and info.st_uid == 0 and not info.st_mode & 0o022
+
+
+def private_file(path):
+    try:
+        info = path.lstat()
+    except OSError:
+        return False
+    return stat.S_ISREG(info.st_mode) and info.st_uid == 0 and not info.st_mode & 0o077
 
 
 def succeeds(arguments):
@@ -188,6 +207,82 @@ def stage_release(expected, run_id, stream):
     return 0 if report["status"] == "PASS" else 1
 
 
+def preflight_release(expected, run_id):
+    """Invoke only the reviewed, staged candidate's read-only preflight."""
+    stage = EVIDENCE / "release-stages" / run_id
+    checks = {
+        "root_execution": os.geteuid() == 0,
+        "request_shape": bool(SHA256.fullmatch(expected)) and bool(RUN.fullmatch(run_id)),
+        "read_only_baseline": access_check(),
+    }
+    if all(checks.values()):
+        try:
+            checks["stage_private"] = private_directory(stage)
+            candidate = stage / "candidate.json"
+            staged_report = stage / "report.json"
+            checks["stage_files_private"] = all(
+                private_file(path) for path in (candidate, staged_report)
+            ) if checks["stage_private"] else False
+            checks["stage_files_bounded"] = (
+                0 < candidate.stat().st_size <= MAX_MANIFEST
+                and 0 < staged_report.stat().st_size <= 4096
+            ) if checks["stage_files_private"] else False
+            if checks["stage_files_bounded"]:
+                raw = candidate.read_bytes()
+                staged = json.loads(staged_report.read_bytes(), object_pairs_hook=no_duplicate_keys)
+                checks["staged_candidate_bound"] = (
+                    0 < len(raw) <= MAX_MANIFEST and hashlib.sha256(raw).hexdigest() == expected
+                    and valid_manifest(raw) and isinstance(staged, dict)
+                    and staged.get("phase") == "stage-release" and staged.get("status") == "PASS"
+                    and isinstance(staged.get("checks"), dict) and bool(staged["checks"])
+                    and all(value is True for value in staged["checks"].values())
+                )
+            if checks.get("staged_candidate_bound"):
+                source_sha = json.loads(raw, object_pairs_hook=no_duplicate_keys)["configuration"]["source_sha"]
+                head = subprocess.run(
+                    ["git", "-C", str(REVIEWED_SOURCE), "rev-parse", "HEAD"],
+                    capture_output=True, timeout=10, check=False,
+                )
+                changed = subprocess.run(
+                    ["git", "-C", str(REVIEWED_SOURCE), "status", "--porcelain", "--untracked-files=all"],
+                    capture_output=True, timeout=10, check=False,
+                )
+                checks["reviewed_checkout"] = (
+                    head.returncode == 0 and head.stdout.strip() == source_sha.encode()
+                    and changed.returncode == 0 and changed.stdout == b""
+                )
+                checks["reviewed_script"] = reviewed_script(PREFLIGHT_SCRIPT)
+            if checks.get("reviewed_checkout") and checks.get("reviewed_script"):
+                result = subprocess.run(
+                    ["/usr/bin/python3", "-I", "-B", str(PREFLIGHT_SCRIPT),
+                     "--project-directory", str(PROJECT), "--stage-run-id", run_id,
+                     "--manifest-sha256", expected,
+                     "--report", str(stage / "preflight-external-report.json")],
+                    env={"PATH": "/usr/bin:/bin", "PYTHONNOUSERSITE": "1",
+                         "PYTHONDONTWRITEBYTECODE": "1", "PYTHONSAFEPATH": "1"},
+                    capture_output=True, timeout=300, check=False,
+                )
+                private_report = stage / "preflight-external-report.json"
+                evidence = json.loads(private_report.read_bytes(), object_pairs_hook=no_duplicate_keys)
+                checks["preflight_passed"] = (
+                    result.returncode == 0 and result.stdout.strip() == b"PASS"
+                    and isinstance(evidence, dict) and evidence.get("phase") == "release-preflight"
+                    and evidence.get("status") == "PASS" and isinstance(evidence.get("checks"), dict)
+                    and bool(evidence["checks"]) and all(value is True for value in evidence["checks"].values())
+                )
+        except (OSError, ValueError, TypeError, KeyError, subprocess.TimeoutExpired):
+            checks["preflight_execution"] = False
+    status = "PASS" if all(checks.values()) else "STOP"
+    report = {"phase": "release-preflight-dispatch", "status": status, "checks": checks}
+    if checks.get("stage_private"):
+        try:
+            write_private(stage / "preflight-dispatch-report.json", (json.dumps(report, sort_keys=True) + "\n").encode())
+        except OSError:
+            report = {"phase": "release-preflight-dispatch", "status": "STOP", "checks": {"report_write": False}}
+    print(json.dumps(report, sort_keys=True))
+    return 0 if report["status"] == "PASS" else 1
+
+
 def main():
     # The SSH key must be restricted to this absolute command in authorized_keys.
     # Never dispatch arbitrary SSH_ORIGINAL_COMMAND text to a shell.
@@ -201,6 +296,8 @@ def main():
     parts = command.split(" ")
     if len(parts) == 4 and parts[0] == "stage-release" and parts[3] == "confirm-stage":
         return stage_release(parts[1], parts[2], sys.stdin.buffer)
+    if len(parts) == 4 and parts[0] == "preflight-release" and parts[3] == "confirm-readonly-preflight":
+        return preflight_release(parts[1], parts[2])
     print("STOP")
     return 1
 

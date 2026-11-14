@@ -100,7 +100,7 @@ def test_reviewed_remote_script_update_and_restore(tmp_path):
     with mock.patch.object(host_access, "AUTHORIZED_KEYS", authorized), mock.patch.object(
         host_access, "REMOTE_SCRIPT", remote
     ), mock.patch.object(host_access, "SOURCE_SCRIPT", source), mock.patch.object(
-        host_access, "OLD_REMOTE_SHA256", hashlib.sha256(old_data).hexdigest()
+        host_access, "OLD_REMOTE_SHA256S", (hashlib.sha256(old_data).hexdigest(),)
     ), mock.patch.object(
         host_access, "NEW_REMOTE_SHA256", hashlib.sha256(new_data).hexdigest()
     ), mock.patch.object(host_access, "preflight", side_effect=lambda: {"baseline": True}

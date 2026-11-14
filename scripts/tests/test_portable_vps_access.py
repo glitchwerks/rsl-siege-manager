@@ -23,6 +23,7 @@ def load(name, file):
 LOCAL = load("vps_access", "scripts/portable-vps-access-check.py")
 REMOTE = load("vps_remote", "scripts/portable-vps-remote.py")
 STAGE = load("vps_stage", "scripts/portable-vps-stage.py")
+PREFLIGHT_DISPATCH = load("vps_preflight_dispatch", "scripts/portable-vps-release-preflight-dispatch.py")
 
 
 class AccessTests(unittest.TestCase):
@@ -104,6 +105,88 @@ class AccessTests(unittest.TestCase):
                 self.assertEqual(REMOTE.main(), 1)
                 stage.assert_not_called()
 
+    def test_preflight_requires_exact_readonly_command(self):
+        for command in (
+            "preflight-release " + "a" * 64 + " 123-1",
+            "preflight-release " + "a" * 64 + " 123-1 confirm-readonly-preflight; id",
+            "preflight-release " + "a" * 64 + " 123-1 confirm-readonly-preflight extra",
+        ):
+            with self.subTest(command=command), patch.dict(
+                os.environ, {"SSH_ORIGINAL_COMMAND": command}
+            ), patch.object(REMOTE, "preflight_release") as preflight:
+                self.assertEqual(REMOTE.main(), 1)
+                preflight.assert_not_called()
+
+    def test_preflight_runs_only_staged_candidate_and_reviewed_source(self):
+        raw = (json.dumps(self.candidate(), sort_keys=True) + "\n").encode()
+        digest = hashlib.sha256(raw).hexdigest()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            stage = root / "evidence" / "release-stages" / "123-1"
+            stage.mkdir(parents=True, mode=0o700)
+            (stage / "candidate.json").write_bytes(raw)
+            (stage / "report.json").write_text('{"phase":"stage-release","status":"PASS","checks":{"manifest_stored":true}}')
+            script = root / "reviewed" / "scripts" / "portable-vps-release-preflight.py"
+            script.parent.mkdir(parents=True)
+            script.write_text("# reviewed\n")
+            for path in (stage / "candidate.json", stage / "report.json", script):
+                path.chmod(0o600)
+
+            def run(arguments, **kwargs):
+                if arguments[0] == "git" and "rev-parse" in arguments:
+                    return SimpleNamespace(returncode=0, stdout=("1" * 40 + "\n").encode())
+                if arguments[0] == "git":
+                    return SimpleNamespace(returncode=0, stdout=b"")
+                self.assertEqual(arguments[0], "/usr/bin/python3")
+                self.assertIn("--manifest-sha256", arguments)
+                self.assertEqual(kwargs["env"]["PYTHONSAFEPATH"], "1")
+                (stage / "preflight-external-report.json").write_text(
+                    '{"phase":"release-preflight","status":"PASS","checks":{"safe":true}}'
+                )
+                return SimpleNamespace(returncode=0, stdout=b"PASS\n")
+
+            with patch.object(REMOTE, "EVIDENCE", root / "evidence"), patch.object(
+                REMOTE, "PROJECT", root / "project"
+            ), patch.object(REMOTE, "REVIEWED_SOURCE", script.parents[1]), patch.object(
+                REMOTE, "PREFLIGHT_SCRIPT", script
+            ), patch.object(REMOTE, "access_check", return_value=True), patch.object(
+                REMOTE, "private_directory", side_effect=lambda path: path.is_dir() and not path.is_symlink()
+            ), patch.object(REMOTE, "reviewed_script", return_value=True
+            ), patch.object(REMOTE, "private_file", return_value=True
+            ), patch.object(REMOTE.os, "geteuid", return_value=0), patch.object(
+                REMOTE.subprocess, "run", side_effect=run
+            ) as runner, redirect_stdout(io.StringIO()):
+                self.assertEqual(REMOTE.preflight_release(digest, "123-1"), 0)
+                self.assertEqual(runner.call_count, 3)
+            self.assertEqual(json.loads((stage / "preflight-dispatch-report.json").read_text())["status"], "PASS")
+            self.assertNotIn("test-candidate", (stage / "preflight-dispatch-report.json").read_text())
+
+            (stage / "preflight-dispatch-report.json").unlink()
+            (stage / "preflight-external-report.json").unlink()
+            with patch.object(REMOTE, "EVIDENCE", root / "evidence"), patch.object(
+                REMOTE, "REVIEWED_SOURCE", script.parents[1]
+            ), patch.object(REMOTE, "PREFLIGHT_SCRIPT", script), patch.object(
+                REMOTE, "access_check", return_value=True
+            ), patch.object(REMOTE, "private_directory", return_value=True), patch.object(
+                REMOTE, "reviewed_script", return_value=True
+            ), patch.object(REMOTE, "private_file", return_value=True
+            ), patch.object(
+                REMOTE.os, "geteuid", return_value=0
+            ), patch.object(REMOTE.subprocess, "run", return_value=SimpleNamespace(returncode=0, stdout=b"wrong\n")) as runner, redirect_stdout(io.StringIO()):
+                self.assertEqual(REMOTE.preflight_release(digest, "123-1"), 1)
+                self.assertEqual(runner.call_count, 2)
+
+            (stage / "preflight-dispatch-report.json").unlink()
+            with patch.object(REMOTE, "EVIDENCE", root / "evidence"), patch.object(
+                REMOTE, "access_check", return_value=True
+            ), patch.object(REMOTE, "private_directory", return_value=True), patch.object(
+                REMOTE, "private_file", return_value=True
+            ), patch.object(REMOTE.os, "geteuid", return_value=0), patch.object(
+                REMOTE.subprocess, "run"
+            ) as runner, redirect_stdout(io.StringIO()):
+                self.assertEqual(REMOTE.preflight_release("a" * 64, "123-1"), 1)
+                runner.assert_not_called()
+
     def test_stage_writes_only_digest_bound_private_manifest_and_report(self):
         raw = (json.dumps(self.candidate(), sort_keys=True) + "\n").encode()
         digest = hashlib.sha256(raw).hexdigest()
@@ -181,6 +264,28 @@ class AccessTests(unittest.TestCase):
             self.assertFalse(checks["manifest_digest"])
             access.assert_not_called()
             ssh.assert_not_called()
+
+    def test_runner_preflight_sends_only_exact_readonly_command(self):
+        digest = "a" * 64
+        remote_report = {"phase": "release-preflight-dispatch", "status": "PASS", "checks": {"safe": True}}
+        with patch.object(PREFLIGHT_DISPATCH.ACCESS, "check", return_value={"baseline": True}), patch.object(
+            PREFLIGHT_DISPATCH.ACCESS, "settings", return_value=({}, "host.example", "root", "", "private-key", "known-host")
+        ), patch.object(
+            PREFLIGHT_DISPATCH.subprocess, "run",
+            return_value=SimpleNamespace(returncode=0, stdout=json.dumps(remote_report).encode()),
+        ) as ssh:
+            checks = PREFLIGHT_DISPATCH.preflight(digest, "123-1")
+        self.assertTrue(all(checks.values()))
+        self.assertEqual(ssh.call_args.args[0][-1], f"preflight-release {digest} 123-1 confirm-readonly-preflight")
+        self.assertNotIn("input", ssh.call_args.kwargs)
+
+        with patch.object(PREFLIGHT_DISPATCH.ACCESS, "check") as access, patch.object(
+            PREFLIGHT_DISPATCH.subprocess, "run"
+        ) as ssh:
+            checks = PREFLIGHT_DISPATCH.preflight(digest + "; id", "123-1")
+        self.assertFalse(checks["request_shape"])
+        access.assert_not_called()
+        ssh.assert_not_called()
 
     def test_remote_access_check_is_read_only(self):
         with patch.dict(os.environ, {"SSH_ORIGINAL_COMMAND": "access-check"}), patch.object(
