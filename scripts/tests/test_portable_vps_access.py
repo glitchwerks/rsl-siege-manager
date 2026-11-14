@@ -190,18 +190,31 @@ class AccessTests(unittest.TestCase):
 
             (stage / "preflight-dispatch-report.json").unlink()
             (root / "reports" / "123-1-preflight.json").unlink()
+
+            def wrong_response(arguments, **kwargs):
+                if arguments[0] == "git" and "rev-parse" in arguments:
+                    return SimpleNamespace(returncode=0, stdout=("1" * 40 + "\n").encode())
+                if arguments[0] == "git":
+                    return SimpleNamespace(returncode=0, stdout=b"")
+                (root / "reports" / "123-1-preflight.json").write_text(
+                    '{"phase":"release-preflight","status":"PASS","checks":{"safe":true}}'
+                )
+                return SimpleNamespace(returncode=0, stdout=b"wrong\n")
+
             with patch.object(REMOTE, "EVIDENCE", root / "evidence"), patch.object(
                 REMOTE, "REVIEWED_SOURCE", script.parents[1]
             ), patch.object(REMOTE, "PREFLIGHT_SCRIPT", script), patch.object(
+                REMOTE, "EXTERNAL_REPORTS", root / "reports"
+            ), patch.object(
                 REMOTE, "access_check", return_value=True
             ), patch.object(REMOTE, "private_directory", return_value=True), patch.object(
                 REMOTE, "reviewed_script", return_value=True
             ), patch.object(REMOTE, "private_file", return_value=True
             ), patch.object(
                 REMOTE.os, "geteuid", return_value=0
-            ), patch.object(REMOTE.subprocess, "run", return_value=SimpleNamespace(returncode=0, stdout=b"wrong\n")) as runner, redirect_stdout(io.StringIO()):
+            ), patch.object(REMOTE.subprocess, "run", side_effect=wrong_response) as runner, redirect_stdout(io.StringIO()):
                 self.assertEqual(REMOTE.preflight_release(digest, "123-1"), 1)
-                self.assertEqual(runner.call_count, 2)
+                self.assertEqual(runner.call_count, 3)
 
             (stage / "preflight-dispatch-report.json").unlink()
             with patch.object(REMOTE, "EVIDENCE", root / "evidence"), patch.object(
