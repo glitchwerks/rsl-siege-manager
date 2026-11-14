@@ -171,6 +171,7 @@ class AccessTests(unittest.TestCase):
             ) as runner, redirect_stdout(io.StringIO()):
                 self.assertEqual(REMOTE.pause_release(digest, "123-1", "b" * 64), 1)
                 runner.assert_not_called()
+            self.assertFalse((stage / "pause-dispatch-report.json").exists())
 
     def test_writer_pause_calls_only_reviewed_phase_with_bound_plan(self):
         raw = (json.dumps(self.candidate(), sort_keys=True) + "\n").encode()

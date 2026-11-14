@@ -380,6 +380,10 @@ def pause_release(expected, run_id, plan_sha256):
     if all(checks.values()):
         try:
             checks["stage_private"] = private_directory(stage)
+            checks["dispatch_report_available"] = (
+                not (stage / "pause-dispatch-report.json").exists()
+                and not (stage / "pause-dispatch-report.json").is_symlink()
+            ) if checks["stage_private"] else False
             candidate = stage / "candidate.json"
             plan_file = stage / "pause-plan.json"
             plan_report = stage / "plan-report.json"
@@ -411,7 +415,8 @@ def pause_release(expected, run_id, plan_sha256):
                     and checks.get("profile_private")):
                 EXTERNAL_REPORTS.mkdir(mode=0o700, exist_ok=True)
                 checks["external_report_directory_private"] = private_directory(EXTERNAL_REPORTS)
-            if checks.get("external_report_directory_private"):
+            if (checks.get("external_report_directory_private")
+                    and checks.get("dispatch_report_available")):
                 external = EXTERNAL_REPORTS / f"{run_id}-pause.json"
                 result = subprocess.run(
                     ["/usr/bin/python3", "-I", "-B", str(PLAN_SCRIPT), "pause",
@@ -434,7 +439,7 @@ def pause_release(expected, run_id, plan_sha256):
             checks["pause_execution"] = False
     status = "PASS" if all(checks.values()) else "STOP"
     report = {"phase": "release-writer-pause-dispatch", "status": status, "checks": checks}
-    if checks.get("stage_private"):
+    if checks.get("external_report_directory_private") and checks.get("dispatch_report_available"):
         try:
             write_private(stage / "pause-dispatch-report.json", (json.dumps(report, sort_keys=True) + "\n").encode())
         except OSError:

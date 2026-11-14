@@ -43,7 +43,7 @@ def pause(expected, run_id, plan_sha256):
                  "-o", "ConnectTimeout=10", "-o", "ConnectionAttempts=1",
                  "-o", "LogLevel=QUIET", "-o", "NumberOfPasswordPrompts=0",
                  f"{user}@{host}", f"pause-release {expected} {run_id} {plan_sha256} confirm-pause"],
-                capture_output=True, timeout=210, check=False,
+                capture_output=True, timeout=240, check=False,
             )
             try:
                 report = json.loads(result.stdout)
