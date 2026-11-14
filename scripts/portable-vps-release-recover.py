@@ -41,10 +41,48 @@ def promotion_evidence(directory, manifest_digest, plan_digest, promotion_digest
 
 
 def migration_or_activation_started(directory):
-    return any((directory / name).exists() for name in (
+    names = (
         "migrate-siege-start.json", "migrate-mom-start.json",
         "migrate-siege-report.json", "migrate-mom-report.json",
-        "promote-activation-start.json"))
+        "promote-activation-start.json")
+    # A different staged candidate can still affect this project's databases.
+    for stage in directory.parent.iterdir():
+        if stage.is_symlink():
+            return True
+        if stage.is_dir() and any((stage / name).exists() or (stage / name).is_symlink()
+                                  for name in names):
+            return True
+    return False
+
+
+def writer_stop_times_match(data, directory, plan):
+    """Reject a writer restarted and stopped again after the accepted pause."""
+    try:
+        report = json.loads(GATE.read_private(directory / "pause-report.json", 0),
+                            object_pairs_hook=REMOTE.no_duplicate_keys)
+        record = json.loads(GATE.read_private(directory / "pause-writer-stops.json", 0),
+                            object_pairs_hook=REMOTE.no_duplicate_keys)
+        snapshot = PAUSE.service_baseline(data)
+        names = ("backend", "mom")
+        return (isinstance(report, dict) and report.get("phase") == "pause"
+            and report.get("status") == "PASS" and isinstance(record, dict)
+            and set(record) == {"phase", "plan_sha256", "ids", "finished_at"}
+            and record["phase"] == "pause-writer-stops"
+            and record["plan_sha256"] == PAUSE.digest(
+                GATE.read_private(directory / "pause-plan.json", 0))
+            and record["ids"] == {name: plan["ids"][name] for name in names}
+            and isinstance(record["finished_at"], dict)
+            and set(record["finished_at"]) == set(names)
+            and all(isinstance(record["finished_at"][name], str)
+                    and record["finished_at"][name]
+                    and not record["finished_at"][name].startswith("0001-")
+                    for name in names)
+            and snapshot is not None and snapshot["project"] == plan["project"]
+            and all(snapshot["services"][name]["id"] == record["ids"][name]
+                    and snapshot["services"][name]["finished_at"] == record["finished_at"][name]
+                    for name in names))
+    except (OSError, ValueError, TypeError, KeyError, UnicodeError):
+        return False
 
 
 def unchanged_private_inputs(project, preflight, current_approval):
@@ -98,6 +136,7 @@ def inspect(data, directory, plan, manifest_digest, plan_digest, readiness_diges
         project, preflight, current_mom)
     checks["candidate_configuration_valid"] = MIGRATE.candidate_config(project, manifest)[0]
     checks["writers_still_paused"] = PAUSE.paused(data, plan)
+    checks["writers_never_restarted"] = writer_stop_times_match(data, directory, plan)
     checks["original_frontend_healthy"] = old_frontend_healthy(plan, preflight)
     checks["foundation_unchanged"] = PROMOTE.unchanged_foundation(plan, preflight)
     checks["database_revisions_original"] = MIGRATE.revisions_match(
@@ -127,6 +166,7 @@ def restore(data, directory, plan, manifest_digest, plan_digest, readiness_diges
     if not checks["no_activation_or_migration_before_write"]:
         return checks
     checks["writers_paused_before_write"] = PAUSE.paused(data, plan)
+    checks["writers_never_restarted_before_write"] = writer_stop_times_match(data, directory, plan)
     checks["revisions_original_before_write"] = MIGRATE.revisions_match(
         plan["ids"]["postgres"], {name: context["manifest"]["migrations"][name]["from_revision"]
                                    for name in ("siege", "mom")})
@@ -151,6 +191,7 @@ def restore(data, directory, plan, manifest_digest, plan_digest, readiness_diges
     checks["installed_preflight_restored"] = PREFLIGHT.baseline_current(
         project, context["preflight"], writers_paused=True)
     checks["writers_remain_paused"] = PAUSE.paused(data, plan)
+    checks["writers_never_restarted_after_write"] = writer_stop_times_match(data, directory, plan)
     checks["frontend_and_foundation_unchanged"] = (
         old_frontend_healthy(plan, context["preflight"])
         and PROMOTE.unchanged_foundation(plan, context["preflight"]))

@@ -83,6 +83,7 @@ class ReleaseRecoveryTests(unittest.TestCase):
                 patch.object(RECOVER, "inspect", return_value=({"eligible": True}, context)),
                 patch.object(RECOVER, "migration_or_activation_started", return_value=False),
                 patch.object(RECOVER.PAUSE, "paused", return_value=True),
+                patch.object(RECOVER, "writer_stop_times_match", return_value=True),
                 patch.object(RECOVER.MIGRATE, "revisions_match", return_value=True),
                 patch.object(RECOVER.GATE, "read_private", side_effect=lambda path, *_args: files[path]),
                 patch.object(RECOVER.PAUSE, "write_private",
@@ -150,6 +151,44 @@ class ReleaseRecoveryTests(unittest.TestCase):
             self.assertEqual(target.read_bytes(), b"original")
             self.assertEqual(neighbor.read_bytes(), b"private neighbor")
             self.assertEqual(target.stat().st_mode & 0o777, 0o600)
+
+    def test_writer_restart_then_stop_denies_recovery(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            plan = {"project": "prod", "ids": {"backend": "a" * 64, "mom": "b" * 64}}
+            (directory / "pause-plan.json").write_bytes(b"plan")
+            (directory / "pause-report.json").write_text('{"phase":"pause","status":"PASS"}')
+            (directory / "pause-writer-stops.json").write_text(json.dumps({
+                "phase": "pause-writer-stops", "plan_sha256": RECOVER.PAUSE.digest(b"plan"),
+                "ids": plan["ids"], "finished_at": {
+                    "backend": "2026-11-14T10:00:00Z", "mom": "2026-11-14T10:00:01Z"}}))
+            snapshot = {"project": "prod", "services": {
+                "backend": {"id": "a" * 64, "finished_at": "2026-11-14T10:10:00Z"},
+                "mom": {"id": "b" * 64, "finished_at": "2026-11-14T10:00:01Z"}}}
+            with patch.object(RECOVER.GATE, "read_private", side_effect=lambda path, *_: path.read_bytes()), patch.object(
+                RECOVER.PAUSE, "service_baseline", return_value=snapshot):
+                self.assertFalse(RECOVER.writer_stop_times_match({}, directory, plan))
+
+    def test_other_stage_migration_marker_denies_recovery(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            selected = root / "selected"
+            other = root / "other"
+            selected.mkdir()
+            other.mkdir()
+            self.assertFalse(RECOVER.migration_or_activation_started(selected))
+            (other / "migrate-siege-start.json").write_text("{}")
+            self.assertTrue(RECOVER.migration_or_activation_started(selected))
+
+    def test_migration_and_recovery_contend_for_same_project_lock(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.object(
+            RECOVER.GATE, "protected", return_value=True
+        ), patch.object(RECOVER.MIGRATE.GATE, "protected", return_value=True):
+            project = Path(temporary)
+            with RECOVER.MIGRATE.PAUSE.project_lock(project):
+                with self.assertRaises(BlockingIOError):
+                    with RECOVER.PROMOTE.project_lock(project):
+                        self.fail("recovery entered during migration")
 
 
 if __name__ == "__main__":

@@ -200,6 +200,38 @@ def migrate(data, directory, plan, manifest_digest, plan_digest, readiness_diges
     return checks
 
 
+def run_locked(data, profile_digest, args):
+    """Hold the project lock through migration and both reports."""
+    directory = None
+    checks = {"root_execution": True}
+    try:
+        directory = PAUSE.stage(data["project_directory"], args.stage_run_id, args.manifest_sha256)
+        if any((directory / name).exists() for name in
+               (f"migrate-{args.database}-report.json", f"migrate-{args.database}-start.json")):
+            raise ValueError("migration already attempted")
+        plan = PAUSE.load_plan(directory, args.plan_sha256, profile_digest, args.manifest_sha256)
+        checks.update(migrate(data, directory, plan, args.manifest_sha256,
+                              args.plan_sha256, args.readiness_sha256, args.database))
+    except (OSError, ValueError, TypeError, KeyError, UnicodeError, RuntimeError,
+            subprocess.TimeoutExpired):
+        checks["migration_preflight"] = False
+    result = {"phase": f"migrate-{args.database}",
+              "status": "PASS" if checks and all(checks.values()) else "STOP", "checks": checks}
+    try:
+        if directory is not None:
+            PAUSE.write_private(directory / f"migrate-{args.database}-report.json", result)
+    except OSError:
+        result["status"] = "STOP"
+        result["checks"]["stage_report_write"] = False
+    try:
+        PAUSE.replace_private(args.report, result)
+    except OSError:
+        print("STOP report_write_failed")
+        return 2
+    print(result["status"])
+    return 0 if result["status"] == "PASS" else 1
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--profile", required=True, type=Path)
@@ -231,34 +263,18 @@ def main(argv=None):
     except OSError:
         print("STOP report_write_failed")
         return 2
-    directory = None
-    checks = {"root_execution": os.geteuid() == 0}
     try:
-        directory = PAUSE.stage(data["project_directory"], args.stage_run_id, args.manifest_sha256)
-        if any((directory / name).exists() for name in
-               (f"migrate-{args.database}-report.json", f"migrate-{args.database}-start.json")):
-            raise ValueError("migration already attempted")
-        plan = PAUSE.load_plan(directory, args.plan_sha256, profile_digest, args.manifest_sha256)
-        checks.update(migrate(data, directory, plan, args.manifest_sha256,
-                              args.plan_sha256, args.readiness_sha256, args.database))
-    except (OSError, ValueError, TypeError, KeyError, UnicodeError, RuntimeError,
-            subprocess.TimeoutExpired):
-        checks["migration_preflight"] = False
-    result = {"phase": f"migrate-{args.database}",
-              "status": "PASS" if checks and all(checks.values()) else "STOP", "checks": checks}
-    try:
-        if directory is not None:
-            PAUSE.write_private(directory / f"migrate-{args.database}-report.json", result)
-    except OSError:
-        result["status"] = "STOP"
-        result["checks"]["stage_report_write"] = False
-    try:
-        PAUSE.replace_private(args.report, result)
-    except OSError:
-        print("STOP report_write_failed")
-        return 2
-    print(result["status"])
-    return 0 if result["status"] == "PASS" else 1
+        with PAUSE.project_lock(data["project_directory"]):
+            return run_locked(data, profile_digest, args)
+    except (OSError, ValueError):
+        try:
+            PAUSE.replace_private(args.report, {"phase": f"migrate-{args.database}",
+                "status": "STOP", "checks": {"project_lock": False}})
+        except OSError:
+            print("STOP report_write_failed")
+            return 2
+        print("STOP")
+        return 1
 
 
 if __name__ == "__main__":

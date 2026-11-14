@@ -196,12 +196,17 @@ against production. It does not establish independent monitor notification
 delivery or a full Discord write acceptance. Those remain separate release
 gates, with production Discord writes requiring their own authorization.
 
+The confirmed pause records each writer container's Docker `FinishedAt` time
+in root-private stage evidence. Migration, promotion, acceptance, and recovery
+share the same project lock; migration holds it through its final reports.
+
 The separately confirmed `scripts/portable-vps-release-recover.py` has an
 `inspect` phase and a `restore-preactivation` phase. Both require the exact
 staged candidate, pause plan, accepted promotion readiness baseline, and
 original protected configuration preserved by the promotion attempt. The
-inspection is read-only. It stops if any migration or Compose activation was
-started, if writers resumed, if database revisions changed, or if the original
+inspection is read-only. It stops if any stage for the project started a
+migration or Compose activation, if a writer's stop time differs from the
+accepted pause, if database revisions changed, or if the original
 frontend and PostgreSQL/proxy foundation no longer match the preflight. A
 passing inspection is evidence only; the restore requires a separate operator
 invocation with `--confirm-restore <stage-run-id>` and a fresh private report.

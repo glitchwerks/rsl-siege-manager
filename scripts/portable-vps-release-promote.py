@@ -2,14 +2,11 @@
 """Confirm one candidate image switch after accepted, read-only promotion readiness."""
 
 import argparse
-from contextlib import contextmanager
-import fcntl
 import importlib.util
 import json
 import os
 from pathlib import Path
 import re
-import stat
 import subprocess
 import tempfile
 
@@ -92,22 +89,7 @@ def write_exclusive(path, raw):
         os.fsync(output.fileno())
 
 
-@contextmanager
-def project_lock(project):
-    """Serialize every promotion attempt for this project across stage directories."""
-    if not GATE.protected(project, 0, directory=True):
-        raise ValueError("unsafe project directory")
-    path = project / ".release-promotion.lock"
-    fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
-    try:
-        info = os.fstat(fd)
-        if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid()
-                or info.st_mode & 0o077):
-            raise ValueError("unsafe promotion lock")
-        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        yield
-    finally:
-        os.close(fd)
+project_lock = PAUSE.project_lock
 
 
 def replace_bytes(path, raw):
