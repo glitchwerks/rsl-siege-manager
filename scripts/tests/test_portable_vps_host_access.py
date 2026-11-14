@@ -41,6 +41,7 @@ def test_install_then_rollback_preserves_existing_key(tmp_path):
             assert authorized.read_bytes().startswith(original)
             assert authorized.read_bytes().splitlines()[-1] == host_access.key_entry(key).encode()
             assert destination.read_bytes() == source.read_bytes()
+            assert destination.stat().st_mode & 0o777 == 0o644
             assert list(ssh.glob("authorized_keys.before-github-deploy.*"))[0].read_bytes() == original
             assert not all(host_access.install(key).values())
             removed = host_access.rollback(key)
@@ -114,11 +115,13 @@ def test_reviewed_remote_script_update_and_restore(tmp_path):
         result = host_access.update_script(key)
         assert all(result.values())
         assert remote.read_bytes() == new_data
+        assert remote.stat().st_mode & 0o777 == 0o644
         assert host_access.script_backup_path().read_bytes() == old_data
         assert not all(host_access.update_script(key).values())
         restored = host_access.restore_script(key)
         assert all(restored.values())
         assert remote.read_bytes() == old_data
+        assert remote.stat().st_mode & 0o777 == 0o644
 
 
 def test_rotate_and_restore_only_the_restricted_key(tmp_path):

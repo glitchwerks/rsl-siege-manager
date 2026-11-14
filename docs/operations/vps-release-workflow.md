@@ -82,10 +82,13 @@ configuration, execute backup/migration, or touch Compose services. Keep the
 candidate and reports for the later preflight/promotion phases.
 
 The host-side forced-command script must be installed separately from a reviewed
-commit. Its `update-script` phase requires the exact currently installed
-read-only script hash, preserves a root-private copy at
-`/opt/rsl-siege-manager/scripts/portable-vps-remote.py.before-release-stage`,
-and atomically changes only that script. Keep an admin SSH session and provider
+commit. Its current `update-script` phase accepts only the two reviewed prior
+script hashes, preserves a root-private copy at
+`/root/portable-vps-remote.py.before-release-preflight`,
+and atomically changes only that script with its committed `0644` mode. An
+earlier stage-only installation may also have left the separate reviewed
+`scripts/portable-vps-remote.py.before-release-stage` backup in the checkout.
+Keep an admin SSH session and provider
 console recovery available. From the reviewed checkout on the VPS, run the
 phase-scoped installer and verification with fresh report paths:
 

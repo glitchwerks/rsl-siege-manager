@@ -159,7 +159,7 @@ def install(key):
         if not checks["script_destination_directory_ready"]:
             return checks
         if not REMOTE_SCRIPT.exists():
-            atomic_write(REMOTE_SCRIPT, script_data, 0o700)
+            atomic_write(REMOTE_SCRIPT, script_data, 0o644)
         checks["script_installed"] = checked_file(REMOTE_SCRIPT) and REMOTE_SCRIPT.read_bytes() == script_data
         if not checks["script_installed"]:
             return checks
@@ -228,12 +228,12 @@ def update_script(key):
     if not checks["old_script_backup"]:
         return checks
     try:
-        atomic_write(REMOTE_SCRIPT, new_data, 0o700)
+        atomic_write(REMOTE_SCRIPT, new_data, 0o644)
         checks["updated_script_installed"] = checked_file(REMOTE_SCRIPT) and REMOTE_SCRIPT.read_bytes() == new_data
     except OSError:
         checks["script_update"] = False
     if not checks.get("updated_script_installed"):
-        atomic_write(REMOTE_SCRIPT, old_data, 0o700)
+        atomic_write(REMOTE_SCRIPT, old_data, 0o644)
         checks["old_script_restored"] = REMOTE_SCRIPT.read_bytes() == old_data
     return checks
 
@@ -252,7 +252,7 @@ def restore_script(key):
     if not all(checks.values()):
         return checks
     old_data = backup.read_bytes()
-    atomic_write(REMOTE_SCRIPT, old_data, 0o700)
+    atomic_write(REMOTE_SCRIPT, old_data, 0o644)
     checks["old_script_restored"] = REMOTE_SCRIPT.read_bytes() == old_data
     return checks
 
