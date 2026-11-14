@@ -82,9 +82,9 @@ configuration, execute backup/migration, or touch Compose services. Keep the
 candidate and reports for the later preflight/promotion phases.
 
 The host-side forced-command script must be installed separately from a reviewed
-commit. Its current `update-script` phase accepts only the eleven reviewed prior
+commit. Its current `update-script` phase accepts only the twelve reviewed prior
 script hashes, preserves a root-private copy at
-`/root/portable-vps-remote.py.before-release-promote`,
+`/root/portable-vps-remote.py.before-release-accept`,
 and atomically changes only that script with its committed `0644` mode. An
 earlier stage-only installation may also have left the separate reviewed
 `scripts/portable-vps-remote.py.before-release-stage` backup in the checkout;
@@ -163,9 +163,9 @@ GitHub. It does not change images or services.
 Before dispatch, separately review and install the new forced-command script
 from the exact reviewed checkout with `portable-vps-host-access.py
 update-script --confirm update-script`, a fresh root-private report, and the
-dedicated public key. The current updater accepts only the eleven reviewed
+dedicated public key. The current updater accepts only the twelve reviewed
 earlier script hashes, backs up the current script to
-`/root/portable-vps-remote.py.before-release-promote`,
+`/root/portable-vps-remote.py.before-release-accept`,
 and requires the new reviewed hash. Verify the installation with a second
 fresh report, a new admin login, and the existing read-only GitHub access
 check. `restore-script --confirm restore-script` restores only that exact
@@ -423,11 +423,32 @@ acceptance. The command requires `--confirm-readonly-acceptance` for the
 reviewed target. An unsuccessful acceptance is STOP; it never restarts services,
 changes images, sends a Discord message, or attempts recovery.
 
+The protected manual `vps-release-accept.yml` workflow exposes this read-only
+phase after a successful confirmed promotion. Run it from `main` with the exact
+staged candidate, pause plan, migration readiness, and promotion readiness
+SHA-256 values plus the stage run ID. The fixed SSH command is
+`accept-release <manifest-sha256> <run-id> <plan-sha256> <readiness-sha256> <promotion-ready-sha256> confirm-readonly-acceptance`.
+The host requires both the accepted promotion script report and dispatch report
+before invoking the reviewed acceptance script. It also requires the backup
+profile to point to `/srv/rsl-siege` and the reviewed checkout to match the
+candidate source. It does not accept arbitrary paths or commands from Actions.
+
+Before dispatch, the operator must prepare root-owned `0700`
+`/root/vps-release-acceptance/` with root-owned `0600` files `pilot.json` and
+`session-cookie`. `pilot.json` follows `scripts/portable-pilot.py` settings:
+the exact five service image digests, component versions and source SHA,
+production HTTPS origin, PostgreSQL storage path, sample interval/count, and
+minimum resource thresholds. The host checks the file mode and bounds the
+configuration to the staged candidate and accepted preflight. `session-cookie`
+contains only a fresh short-lived test account session value; it must not be
+committed, passed as a workflow input, uploaded as an artifact, or included in
+reports. Remove it after acceptance through the operator's secret-handling procedure.
+An absent or unsafe input causes STOP before the acceptance attempt is reserved.
+
 The private acceptance baseline records the exact installed images, source
 SHAs, versions, container IDs, and configuration hashes. The separate report
 contains fixed pass/fail checks only. This phase is reviewed repository code,
-not installed on the VPS or exposed to the GitHub deploy key. It has not run
-against production. It does not establish independent monitor notification
+not installed on the VPS and has not run against production. It does not establish independent monitor notification
 delivery or a full Discord write acceptance. Those remain separate release
 gates, with production Discord writes requiring their own authorization.
 
