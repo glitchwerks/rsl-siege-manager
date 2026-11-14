@@ -89,6 +89,78 @@ def running_services(project_name, rendered):
     return actual
 
 
+def accepted_baseline(directory, manifest_digest):
+    """Load the one accepted, private preflight record for this staged candidate."""
+    raw = GATE.read_private(directory / "preflight-baseline.json", 0)
+    baseline = json.loads(raw, object_pairs_hook=REMOTE.no_duplicate_keys)
+    report = json.loads(GATE.read_private(directory / "preflight-report.json", 0),
+                        object_pairs_hook=REMOTE.no_duplicate_keys)
+    if not (isinstance(report, dict) and report.get("phase") == "release-preflight"
+            and report.get("status") == "PASS" and isinstance(baseline, dict)
+            and baseline.get("schema") == 1 and baseline.get("phase") == "release-preflight-baseline"
+            and baseline.get("manifest_sha256") == manifest_digest
+            and isinstance(baseline.get("project"), str)
+            and isinstance(baseline.get("candidate_source_sha"), str)
+            and REMOTE.SOURCE_SHA.fullmatch(baseline["candidate_source_sha"])
+            and isinstance(baseline.get("installed_mom_source_sha"), str)
+            and REMOTE.SOURCE_SHA.fullmatch(baseline["installed_mom_source_sha"])
+            and isinstance(baseline.get("stack_env_sha256"), str)
+            and REMOTE.SHA256.fullmatch(baseline["stack_env_sha256"])):
+        raise ValueError("preflight not accepted")
+    for key, names in (("runtime_sha256", RUNTIME_FILES), ("config_sha256", CONFIG_FILES)):
+        hashes = baseline.get(key)
+        if not isinstance(hashes, dict) or set(hashes) != set(names) or not all(
+                isinstance(value, str) and REMOTE.SHA256.fullmatch(value) for value in hashes.values()):
+            raise ValueError("invalid preflight hashes")
+    installed = baseline.get("installed")
+    if not isinstance(installed, dict) or set(installed) != set(SERVICES) or not all(
+            isinstance(item, dict) and set(item) == {"id", "image"}
+            and isinstance(item["id"], str) and PAUSE.CONTAINER_ID.fullmatch(item["id"])
+            and isinstance(item["image"], str) and item["image"]
+            for item in installed.values()):
+        raise ValueError("invalid installed services")
+    return baseline, digest(raw)
+
+
+def baseline_current(project, baseline, writers_paused=False):
+    """Recheck config, private inputs, and exact container identities at a phase boundary."""
+    stack = project / "stack.env"
+    if not (checkout_at(baseline["candidate_source_sha"])
+            and digest(GATE.read_private(stack, 0)) == baseline["stack_env_sha256"]
+            and runtime_hashes(project) == baseline["runtime_sha256"]
+            and config_hashes(project) == baseline["config_sha256"]
+            and GATE.project_name(stack) == baseline["project"]
+            and all(reviewed_config(project / name, (PREFLIGHT.PORTABLE / name).read_bytes())
+                    for name in ("compose.yml", "compose.mom.yml"))
+            and PREFLIGHT.deployment_bind_sources_current(project)
+            and PAUSE.no_extra_writers(baseline["project"])):
+        return False
+    approval = PREFLIGHT.read_mom_approval(project / "runtime" / "mom-image.json")
+    if approval is None or approval["source_commit"] != baseline["installed_mom_source_sha"]:
+        return False
+    rendered = PREFLIGHT.render("mom", stack, project, {})
+    for service, expected in baseline["installed"].items():
+        identifier = PAUSE.identifiers(baseline["project"], service)
+        if identifier != expected["id"]:
+            return False
+        image_raw = PAUSE.command(["docker", "inspect", "--format", "{{json .Config.Image}}", identifier])
+        state_raw = PAUSE.command(["docker", "inspect", "--format", "{{json .State}}", identifier])
+        try:
+            image = json.loads(image_raw)
+            state = json.loads(state_raw)
+            if image != expected["image"] or image != rendered["services"][service]["image"]:
+                return False
+            if writers_paused and service in ("backend", "mom"):
+                if state.get("Running") is not False or state.get("Status") != "exited":
+                    return False
+            elif (state.get("Running") is not True or state.get("Status") != "running"
+                    or (service != "proxy" and state.get("Health", {}).get("Status") != "healthy")):
+                return False
+        except (ValueError, TypeError, KeyError, AttributeError):
+            return False
+    return True
+
+
 def candidate_images_match(rendered, manifest):
     services = rendered["services"]
     return (all(services[name]["image"] == manifest["siege"]["api_image"]

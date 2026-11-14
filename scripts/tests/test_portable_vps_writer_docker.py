@@ -96,8 +96,10 @@ class DisposableDockerWriterTests(unittest.TestCase):
                     self.assertEqual({name: item["id"] for name, item in live.items()}, containers)
                     rendered["services"]["mom"]["image"] = "unreviewed:image"
                     self.assertIsNone(RELEASE.running_services(name, rendered))
+                    value["preflight_baseline_sha256"] = "e" * 64
                     private(project / "pause-plan.json", json.dumps(value).encode())
-                    checks = PHASE.pause(data, value, project)
+                    with patch.object(PHASE, "bound_preflight", return_value=(True, {})):
+                        checks = PHASE.pause(data, value, project)
                     self.assertTrue(all(checks.values()), checks)
                     self.assertIsNone(GATE.docker_state(name, "postgres"))
                     self.assertEqual(GATE.docker_state(name, "backend")[0], containers["backend"])
