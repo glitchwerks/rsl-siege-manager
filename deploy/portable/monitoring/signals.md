@@ -66,10 +66,13 @@ probe checks gateway and scheduler progress; bundled topology still checks only
 gateway connectivity and requires separate scheduler acceptance. Container health
 can lag the probe/retry interval. The observer creates no workload.
 
-A fresh observation PASS sends success; any completed observer failure sends
-`/fail`. Pre-observation safety failures and overlap rejection send nothing,
-allowing the independent missed-signal deadline to detect absence. An interrupted
-or killed process may leave INCOMPLETE evidence and sends no guaranteed signal.
+A fresh, fully published observation PASS sends success; a fully published
+observation STOP sends `/fail`. The sender verifies the observer's private
+`observation_complete` marker, sample count and boolean checks before either
+signal. Pre-observation safety failures, unfinished observations and overlap
+rejection send nothing, allowing the independent missed-signal deadline to
+detect absence. An interrupted or killed process may leave INCOMPLETE evidence
+and sends no guaranteed signal.
 Receiver acknowledgement proves receipt only, **not delivery to Slack**. The
 sanitized signal report exposes fixed booleans/status/time only. PASS requires
 both observation success and receiver acknowledgement, and is never full pilot
