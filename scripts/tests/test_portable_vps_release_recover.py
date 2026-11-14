@@ -163,10 +163,12 @@ class ReleaseRecoveryTests(unittest.TestCase):
                 "ids": plan["ids"], "finished_at": {
                     "backend": "2026-11-14T10:00:00Z", "mom": "2026-11-14T10:00:01Z"}}))
             snapshot = {"project": "prod", "services": {
-                "backend": {"id": "a" * 64, "finished_at": "2026-11-14T10:10:00Z"},
+                "backend": {"id": "a" * 64, "finished_at": "2026-11-14T10:00:00Z"},
                 "mom": {"id": "b" * 64, "finished_at": "2026-11-14T10:00:01Z"}}}
             with patch.object(RECOVER.GATE, "read_private", side_effect=lambda path, *_: path.read_bytes()), patch.object(
                 RECOVER.PAUSE, "service_baseline", return_value=snapshot):
+                self.assertTrue(RECOVER.writer_stop_times_match({}, directory, plan))
+                snapshot["services"]["backend"]["finished_at"] = "2026-11-14T10:10:00Z"
                 self.assertFalse(RECOVER.writer_stop_times_match({}, directory, plan))
 
     def test_other_stage_migration_marker_denies_recovery(self):
