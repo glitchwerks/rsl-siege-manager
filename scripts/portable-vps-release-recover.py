@@ -26,11 +26,15 @@ PREFLIGHT.__spec__.loader.exec_module(PREFLIGHT)
 PREWRITE_DEADLINE_SECONDS = 600  # The restricted SSH parent waits up to 900 s.
 
 
+class PrewriteDeadlineExceeded(Exception):
+    """Escape helper error handlers so a one-shot deadline always stops work."""
+
+
 @contextmanager
 def prewrite_deadline():
     """Bound all read-only restore gates before the first protected write."""
     def expired(_signum, _frame):
-        raise TimeoutError("recovery prewrite deadline exceeded")
+        raise PrewriteDeadlineExceeded("recovery prewrite deadline exceeded")
 
     previous = signal.signal(signal.SIGALRM, expired)
     signal.setitimer(signal.ITIMER_REAL, PREWRITE_DEADLINE_SECONDS)
