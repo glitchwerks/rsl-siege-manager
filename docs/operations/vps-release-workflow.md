@@ -82,9 +82,9 @@ configuration, execute backup/migration, or touch Compose services. Keep the
 candidate and reports for the later preflight/promotion phases.
 
 The host-side forced-command script must be installed separately from a reviewed
-commit. Its current `update-script` phase accepts only the thirteen reviewed prior
+commit. Its current `update-script` phase accepts only the fourteen reviewed prior
 script hashes, preserves a root-private copy at
-`/root/portable-vps-remote.py.before-recovery-inspect`,
+`/root/portable-vps-remote.py.before-recovery-restore`,
 and atomically changes only that script with its committed `0644` mode. An
 earlier stage-only installation may also have left the separate reviewed
 `scripts/portable-vps-remote.py.before-release-stage` backup in the checkout;
@@ -163,9 +163,9 @@ GitHub. It does not change images or services.
 Before dispatch, separately review and install the new forced-command script
 from the exact reviewed checkout with `portable-vps-host-access.py
 update-script --confirm update-script`, a fresh root-private report, and the
-dedicated public key. The current updater accepts only the thirteen reviewed
+dedicated public key. The current updater accepts only the fourteen reviewed
 earlier script hashes, backs up the current script to
-`/root/portable-vps-remote.py.before-recovery-inspect`,
+`/root/portable-vps-remote.py.before-recovery-restore`,
 and requires the new reviewed hash. Verify the installation with a second
 fresh report, a new admin login, and the existing read-only GitHub access
 check. `restore-script --confirm restore-script` restores only that exact
@@ -473,6 +473,21 @@ It requires the candidate and exact promotion-attempt marker, the reviewed
 checkout, and the project-bound backup profile before dispatch. It returns
 only a boolean report; it cannot restore files or restart writers. A STOP
 means manual reconciliation, not permission to run the restore phase.
+The separate protected manual `vps-release-recovery-restore.yml` workflow is
+state changing. It requires an accepted private inspection and matching
+sanitized inspection-dispatch report, the same exact candidate and digest
+inputs, and the literal `restore-reviewed-<stage-run-id>` confirmation.
+Its fixed SSH command is
+`recover-restore-release <manifest-sha256> <run-id> <plan-sha256> <readiness-sha256> <promotion-ready-sha256> confirm-restore-<run-id>`.
+The host reserves one private attempt and invokes only the reviewed
+`restore-preactivation` phase with `--confirm-restore <run-id>`. That phase
+rechecks the live boundary under the project lock. A 600-second prewrite
+deadline stops slow checks before either protected file changes; the SSH
+parent waits 900 seconds so final verification and reporting can finish.
+The workflow is intended for an eligible failed promotion during an approved
+release. It must not be used for a database migration or a completed
+activation. A STOP or timeout requires private evidence review and manual
+reconciliation; it is never permission to retry blindly.
 The restore rechecks the boundary, then atomically restores only `stack.env`
 and `runtime/mom-image.json` from the preserved bytes. It verifies the original
 preflight baseline afterward and leaves backend and Mom stopped. It does not

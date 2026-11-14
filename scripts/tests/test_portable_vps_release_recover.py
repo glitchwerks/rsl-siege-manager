@@ -5,6 +5,7 @@ import importlib.util
 import json
 from pathlib import Path
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -23,6 +24,48 @@ def manifest():
 
 
 class ReleaseRecoveryTests(unittest.TestCase):
+    def test_prewrite_deadline_interrupts_slow_checks_and_clears_alarm(self):
+        with patch.object(RECOVER, "PREWRITE_DEADLINE_SECONDS", 0.01):
+            with self.assertRaises(RECOVER.PrewriteDeadlineExceeded):
+                with RECOVER.prewrite_deadline():
+                    time.sleep(0.05)
+        self.assertEqual(RECOVER.signal.getitimer(RECOVER.signal.ITIMER_REAL)[0], 0)
+
+    def test_deadline_inside_writer_stop_check_skips_later_gates_and_writes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            project = root / "project"
+            (project / "runtime").mkdir(parents=True)
+            stage = root / "stage"
+            stage.mkdir()
+            (project / "stack.env").write_bytes(b"candidate stack")
+            (project / "runtime" / "mom-image.json").write_bytes(b"candidate mom")
+            (stage / "pause-plan.json").write_bytes(b"plan")
+            (stage / "pause-report.json").write_text('{"phase":"pause","status":"PASS"}')
+            plan = {"project": "prod", "ids": {"backend": "a" * 64,
+                    "mom": "b" * 64, "postgres": "c" * 64}}
+            (stage / "pause-writer-stops.json").write_text(json.dumps({
+                "phase": "pause-writer-stops", "plan_sha256": RECOVER.PAUSE.digest(b"plan"),
+                "ids": {"backend": "a" * 64, "mom": "b" * 64},
+                "finished_at": {"backend": "2026-11-14T10:00:00Z",
+                                "mom": "2026-11-14T10:00:01Z"}}))
+            context = {"old_stack": b"old stack", "old_mom": b"old mom",
+                       "current_stack": b"candidate stack", "current_mom": b"candidate mom",
+                       "manifest": manifest(), "preflight": {}}
+            with patch.object(RECOVER, "PREWRITE_DEADLINE_SECONDS", 0.01), patch.object(
+                RECOVER, "inspect", return_value=({"eligible": True}, context)
+            ), patch.object(RECOVER, "migration_or_activation_started", return_value=False), patch.object(
+                RECOVER.PAUSE, "paused", return_value=True
+            ), patch.object(RECOVER.GATE, "read_private", side_effect=lambda path, *_: path.read_bytes()), patch.object(
+                RECOVER.PAUSE, "service_baseline", side_effect=lambda _data: time.sleep(0.05)
+            ), patch.object(RECOVER.MIGRATE, "revisions_match") as revisions, patch.object(
+                RECOVER.PROMOTE, "replace_bytes") as replace:
+                with self.assertRaises(RECOVER.PrewriteDeadlineExceeded):
+                    RECOVER.restore({"project_directory": project}, stage, plan,
+                        "a" * 64, "b" * 64, "c" * 64, "d" * 64)
+                revisions.assert_not_called()
+                replace.assert_not_called()
+
     def test_activation_or_any_migration_attempt_blocks_config_restore(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
