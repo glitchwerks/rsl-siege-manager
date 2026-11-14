@@ -82,9 +82,9 @@ configuration, execute backup/migration, or touch Compose services. Keep the
 candidate and reports for the later preflight/promotion phases.
 
 The host-side forced-command script must be installed separately from a reviewed
-commit. Its current `update-script` phase accepts only the six reviewed prior
+commit. Its current `update-script` phase accepts only the seven reviewed prior
 script hashes, preserves a root-private copy at
-`/root/portable-vps-remote.py.before-release-proof`,
+`/root/portable-vps-remote.py.before-release-ready`,
 and atomically changes only that script with its committed `0644` mode. An
 earlier stage-only installation may also have left the separate reviewed
 `scripts/portable-vps-remote.py.before-release-stage` backup in the checkout;
@@ -163,9 +163,9 @@ GitHub. It does not change images or services.
 Before dispatch, separately review and install the new forced-command script
 from the exact reviewed checkout with `portable-vps-host-access.py
 update-script --confirm update-script`, a fresh root-private report, and the
-dedicated public key. The current updater accepts only the six reviewed
+dedicated public key. The current updater accepts only the seven reviewed
 earlier script hashes, backs up the current script to
-`/root/portable-vps-remote.py.before-release-proof`,
+`/root/portable-vps-remote.py.before-release-ready`,
 and requires the new reviewed hash. Verify the installation with a second
 fresh report, a new admin login, and the existing read-only GitHub access
 check. `restore-script --confirm restore-script` restores only that exact
@@ -274,6 +274,28 @@ workflow does not run recovery, restore, migration, or promotion; those reports
 must be produced and reviewed separately. Inspect the private host report on
 STOP and use a fresh stage for a corrected proof. No VPS host update or proof
 dispatch has been performed for this bridge.
+
+## Read-only migration readiness workflow
+
+The manual **VPS release migration readiness** workflow is a separate gate
+after same-copy recovery proof. It accepts the staged candidate digest, run ID,
+and accepted pause-plan digest; runs only from `main` under the protected
+`vps-prod` environment and production-promotion concurrency group; and sends
+`ready-release <digest> <run-id> <plan-sha256> confirm-readonly-ready` through
+the restricted SSH key. The host checks the candidate, plan, accepted recovery
+proof and its private baseline, reviewed checkout, and root-private backup
+profile before reserving one private stage attempt and invoking the reviewed
+`portable-vps-release-migration-ready.py` script.
+
+That script rechecks the selected backup proof and paused writers, queries only
+the two database schema revision identifiers, compares them to the manifest's
+exact `from_revision` values, and records a private migration-readiness
+baseline. GitHub receives only boolean checks. A mismatch is STOP; a corrected
+candidate requires a new stage. A successful dispatch also returns the
+SHA-256 of the private readiness baseline for the separately confirmed
+migration phase. This workflow does not run a migration or
+restart writers. No VPS host update or readiness dispatch has been performed
+for this bridge.
 
 ## Promotion phases to implement and rehearse
 
