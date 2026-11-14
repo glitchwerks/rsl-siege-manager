@@ -79,6 +79,15 @@ class ReleaseRecoveryProofTests(unittest.TestCase):
                 self.assertEqual(baseline["backup_run_id"], run_id)
                 self.assertEqual(baseline["proofs"]["backup"]["sha256"],
                                  PROOF.PAUSE.digest((run / "job.json").read_bytes()))
+                def change_after_order(*args, **kwargs):
+                    private(run / "job.json", {**job, "replacement": True})
+                    return {"backup_after_pause": True}
+                with patch.object(PROOF.GATE, "inspect", side_effect=change_after_order):
+                    checks, baseline = PROOF.inspect(data, stage, value, "b" * 64, "a" * 64,
+                                                     recover_path, restore_path)
+                self.assertFalse(checks["proofs_unchanged"])
+                self.assertIsNone(baseline)
+                private(run / "job.json", job)
                 original_inspect = PROOF.BACKUP.inspect
                 def change_after_verification(*args, **kwargs):
                     result = original_inspect(*args, **kwargs)

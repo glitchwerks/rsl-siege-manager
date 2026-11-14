@@ -58,13 +58,13 @@ def inspect(data, directory, value, plan_digest, manifest_digest, recover_path, 
         for path in (recover_path, restore_path)) and len({backup_path, recover_path, restore_path}) == 3)
     if not checks["proof_paths_distinct"]:
         return checks, None
+    paths = {"backup": backup_path, "recover": recover_path, "restore": restore_path}
+    hashes = {name: PAUSE.digest(GATE.read_private(path, owner)) for name, path in paths.items()}
     gate = GATE.inspect(data["project_directory"], directory.name, manifest_digest,
                         data["backup_owner"], data["backup_root"], backup_path)
     checks["pause_backup_order_verified"] = bool(gate) and all(gate.values())
     if not checks["pause_backup_order_verified"]:
         return checks, None
-    paths = {"backup": backup_path, "recover": recover_path, "restore": restore_path}
-    hashes = {name: PAUSE.digest(GATE.read_private(path, owner)) for name, path in paths.items()}
     proof = BACKUP.inspect(backup_path, recover_path, restore_path, owner_uid=owner,
                            reader=lambda path: owned_json(path, owner))
     checks["same_copy_recovery_restored"] = bool(proof) and all(proof.values())
