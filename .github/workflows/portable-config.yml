@@ -1,10 +1,10 @@
 name: Portable configuration
 on:
   pull_request:
-    paths: ["deploy/portable/**", "scripts/portable-preflight.py", "scripts/tests/test_portable_preflight.py", "scripts/portable-db-bootstrap-readiness.py", "scripts/tests/test_portable_db_bootstrap_readiness.py", "scripts/portable-pilot.py", "scripts/tests/test_portable_pilot.py", "scripts/portable-monitor.py", "scripts/tests/test_portable_monitor.py", "scripts/portable-integration.py", "scripts/tests/test_portable_integration.py", ".github/workflows/portable-config.yml"]
+    paths: ["deploy/portable/**", "scripts/portable-preflight.py", "scripts/tests/test_portable_preflight.py", "scripts/portable-vps-release-preflight.py", "scripts/portable-db-bootstrap-readiness.py", "scripts/tests/test_portable_db_bootstrap_readiness.py", "scripts/portable-pilot.py", "scripts/tests/test_portable_pilot.py", "scripts/portable-monitor.py", "scripts/tests/test_portable_monitor.py", "scripts/portable-integration.py", "scripts/tests/test_portable_integration.py", ".github/workflows/portable-config.yml"]
   push:
     branches: [main]
-    paths: ["deploy/portable/**", "scripts/portable-preflight.py", "scripts/tests/test_portable_preflight.py", "scripts/portable-db-bootstrap-readiness.py", "scripts/tests/test_portable_db_bootstrap_readiness.py", "scripts/portable-pilot.py", "scripts/tests/test_portable_pilot.py", "scripts/portable-monitor.py", "scripts/tests/test_portable_monitor.py", "scripts/portable-integration.py", "scripts/tests/test_portable_integration.py", ".github/workflows/portable-config.yml"]
+    paths: ["deploy/portable/**", "scripts/portable-preflight.py", "scripts/tests/test_portable_preflight.py", "scripts/portable-vps-release-preflight.py", "scripts/portable-db-bootstrap-readiness.py", "scripts/tests/test_portable_db_bootstrap_readiness.py", "scripts/portable-pilot.py", "scripts/tests/test_portable_pilot.py", "scripts/portable-monitor.py", "scripts/tests/test_portable_monitor.py", "scripts/portable-integration.py", "scripts/tests/test_portable_integration.py", ".github/workflows/portable-config.yml"]
 permissions:
   contents: read
 jobs:

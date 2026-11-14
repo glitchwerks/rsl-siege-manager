@@ -781,6 +781,20 @@ class ComposeTests(unittest.TestCase):
                     checks = preflight.validate(data, topology, approval)
                     self.assertTrue(all(checks.values()), [k for k, v in checks.items() if not v])
 
+    def test_candidate_image_overrides_render_without_editing_runtime(self):
+        with tempfile.TemporaryDirectory() as directory:
+            stack = fixture(directory)
+            before = stack.read_bytes()
+            candidate = {"BACKEND_IMAGE": "ghcr.io/glitchwerks/siege-api@sha256:" + "a" * 64,
+                         "FRONTEND_IMAGE": "ghcr.io/glitchwerks/siege-frontend@sha256:" + "b" * 64,
+                         "MOM_IMAGE": "ghcr.io/glitchwerks/mom-bot@sha256:" + "c" * 64}
+            rendered = preflight.render("mom", stack, Path(directory), candidate)
+            self.assertEqual(rendered["services"]["backend"]["image"], candidate["BACKEND_IMAGE"])
+            self.assertEqual(rendered["services"]["frontend"]["image"], candidate["FRONTEND_IMAGE"])
+            self.assertEqual(rendered["services"]["mom"]["image"], candidate["MOM_IMAGE"])
+            self.assertEqual(rendered["services"]["migrate-mom"]["image"], candidate["MOM_IMAGE"])
+            self.assertEqual(stack.read_bytes(), before)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -102,11 +102,40 @@ public key and a new report path; it restores only the preserved script. The
 stage command is a state-changing validation and needs its own approval after
 the host update.
 
+## Read-only candidate configuration preflight
+
+`scripts/portable-vps-release-preflight.py` accepts an existing staged run ID
+and manifest SHA-256. It requires a clean, reviewed Siege checkout at the
+candidate's configuration source commit. The protected deployed Compose files
+must exactly match that checkout; the Caddy and initialization SQL bind sources
+must pass the reviewed portable preflight, and runtime credentials and Mom image
+approval must remain private. It renders the currently installed configuration
+and requires each running backend, frontend, Mom, PostgreSQL, and proxy container
+to match the installed image reference. No bundled bot or migration service may
+be running.
+
+The command then renders the candidate's three application image digests in
+memory against the same protected runtime environment and runs all portable
+configuration checks, including exact runtime and maintenance-service image
+matching. It does not edit `stack.env`, runtime files, or Compose services. A
+root-private baseline stores the staged manifest digest, reviewed source commit,
+installed image references/container IDs, Mom approval source, and hashes of the
+installed nonsecret configuration and `stack.env`. The separate report contains
+booleans only. Any source, bind file, image, health, or configuration drift is
+STOP. A later phase must bind to the accepted baseline and recheck it before
+mutation; this command alone does not authorize a pause or deployment.
+
+This command is reviewed code only. It is not installed in the forced SSH
+command or called by GitHub Actions, and no live VPS preflight was run. Candidate
+source changes to the Compose or bind files require a separately reviewed
+configuration staging step before this gate can pass; the current installed
+files are never silently replaced.
+
 ## Promotion phases to implement and rehearse
 
-1. **Preflight:** compare the staged candidate with protected runtime
-   configuration, preserve the installed source/image/configuration baseline,
-   and run the portable configuration preflight without activating services.
+1. **Preflight integration:** expose the reviewed read-only candidate gate
+   through a phase-scoped host command, bind later phases to its baseline, and
+   rehearse the complete configuration path without activating services.
 2. **Backup:** run the already reviewed production backup job as a distinct
    confirmed phase. Require a fresh complete local and off-host readback report
    and the independent restore evidence before migration or promotion. Timer
