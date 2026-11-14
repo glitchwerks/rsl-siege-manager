@@ -33,6 +33,7 @@ MIGRATE_DISPATCH = load("vps_migrate_dispatch", "scripts/portable-vps-release-mi
 PROMOTION_READY_DISPATCH = load("vps_promotion_ready_dispatch", "scripts/portable-vps-release-promotion-ready-dispatch.py")
 PROMOTE_DISPATCH = load("vps_promote_dispatch", "scripts/portable-vps-release-promote-dispatch.py")
 ACCEPT_DISPATCH = load("vps_accept_dispatch", "scripts/portable-vps-release-accept-dispatch.py")
+RECOVERY_INSPECT_DISPATCH = load("vps_recovery_inspect_dispatch", "scripts/portable-vps-release-recovery-inspect-dispatch.py")
 
 
 class AccessTests(unittest.TestCase):
@@ -347,6 +348,78 @@ class AccessTests(unittest.TestCase):
             ), patch.object(REMOTE, "accept_release") as accept:
                 self.assertEqual(REMOTE.main(), 1)
                 accept.assert_not_called()
+
+    def test_recovery_inspection_requires_exact_readonly_command(self):
+        base = "recover-inspect-release " + "a" * 64 + " 123-1 " + "b" * 64 + " " + "c" * 64 + " " + "d" * 64
+        for command in (base, base + " confirm-readonly-recovery-inspect; id",
+                        base + " confirm-readonly-recovery-inspect extra"):
+            with self.subTest(command=command), patch.dict(
+                os.environ, {"SSH_ORIGINAL_COMMAND": command}
+            ), patch.object(REMOTE, "inspect_recovery") as inspect:
+                self.assertEqual(REMOTE.main(), 1)
+                inspect.assert_not_called()
+
+    def test_recovery_inspection_client_rejects_bad_digest_without_ssh(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+            RECOVERY_INSPECT_DISPATCH.ACCESS, "check"
+        ) as baseline:
+            report = Path(directory) / "report.json"
+            with redirect_stdout(io.StringIO()):
+                self.assertEqual(RECOVERY_INSPECT_DISPATCH.main([
+                    "--manifest-sha256", "a" * 64, "--stage-run-id", "123-1",
+                    "--plan-sha256", "b" * 64, "--readiness-sha256", "c" * 64,
+                    "--promotion-ready-sha256", "bad", "--report", str(report)]), 1)
+            baseline.assert_not_called()
+            self.assertEqual(json.loads(report.read_text())["status"], "STOP")
+
+    def test_recovery_inspection_invokes_only_inspect_for_bound_attempt(self):
+        raw = (json.dumps(self.candidate(), sort_keys=True) + "\n").encode()
+        digest = hashlib.sha256(raw).hexdigest()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            stage = root / "evidence" / "release-stages" / "123-1"
+            stage.mkdir(parents=True)
+            (stage / "candidate.json").write_bytes(raw)
+            (stage / "pause-plan.json").write_text("reviewed plan")
+            (stage / "promotion-ready-baseline.json").write_text("reviewed promotion")
+            (stage / "promotion-ready-report.json").write_text(json.dumps({
+                "phase": "release-promotion-ready", "status": "PASS", "checks": {"safe": True}}))
+            plan_sha = hashlib.sha256((stage / "pause-plan.json").read_bytes()).hexdigest()
+            promotion_sha = hashlib.sha256((stage / "promotion-ready-baseline.json").read_bytes()).hexdigest()
+            (stage / "promote-start.json").write_text(json.dumps({
+                "phase": "promote-start", "manifest_sha256": digest,
+                "plan_sha256": plan_sha, "promotion_ready_sha256": promotion_sha}))
+            script = root / "reviewed" / "scripts" / "portable-vps-release-recover.py"
+            script.parent.mkdir(parents=True)
+            script.write_text("# reviewed\n")
+
+            def run(arguments, **_kwargs):
+                self.assertEqual(arguments[:5], ["/usr/bin/python3", "-I", "-B", str(script), "inspect"])
+                self.assertNotIn("--confirm-restore", arguments)
+                (root / "reports" / "123-1-recover-inspect.json").write_text(json.dumps({
+                    "phase": "release-recover-inspect", "status": "PASS",
+                    "manual_reconciliation_required": False, "checks": {"safe": True}}))
+                return SimpleNamespace(returncode=0, stdout=b"PASS\n")
+
+            with patch.object(REMOTE, "EVIDENCE", root / "evidence"), patch.object(
+                REMOTE, "RECOVER_SCRIPT", script
+            ), patch.object(REMOTE, "EXTERNAL_REPORTS", root / "reports"), patch.object(
+                REMOTE, "access_check", return_value=True
+            ), patch.object(REMOTE, "private_directory", side_effect=lambda path: path.is_dir()
+            ), patch.object(REMOTE, "private_file", return_value=True), patch.object(
+                REMOTE, "reviewed_checkout", return_value=True
+            ), patch.object(REMOTE, "reviewed_script", return_value=True), patch.object(
+                REMOTE, "profile_bound", return_value=True
+            ), patch.object(REMOTE.os, "geteuid", return_value=0), patch.object(
+                REMOTE.subprocess, "run", side_effect=run
+            ) as runner, redirect_stdout(io.StringIO()):
+                self.assertEqual(REMOTE.inspect_recovery(digest, "123-1", plan_sha,
+                    "c" * 64, "d" * 64), 1)
+                runner.assert_not_called()
+                self.assertEqual(REMOTE.inspect_recovery(digest, "123-1", plan_sha,
+                    "c" * 64, promotion_sha), 0)
+                runner.assert_called_once()
+            self.assertEqual(json.loads((stage / "recover-inspect-dispatch-report.json").read_text())["status"], "PASS")
 
     def test_acceptance_client_rejects_bad_digest_without_ssh(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(
