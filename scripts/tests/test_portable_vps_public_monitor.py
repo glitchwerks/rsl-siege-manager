@@ -84,6 +84,15 @@ class PublicMonitorTests(unittest.TestCase):
             self.assertEqual(self.run_monitor()[0], 1)
             deliver.assert_not_called()
 
+    def test_deadline_expiry_never_sends_failure_signal(self):
+        with patch.object(MONITOR.public, "request", side_effect=MONITOR.public.DeadlineExpired("expired")), patch.object(
+                MONITOR.sender, "deliver") as deliver:
+            code, result = self.run_monitor()
+        self.assertEqual(code, 1)
+        self.assertEqual(json.loads(self.observation.read_text())["status"], "INCOMPLETE")
+        self.assertFalse(result["delivery_acknowledged"])
+        deliver.assert_not_called()
+
     def test_old_observation_and_overlapping_run_are_refused(self):
         self.observation.write_text('{"status":"PASS"}')
         with patch.object(MONITOR.public, "main") as observe, patch.object(

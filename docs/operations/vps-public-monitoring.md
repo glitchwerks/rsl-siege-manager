@@ -41,9 +41,11 @@ python3 scripts/portable-vps-public-signal.py \
 
 The report path must be fresh. The script writes it with mode 0600 and leaves
 an `INCOMPLETE` marker if interrupted. Final evidence has a UTC timestamp,
-fixed check labels and PASS/STOP; it omits URLs, versions, response bodies,
+fixed check labels and PASS/STOP/INCOMPLETE; it omits URLs, versions, response bodies,
 certificate details and raw exceptions. Retain STOP/INCOMPLETE reports for
 triage and use a new path for another attempt.
+An exhausted whole-observation deadline is `INCOMPLETE`, distinct from a
+completed failed check, and must not send a failure heartbeat.
 
 ## Optional independent receiver delivery
 
