@@ -21,7 +21,11 @@ MIGRATION_READY_SCRIPT = REVIEWED_SOURCE / "scripts/portable-vps-release-migrati
 MIGRATE_SCRIPT = REVIEWED_SOURCE / "scripts/portable-vps-release-migrate.py"
 PROMOTION_READY_SCRIPT = REVIEWED_SOURCE / "scripts/portable-vps-release-promotion-ready.py"
 PROMOTE_SCRIPT = REVIEWED_SOURCE / "scripts/portable-vps-release-promote.py"
+ACCEPT_SCRIPT = REVIEWED_SOURCE / "scripts/portable-vps-release-accept.py"
 BACKUP_PROFILE = PROJECT / "runtime/release-backup-profile.json"
+ACCEPT_INPUTS = Path("/root/vps-release-acceptance")
+PILOT_CONFIG = ACCEPT_INPUTS / "pilot.json"
+SESSION_COOKIE = ACCEPT_INPUTS / "session-cookie"
 EXTERNAL_REPORTS = Path("/root/vps-release-reports")
 STAGE_SCRIPT_BACKUP = REVIEWED_SOURCE / "scripts/portable-vps-remote.py.before-release-stage"
 INITIAL_REMOTE_SHA256 = "f965a4edc244c7ece696bbeb30b650f67c3c21e82584c44185ca57a94db31da7"
@@ -995,6 +999,106 @@ def promote_release(expected, run_id, plan_sha256, readiness_sha256, promotion_s
     return 0 if report["status"] == "PASS" else 1
 
 
+def accept_release(expected, run_id, plan_sha256, readiness_sha256, promotion_sha256):
+    """Run read-only acceptance with fixed, operator-owned private inputs."""
+    stage = EVIDENCE / "release-stages" / run_id
+    checks = {
+        "root_execution": os.geteuid() == 0,
+        "request_shape": bool(SHA256.fullmatch(expected)) and bool(RUN.fullmatch(run_id))
+            and all(SHA256.fullmatch(value) for value in
+                    (plan_sha256, readiness_sha256, promotion_sha256)),
+        "read_only_baseline": access_check(),
+    }
+    if all(checks.values()):
+        try:
+            checks["stage_private"] = private_directory(stage)
+            checks["dispatch_report_available"] = (
+                not (stage / "accept-dispatch-report.json").exists()
+                and not (stage / "accept-dispatch-report.json").is_symlink()
+            ) if checks["stage_private"] else False
+            candidate = stage / "candidate.json"
+            plan_file = stage / "pause-plan.json"
+            promotion_baseline = stage / "promotion-ready-baseline.json"
+            promotion_report = stage / "promotion-ready-report.json"
+            promoted = stage / "promote-report.json"
+            dispatched = stage / "promote-dispatch-report.json"
+            checks["bound_files_private"] = checks["stage_private"] and all(
+                private_file(path) and 0 < path.stat().st_size <= limit
+                for path, limit in ((candidate, MAX_MANIFEST), (plan_file, 4096),
+                                    (promotion_baseline, 4096), (promotion_report, 4096),
+                                    (promoted, 4096), (dispatched, 4096))
+            )
+            if checks["bound_files_private"]:
+                raw = candidate.read_bytes()
+                promotion = json.loads(promotion_report.read_bytes(), object_pairs_hook=no_duplicate_keys)
+                reports = [json.loads(path.read_bytes(), object_pairs_hook=no_duplicate_keys)
+                           for path in (promoted, dispatched)]
+                checks["candidate_bound"] = hashlib.sha256(raw).hexdigest() == expected and valid_manifest(raw)
+                checks["plan_bound"] = hashlib.sha256(plan_file.read_bytes()).hexdigest() == plan_sha256
+                checks["promotion_bound"] = hashlib.sha256(promotion_baseline.read_bytes()).hexdigest() == promotion_sha256
+                checks["promotion_accepted"] = (
+                    isinstance(promotion, dict) and promotion.get("phase") == "release-promotion-ready"
+                    and promotion.get("status") == "PASS" and isinstance(promotion.get("checks"), dict)
+                    and bool(promotion["checks"]) and all(value is True for value in promotion["checks"].values())
+                )
+                checks["promotion_completed"] = all(
+                    isinstance(report, dict) and report.get("phase") == phase
+                    and report.get("status") == "PASS" and isinstance(report.get("checks"), dict)
+                    and bool(report["checks"]) and all(value is True for value in report["checks"].values())
+                    for report, phase in zip(reports, ("release-promote", "release-promotion-dispatch"))
+                )
+            if all(checks.values()):
+                source_sha = json.loads(raw, object_pairs_hook=no_duplicate_keys)["configuration"]["source_sha"]
+                checks["reviewed_checkout"] = reviewed_checkout(source_sha)
+                checks["reviewed_script"] = reviewed_script(ACCEPT_SCRIPT)
+                checks["profile_bound"] = profile_bound()
+                checks["operator_inputs_private"] = (
+                    private_directory(ACCEPT_INPUTS)
+                    and private_file(PILOT_CONFIG) and 0 < PILOT_CONFIG.stat().st_size <= 16384
+                    and private_file(SESSION_COOKIE) and 0 < SESSION_COOKIE.stat().st_size <= 4096
+                )
+            if (checks.get("reviewed_checkout") and checks.get("reviewed_script")
+                    and checks.get("profile_bound") and checks.get("operator_inputs_private")):
+                EXTERNAL_REPORTS.mkdir(mode=0o700, exist_ok=True)
+                checks["external_report_directory_private"] = private_directory(EXTERNAL_REPORTS)
+            if (checks.get("external_report_directory_private")
+                    and checks.get("dispatch_report_available")):
+                write_private(stage / "accept-dispatch-start.json", b'{"phase":"accept-dispatch","status":"INCOMPLETE"}\n')
+                checks["dispatch_reserved"] = True
+                external = EXTERNAL_REPORTS / f"{run_id}-accept.json"
+                result = subprocess.run(
+                    ["/usr/bin/python3", "-I", "-B", str(ACCEPT_SCRIPT),
+                     "--profile", str(BACKUP_PROFILE), "--stage-run-id", run_id,
+                     "--manifest-sha256", expected, "--plan-sha256", plan_sha256,
+                     "--readiness-sha256", readiness_sha256,
+                     "--promotion-ready-sha256", promotion_sha256,
+                     "--pilot-config", str(PILOT_CONFIG),
+                     "--session-cookie-file", str(SESSION_COOKIE),
+                     "--confirm-readonly-acceptance", "--report", str(external)],
+                    env={"PATH": "/usr/bin:/bin", "PYTHONNOUSERSITE": "1",
+                         "PYTHONDONTWRITEBYTECODE": "1", "PYTHONSAFEPATH": "1"},
+                    capture_output=True, timeout=900, check=False,
+                )
+                evidence = json.loads(external.read_bytes(), object_pairs_hook=no_duplicate_keys)
+                checks["acceptance_passed"] = (
+                    result.returncode == 0 and result.stdout.strip() == b"PASS"
+                    and isinstance(evidence, dict) and evidence.get("phase") == "release-accept"
+                    and evidence.get("status") == "PASS" and isinstance(evidence.get("checks"), dict)
+                    and bool(evidence["checks"]) and all(value is True for value in evidence["checks"].values())
+                )
+        except (OSError, ValueError, TypeError, KeyError, subprocess.TimeoutExpired):
+            checks["acceptance_execution"] = False
+    status = "PASS" if all(checks.values()) else "STOP"
+    report = {"phase": "release-acceptance-dispatch", "status": status, "checks": checks}
+    if checks.get("dispatch_reserved"):
+        try:
+            write_private(stage / "accept-dispatch-report.json", (json.dumps(report, sort_keys=True) + "\n").encode())
+        except OSError:
+            report = {"phase": "release-acceptance-dispatch", "status": "STOP", "checks": {"report_write": False}}
+    print(json.dumps(report, sort_keys=True))
+    return 0 if report["status"] == "PASS" else 1
+
+
 def main():
     # The SSH key must be restricted to this absolute command in authorized_keys.
     # Never dispatch arbitrary SSH_ORIGINAL_COMMAND text to a shell.
@@ -1029,6 +1133,9 @@ def main():
     if (len(parts) == 7 and parts[0] == "promote-release"
             and parts[6] == f"confirm-promote-{parts[2]}"):
         return promote_release(parts[1], parts[2], parts[3], parts[4], parts[5])
+    if (len(parts) == 7 and parts[0] == "accept-release"
+            and parts[6] == "confirm-readonly-acceptance"):
+        return accept_release(parts[1], parts[2], parts[3], parts[4], parts[5])
     print("STOP")
     return 1
 

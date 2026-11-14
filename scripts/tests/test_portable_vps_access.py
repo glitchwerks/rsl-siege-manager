@@ -32,6 +32,7 @@ READY_DISPATCH = load("vps_ready_dispatch", "scripts/portable-vps-release-ready-
 MIGRATE_DISPATCH = load("vps_migrate_dispatch", "scripts/portable-vps-release-migrate-dispatch.py")
 PROMOTION_READY_DISPATCH = load("vps_promotion_ready_dispatch", "scripts/portable-vps-release-promotion-ready-dispatch.py")
 PROMOTE_DISPATCH = load("vps_promote_dispatch", "scripts/portable-vps-release-promote-dispatch.py")
+ACCEPT_DISPATCH = load("vps_accept_dispatch", "scripts/portable-vps-release-accept-dispatch.py")
 
 
 class AccessTests(unittest.TestCase):
@@ -336,6 +337,92 @@ class AccessTests(unittest.TestCase):
             ), patch.object(REMOTE, "promote_release") as promote:
                 self.assertEqual(REMOTE.main(), 1)
                 promote.assert_not_called()
+
+    def test_acceptance_requires_exact_readonly_command(self):
+        base = "accept-release " + "a" * 64 + " 123-1 " + "b" * 64 + " " + "c" * 64 + " " + "d" * 64
+        for command in (base, base + " confirm-readonly-acceptance; id",
+                        base + " confirm-readonly-acceptance extra"):
+            with self.subTest(command=command), patch.dict(
+                os.environ, {"SSH_ORIGINAL_COMMAND": command}
+            ), patch.object(REMOTE, "accept_release") as accept:
+                self.assertEqual(REMOTE.main(), 1)
+                accept.assert_not_called()
+
+    def test_acceptance_client_rejects_bad_digest_without_ssh(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+            ACCEPT_DISPATCH.ACCESS, "check"
+        ) as baseline:
+            report = Path(directory) / "report.json"
+            with redirect_stdout(io.StringIO()):
+                self.assertEqual(ACCEPT_DISPATCH.main([
+                    "--manifest-sha256", "a" * 64, "--stage-run-id", "123-1",
+                    "--plan-sha256", "b" * 64, "--readiness-sha256", "c" * 64,
+                    "--promotion-ready-sha256", "bad", "--report", str(report)]), 1)
+            baseline.assert_not_called()
+            self.assertEqual(json.loads(report.read_text())["status"], "STOP")
+
+    def test_acceptance_invokes_only_reviewed_script_with_fixed_private_inputs(self):
+        raw = (json.dumps(self.candidate(), sort_keys=True) + "\n").encode()
+        digest = hashlib.sha256(raw).hexdigest()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            stage = root / "evidence" / "release-stages" / "123-1"
+            stage.mkdir(parents=True)
+            (stage / "candidate.json").write_bytes(raw)
+            (stage / "pause-plan.json").write_text("reviewed plan")
+            (stage / "promotion-ready-baseline.json").write_text("reviewed promotion")
+            for name, phase in (("promotion-ready-report.json", "release-promotion-ready"),
+                                ("promote-report.json", "release-promote"),
+                                ("promote-dispatch-report.json", "release-promotion-dispatch")):
+                (stage / name).write_text(json.dumps({"phase": phase, "status": "PASS",
+                                                     "checks": {"safe": True}}))
+            inputs = root / "acceptance"
+            inputs.mkdir()
+            (inputs / "pilot.json").write_text("{}")
+            (inputs / "session-cookie").write_text("private-test-value")
+            script = root / "reviewed" / "scripts" / "portable-vps-release-accept.py"
+            script.parent.mkdir(parents=True)
+            script.write_text("# reviewed\n")
+            plan_sha = hashlib.sha256((stage / "pause-plan.json").read_bytes()).hexdigest()
+            promotion_sha = hashlib.sha256((stage / "promotion-ready-baseline.json").read_bytes()).hexdigest()
+
+            def run(arguments, **_kwargs):
+                self.assertEqual(arguments[:4], ["/usr/bin/python3", "-I", "-B", str(script)])
+                self.assertEqual(arguments[arguments.index("--pilot-config") + 1], str(inputs / "pilot.json"))
+                self.assertEqual(arguments[arguments.index("--session-cookie-file") + 1], str(inputs / "session-cookie"))
+                self.assertIn("--confirm-readonly-acceptance", arguments)
+                (root / "reports" / "123-1-accept.json").write_text(
+                    '{"phase":"release-accept","status":"PASS","checks":{"safe":true}}')
+                return SimpleNamespace(returncode=0, stdout=b"PASS\n")
+
+            with patch.object(REMOTE, "EVIDENCE", root / "evidence"), patch.object(
+                REMOTE, "ACCEPT_SCRIPT", script
+            ), patch.object(REMOTE, "ACCEPT_INPUTS", inputs), patch.object(
+                REMOTE, "PILOT_CONFIG", inputs / "pilot.json"
+            ), patch.object(REMOTE, "SESSION_COOKIE", inputs / "session-cookie"), patch.object(
+                REMOTE, "EXTERNAL_REPORTS", root / "reports"
+            ), patch.object(REMOTE, "access_check", return_value=True), patch.object(
+                REMOTE, "private_directory", side_effect=lambda path: path.is_dir()
+            ), patch.object(REMOTE, "private_file", return_value=True), patch.object(
+                REMOTE, "reviewed_checkout", return_value=True
+            ), patch.object(REMOTE, "reviewed_script", return_value=True), patch.object(
+                REMOTE, "profile_bound", return_value=True
+            ), patch.object(REMOTE.os, "geteuid", return_value=0), patch.object(
+                REMOTE.subprocess, "run", side_effect=run
+            ) as runner, redirect_stdout(io.StringIO()):
+                self.assertEqual(REMOTE.accept_release(digest, "123-1", plan_sha,
+                    "c" * 64, "d" * 64), 1)
+                runner.assert_not_called()
+                (inputs / "session-cookie").unlink()
+                self.assertEqual(REMOTE.accept_release(digest, "123-1", plan_sha,
+                    "c" * 64, promotion_sha), 1)
+                runner.assert_not_called()
+                self.assertFalse((stage / "accept-dispatch-start.json").exists())
+                (inputs / "session-cookie").write_text("private-test-value")
+                self.assertEqual(REMOTE.accept_release(digest, "123-1", plan_sha,
+                    "c" * 64, promotion_sha), 0)
+                runner.assert_called_once()
+            self.assertEqual(json.loads((stage / "accept-dispatch-report.json").read_text())["status"], "PASS")
 
     def test_confirmed_promotion_client_rejects_bad_digest_without_ssh(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(
