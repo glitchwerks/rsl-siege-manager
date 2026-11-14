@@ -22,11 +22,11 @@ RUN = re.compile(r"[1-9][0-9]{0,19}-[1-9][0-9]{0,2}\Z")
 def pause(expected, run_id, plan_sha256):
     checks = {"request_shape": bool(SHA256.fullmatch(expected)) and bool(RUN.fullmatch(run_id)) and bool(SHA256.fullmatch(plan_sha256))}
     if not all(checks.values()):
-        return checks, None
+        return checks
     baseline = ACCESS.check()
     checks["read_only_vps_baseline"] = bool(baseline) and all(baseline.values())
     if not checks["read_only_vps_baseline"]:
-        return checks, None
+        return checks
     _, host, user, _, key, known_hosts = ACCESS.settings()
     old_umask = os.umask(0o077)
     try:

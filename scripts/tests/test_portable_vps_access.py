@@ -140,6 +140,18 @@ class AccessTests(unittest.TestCase):
                 self.assertEqual(REMOTE.main(), 1)
                 pause.assert_not_called()
 
+    def test_writer_pause_client_reports_rejected_input_without_ssh(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+            PAUSE_DISPATCH.ACCESS, "check"
+        ) as baseline:
+            report = Path(directory) / "report.json"
+            with redirect_stdout(io.StringIO()):
+                self.assertEqual(PAUSE_DISPATCH.main([
+                    "--manifest-sha256", "bad", "--stage-run-id", "123-1",
+                    "--plan-sha256", "b" * 64, "--report", str(report)]), 1)
+            baseline.assert_not_called()
+            self.assertEqual(json.loads(report.read_text())["status"], "STOP")
+
     def test_writer_pause_rejects_wrong_plan_before_subprocess(self):
         raw = (json.dumps(self.candidate(), sort_keys=True) + "\n").encode()
         digest = hashlib.sha256(raw).hexdigest()
