@@ -211,6 +211,20 @@ candidate, and recheck freshness immediately before migration. A historical
 restore proof for a different copy fails this release gate even when it remains
 valid as a retention anchor.
 
+`scripts/portable-vps-release-recovery-proof.py` performs that binding after
+the separately confirmed pause and managed backup phases. It requires their
+accepted stage reports, the exact pause plan digest, and the selected backup
+run UUID. It rechecks the unchanged candidate preflight baseline and stopped
+writers, reruns the writer-before-backup ordering gate, and verifies fresh
+off-host recovery and isolated restore reports against the selected managed
+backup copy. The root process reads owner-private backup reports with checked
+ownership, permissions, and symlink protection. It then rechecks the paused
+state and proof file hashes. A root-private stage baseline records only the
+candidate/plan digests, selected run UUID, and report paths/hashes; the external
+report contains booleans only. This is read-only release evidence and does not
+run a migration or authorize promotion. A later migration phase must recheck
+the proof and live schema revisions before a separately confirmed schema change.
+
 ## Writer pause and backup ordering gate
 
 After a separately approved pause of the `backend` and `mom` writers, the

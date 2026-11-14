@@ -51,17 +51,19 @@ def valid_uuid(value):
         return False
 
 
-def inspect(backup_path, recover_path, restore_path, now=None):
+def inspect(backup_path, recover_path, restore_path, now=None, *, owner_uid=None, reader=None):
+    expected_owner = os.geteuid() if owner_uid is None else owner_uid
+    read_report = private_json if reader is None else reader
     checks = {"same_owner": False, "reports_private": False}
     if len({backup_path.absolute(), recover_path.absolute(), restore_path.absolute()}) != 3:
         return checks
     try:
         owners = {path.lstat().st_uid for path in (backup_path, recover_path, restore_path)}
-        checks["same_owner"] = owners == {os.geteuid()}
+        checks["same_owner"] = owners == {expected_owner}
         if not checks["same_owner"]:
             return checks
         backup, recovered, restored = (
-            private_json(path) for path in (backup_path, recover_path, restore_path)
+            read_report(path) for path in (backup_path, recover_path, restore_path)
         )
         checks["reports_private"] = True
         if not all(isinstance(report, dict) for report in (backup, recovered, restored)):
