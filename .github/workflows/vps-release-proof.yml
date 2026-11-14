@@ -1,0 +1,82 @@
+name: VPS release recovery proof
+
+# Read-only binding of selected backup to off-host recovery and isolated restore evidence.
+on:
+  workflow_dispatch:
+    inputs:
+      manifest_sha256:
+        description: SHA-256 of the exact candidate JSON staged on the VPS
+        required: true
+        type: string
+      plan_sha256:
+        description: SHA-256 of the accepted pause-plan.json from the plan report
+        required: true
+        type: string
+      recover_report:
+        description: Absolute private path to the selected copy off-host recovery PASS report
+        required: true
+        type: string
+      restore_report:
+        description: Absolute private path to its isolated database restore PASS report
+        required: true
+        type: string
+      stage_run_id:
+        description: Run ID and attempt of the successful VPS release stage (for example 123456-1)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vps-production-promotion
+  cancel-in-progress: false
+
+jobs:
+  proof:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: vps-prod
+    steps:
+      - name: Check out reviewed main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Join tailnet as ephemeral deployment runner
+        uses: tailscale/github-action@064b10558093f38325e838ddea35486bdc6b1d5c # v4.4.0
+        with:
+          oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
+          tags: tag:github-deploy
+
+      - name: Bind reviewed recovery proof
+        env:
+          VPS_TAILSCALE_HOST: ${{ secrets.VPS_TAILSCALE_HOST }}
+          VPS_SSH_USER: ${{ vars.VPS_SSH_USER }}
+          VPS_SSH_HOST_FINGERPRINT: ${{ secrets.VPS_SSH_HOST_FINGERPRINT }}
+          VPS_DEPLOY_SSH_KEY: ${{ secrets.VPS_DEPLOY_SSH_KEY }}
+          VPS_SSH_KNOWN_HOSTS: ${{ secrets.VPS_SSH_KNOWN_HOSTS }}
+          CANDIDATE_SHA256: ${{ inputs.manifest_sha256 }}
+          STAGE_RUN_ID: ${{ inputs.stage_run_id }}
+          PLAN_SHA256: ${{ inputs.plan_sha256 }}
+          RECOVER_REPORT: ${{ inputs.recover_report }}
+          RESTORE_REPORT: ${{ inputs.restore_report }}
+        run: |
+          python3 scripts/portable-vps-release-proof-dispatch.py \
+            --manifest-sha256 "$CANDIDATE_SHA256" \
+            --stage-run-id "$STAGE_RUN_ID" \
+            --plan-sha256 "$PLAN_SHA256" \
+            --recover-report "$RECOVER_REPORT" \
+            --restore-report "$RESTORE_REPORT" \
+            --report "$RUNNER_TEMP/vps-proof-dispatch-report.json"
+
+      - name: Upload sanitized recovery proof report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: vps-proof-dispatch-report
+          path: ${{ runner.temp }}/vps-proof-dispatch-report.json
+          if-no-files-found: ignore
+          retention-days: 30
