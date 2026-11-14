@@ -225,6 +225,20 @@ report contains booleans only. This is read-only release evidence and does not
 run a migration or authorize promotion. A later migration phase must recheck
 the proof and live schema revisions before a separately confirmed schema change.
 
+`scripts/portable-vps-release-migration-ready.py` is that read-only readiness
+gate. It requires the accepted recovery proof baseline for the same candidate,
+pause plan, and selected backup. Since the backend and Mom containers are
+stopped, it queries `public.alembic_version` in the `siege` and `mom_bot`
+databases through the still-running PostgreSQL container. The query uses the
+container's mounted administrator secret and emits only the exact revision or
+STOP; it does not print the password or database content. Both revisions must
+match the manifest's `from_revision`, including a database with `mode: none`.
+The gate rechecks the fresh same-copy proof and revisions before recording a
+root-private baseline of the candidate, plan, proof digest, PostgreSQL container
+ID, current revisions, and manifest migration order. Its external report is
+boolean-only. This gate performs no migration or promotion. A later confirmed
+migration phase must recheck this baseline immediately before any schema write.
+
 ## Writer pause and backup ordering gate
 
 After a separately approved pause of the `backend` and `mom` writers, the
