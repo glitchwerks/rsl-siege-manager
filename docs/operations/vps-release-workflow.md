@@ -196,6 +196,24 @@ against production. It does not establish independent monitor notification
 delivery or a full Discord write acceptance. Those remain separate release
 gates, with production Discord writes requiring their own authorization.
 
+The separately confirmed `scripts/portable-vps-release-recover.py` has an
+`inspect` phase and a `restore-preactivation` phase. Both require the exact
+staged candidate, pause plan, accepted promotion readiness baseline, and
+original protected configuration preserved by the promotion attempt. The
+inspection is read-only. It stops if any migration or Compose activation was
+started, if writers resumed, if database revisions changed, or if the original
+frontend and PostgreSQL/proxy foundation no longer match the preflight. A
+passing inspection is evidence only; the restore requires a separate operator
+invocation with `--confirm-restore <stage-run-id>` and a fresh private report.
+The restore rechecks the boundary, then atomically restores only `stack.env`
+and `runtime/mom-image.json` from the preserved bytes. It verifies the original
+preflight baseline afterward and leaves backend and Mom stopped. It does not
+restart writers, roll back a database, or change images. A partial restore or
+any post-activation failure records STOP for manual reconciliation. Stage and
+external reports contain booleans only, and a project lock prevents a parallel
+promotion. This script is repository code only; it is not installed on the VPS
+or exposed through the GitHub deploy key.
+
 1. **Preflight integration:** expose the reviewed read-only candidate gate
    through a phase-scoped host command, bind later phases to its baseline, and
    rehearse the complete configuration path without activating services.

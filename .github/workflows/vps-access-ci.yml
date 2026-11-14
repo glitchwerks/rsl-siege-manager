@@ -20,6 +20,7 @@ on:
       - "scripts/tests/test_portable_vps_release_promote.py"
       - "scripts/tests/test_portable_vps_release_promote_docker.py"
       - "scripts/tests/test_portable_vps_release_accept.py"
+      - "scripts/tests/test_portable_vps_release_recover.py"
       - "docs/operations/vps-github-access.md"
       - "docs/operations/vps-release-workflow.md"
   push:
@@ -43,6 +44,7 @@ on:
       - "scripts/tests/test_portable_vps_release_promote.py"
       - "scripts/tests/test_portable_vps_release_promote_docker.py"
       - "scripts/tests/test_portable_vps_release_accept.py"
+      - "scripts/tests/test_portable_vps_release_recover.py"
       - "docs/operations/vps-github-access.md"
       - "docs/operations/vps-release-workflow.md"
 permissions:
@@ -78,6 +80,8 @@ jobs:
         run: python3 -m unittest discover -s scripts/tests -p test_portable_vps_release_promote.py -v
       - name: Test candidate-bound read-only acceptance
         run: python3 -m unittest discover -s scripts/tests -p test_portable_vps_release_accept.py -v
+      - name: Test pre-activation recovery boundary and protected file restore
+        run: python3 -m unittest discover -s scripts/tests -p test_portable_vps_release_recover.py -v
   docker-rehearsal:
     runs-on: ubuntu-latest
     timeout-minutes: 10
