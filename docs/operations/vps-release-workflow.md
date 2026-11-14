@@ -82,9 +82,9 @@ configuration, execute backup/migration, or touch Compose services. Keep the
 candidate and reports for the later preflight/promotion phases.
 
 The host-side forced-command script must be installed separately from a reviewed
-commit. Its current `update-script` phase accepts only the three reviewed prior
+commit. Its current `update-script` phase accepts only the four reviewed prior
 script hashes, preserves a root-private copy at
-`/root/portable-vps-remote.py.before-release-plan`,
+`/root/portable-vps-remote.py.before-release-pause`,
 and atomically changes only that script with its committed `0644` mode. An
 earlier stage-only installation may also have left the separate reviewed
 `scripts/portable-vps-remote.py.before-release-stage` backup in the checkout;
@@ -163,9 +163,9 @@ GitHub. It does not change images or services.
 Before dispatch, separately review and install the new forced-command script
 from the exact reviewed checkout with `portable-vps-host-access.py
 update-script --confirm update-script`, a fresh root-private report, and the
-dedicated public key. The current updater accepts only the three reviewed
+dedicated public key. The current updater accepts only the four reviewed
 earlier script hashes, backs up the current script to
-`/root/portable-vps-remote.py.before-release-plan`,
+`/root/portable-vps-remote.py.before-release-pause`,
 and requires the new reviewed hash. Verify the installation with a second
 fresh report, a new admin login, and the existing read-only GitHub access
 check. `restore-script --confirm restore-script` restores only that exact
@@ -198,6 +198,31 @@ does not stop containers, start a backup, or enable deletion. The updated host
 script must be installed and verified through the separate hash-bound
 `update-script` phase before a plan dispatch. No plan dispatch or VPS host
 update has been performed for this bridge.
+
+## Confirmed writer pause workflow
+
+The manual **VPS release writer pause** workflow requires the exact staged
+candidate SHA-256, stage run ID, accepted pause-plan SHA-256, and the literal
+`pause-reviewed-writers` confirmation. It runs only from `main` under the
+protected `vps-prod` environment and production-promotion concurrency group.
+The fixed restricted SSH command is
+`pause-release <digest> <run-id> <plan-sha256> confirm-pause`. The host checks
+the private candidate and accepted plan, clean reviewed checkout, root-private
+backup profile, and active read-only baseline before invoking only the reviewed
+`pause` phase. The pause script independently checks the current baseline and
+plan before stopping Mom and backend. GitHub receives a boolean-only report;
+private phase reports remain on the host.
+
+This operation stops production writers. Dispatch only as part of an approved
+full deployment after the backup and recovery sequence is ready. Keep an admin
+SSH session and provider-console access available. If the workflow stops or
+times out after either writer has stopped, treat the phase as INCOMPLETE; inspect
+`/root/vps-release-reports/<run-id>-pause.json` and the private stage reports
+before using the reviewed recovery path. Do not retry the same stage or start
+new writers until the old writer state and database backup status are known.
+The host forced-command script must be installed and verified with the
+hash-bound `update-script`/`restore-script` phases before dispatch. No host
+update or writer-pause dispatch has been performed for this workflow.
 
 ## Promotion phases to implement and rehearse
 
@@ -446,9 +471,9 @@ production promotion.
 
 ## Confirmed writer pause and managed backup phases
 
-`scripts/portable-vps-release-pause-backup.py` adds three independent host
-phases. It is not installed in the forced SSH command and is not invoked by a
-GitHub workflow. The root-private profile names the protected Compose project,
+`scripts/portable-vps-release-pause-backup.py` provides three independent host
+phases. The confirmed pause is now exposed through a fixed restricted SSH command
+and protected manual workflow. The backup phase remains separately gated. The root-private profile names the protected Compose project,
 the installed backup root and owner (`root` or `rsl-backup`), and the exact
 backup service/timer, unit-file SHA-256, and SHA-256 of the trimmed `systemctl
 cat` output, including any drop-ins. The unit file must be root-owned,

@@ -3,6 +3,7 @@ on:
   pull_request:
     paths:
       - ".github/workflows/vps-access-*.yml"
+      - ".github/workflows/vps-release-*.yml"
       - "scripts/portable-vps-*.py"
       - "scripts/tests/test_portable_vps_access.py"
       - "scripts/tests/test_portable_vps_migration_baseline.py"
@@ -37,6 +38,7 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/vps-access-*.yml"
+      - ".github/workflows/vps-release-*.yml"
       - "scripts/portable-vps-*.py"
       - "scripts/tests/test_portable_vps_access.py"
       - "scripts/tests/test_portable_vps_migration_baseline.py"
