@@ -82,9 +82,9 @@ configuration, execute backup/migration, or touch Compose services. Keep the
 candidate and reports for the later preflight/promotion phases.
 
 The host-side forced-command script must be installed separately from a reviewed
-commit. Its current `update-script` phase accepts only the twelve reviewed prior
+commit. Its current `update-script` phase accepts only the thirteen reviewed prior
 script hashes, preserves a root-private copy at
-`/root/portable-vps-remote.py.before-release-accept`,
+`/root/portable-vps-remote.py.before-recovery-inspect`,
 and atomically changes only that script with its committed `0644` mode. An
 earlier stage-only installation may also have left the separate reviewed
 `scripts/portable-vps-remote.py.before-release-stage` backup in the checkout;
@@ -163,9 +163,9 @@ GitHub. It does not change images or services.
 Before dispatch, separately review and install the new forced-command script
 from the exact reviewed checkout with `portable-vps-host-access.py
 update-script --confirm update-script`, a fresh root-private report, and the
-dedicated public key. The current updater accepts only the twelve reviewed
+dedicated public key. The current updater accepts only the thirteen reviewed
 earlier script hashes, backs up the current script to
-`/root/portable-vps-remote.py.before-release-accept`,
+`/root/portable-vps-remote.py.before-recovery-inspect`,
 and requires the new reviewed hash. Verify the installation with a second
 fresh report, a new admin login, and the existing read-only GitHub access
 check. `restore-script --confirm restore-script` restores only that exact
@@ -466,6 +466,13 @@ accepted pause, if database revisions changed, or if the original
 frontend and PostgreSQL/proxy foundation no longer match the preflight. A
 passing inspection is evidence only; the restore requires a separate operator
 invocation with `--confirm-restore <stage-run-id>` and a fresh private report.
+The protected manual `vps-release-recovery-inspect.yml` workflow exposes only
+the read-only `inspect` phase through the fixed forced SSH command
+`recover-inspect-release <manifest-sha256> <run-id> <plan-sha256> <readiness-sha256> <promotion-ready-sha256> confirm-readonly-recovery-inspect`.
+It requires the candidate and exact promotion-attempt marker, the reviewed
+checkout, and the project-bound backup profile before dispatch. It returns
+only a boolean report; it cannot restore files or restart writers. A STOP
+means manual reconciliation, not permission to run the restore phase.
 The restore rechecks the boundary, then atomically restores only `stack.env`
 and `runtime/mom-image.json` from the preserved bytes. It verifies the original
 preflight baseline afterward and leaves backend and Mom stopped. It does not
