@@ -120,7 +120,9 @@ configuration checks, including exact runtime and maintenance-service image
 matching. It does not edit `stack.env`, runtime files, or Compose services. A
 root-private baseline stores the staged manifest digest, reviewed source commit,
 installed image references/container IDs, Mom approval source, and hashes of the
-installed nonsecret configuration and `stack.env`. The separate report contains
+installed configuration, `stack.env`, and private runtime inputs. Runtime files
+are hashed before rendering and rechecked afterward; their contents never enter
+the baseline or report. The separate report contains
 booleans only. Any source, bind file, image, health, or configuration drift is
 STOP. A later phase must bind to the accepted baseline and recheck it before
 mutation; this command alone does not authorize a pause or deployment.

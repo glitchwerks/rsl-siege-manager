@@ -97,6 +97,8 @@ class ReleasePreflightTests(unittest.TestCase):
                     return b"COMPOSE_PROJECT_NAME=synthetic\n"
                 if path.name == "mom-image.json":
                     return b'{"image":"current-mom"}'
+                if path.name in PHASE.RUNTIME_FILES:
+                    return b"synthetic-private-runtime-content"
                 raise AssertionError(path)
             with patch.object(PHASE.os, "geteuid", return_value=0), patch.object(
                 PHASE.GATE, "protected", return_value=True
@@ -114,10 +116,19 @@ class ReleasePreflightTests(unittest.TestCase):
                 PHASE, "running_services", return_value=installed
             ), patch.object(PHASE.PREFLIGHT, "validate", return_value={"valid": True}):
                 checks, baseline = PHASE.inspect(project, stage, expected)
+                render.side_effect = [current, proposed]
+                with patch.object(PHASE, "runtime_hashes", side_effect=[
+                    {"backend.env": "a" * 64}, {"backend.env": "b" * 64}
+                ]):
+                    drift_checks, drift_baseline = PHASE.inspect(project, stage, expected)
             self.assertTrue(all(checks.values()), checks)
+            self.assertFalse(drift_checks["baseline_unchanged"])
+            self.assertIsNone(drift_baseline)
             self.assertEqual(baseline["manifest_sha256"], expected)
             self.assertEqual(baseline["installed"], installed)
             self.assertNotIn("credential", json.dumps(baseline).lower())
+            self.assertNotIn("synthetic-private-runtime-content", json.dumps(baseline))
+            self.assertEqual(set(baseline["runtime_sha256"]), set(PHASE.RUNTIME_FILES))
             self.assertEqual(render.call_args_list[0].args[3], {})
             self.assertEqual(render.call_args_list[1].args[3]["MOM_IMAGE"], candidate["mom"]["image"])
 
