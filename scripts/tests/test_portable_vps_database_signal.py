@@ -43,6 +43,7 @@ class DatabaseSignalTests(unittest.TestCase):
         self.assertNotIn("--env", arguments)
         self.assertIn('PGPASSWORD="$SIEGE_DB_PASSWORD"', arguments[8])
         self.assertIn("BEGIN READ ONLY", SIGNAL.QUERY["siege"])
+        self.assertIn("backend_type = 'client backend'", SIGNAL.QUERY["siege"])
         self.assertNotIn("SELECT *", SIGNAL.QUERY["siege"])
         with patch.object(SIGNAL, "command", return_value="postgres|siege|0012|t|1|1|100|on\n"):
             self.assertIsNone(SIGNAL.database("b" * 64, "siege", time.monotonic() + 10))

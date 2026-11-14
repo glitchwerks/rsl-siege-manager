@@ -45,7 +45,7 @@ QUERY = {name: ("BEGIN READ ONLY; SET LOCAL statement_timeout='3000ms'; "
     "(SELECT version_num FROM public.alembic_version), "
     f"to_regclass('public.{table}') IS NOT NULL, "
     "pg_database_size(current_database()), "
-    "(SELECT count(*) FROM pg_stat_activity), "
+    "(SELECT count(*) FROM pg_stat_activity WHERE backend_type = 'client backend'), "
     "current_setting('max_connections')::int, "
     "current_setting('transaction_read_only'); COMMIT;")
     for name, table in (("siege", "member"), ("mom_bot", "reminders"))}
