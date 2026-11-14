@@ -210,7 +210,9 @@ The fixed restricted SSH command is
 the private candidate and accepted plan, clean reviewed checkout, root-private
 backup profile, and active read-only baseline before invoking only the reviewed
 `pause` phase. The pause script independently checks the current baseline and
-plan before stopping Mom and backend. GitHub receives a boolean-only report;
+plan before stopping Mom and backend. An exclusive private stage marker
+reserves the attempt so a concurrent request cannot replace its final report.
+GitHub receives a boolean-only report;
 private phase reports remain on the host.
 
 This operation stops production writers. Dispatch only as part of an approved
@@ -236,7 +238,8 @@ group. The restricted SSH command is
 
 The host checks the private candidate, accepted plan and pause reports,
 reviewed checkout, root-private backup profile, and an available final report
-path before invoking the reviewed `backup` phase. The phase independently
+path before reserving an exclusive private stage attempt and invoking the
+reviewed `backup` phase. The phase independently
 rechecks paused writers, the current preflight baseline, backup unit digest,
 and service idle state; starts the existing managed backup service once; and
 requires one new run with ordering and post-backup checks. Only boolean checks

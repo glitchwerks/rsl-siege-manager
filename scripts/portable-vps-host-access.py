@@ -24,7 +24,7 @@ OLD_REMOTE_SHA256S = (
     "4664f652bcc15e7ba2f0c25fc3214d314e2b64fe5edacee960c8fa3ea9983fcb",
     "c3ffb5e3351e3089bf75d4f77d2e905d1d61b244d0ce43eed0ebb7025dba0c2b",
 )
-NEW_REMOTE_SHA256 = "a505c8bf85456c714fcb22decaefde9796176cc1fbd0451dc1671df6b85c8fa5"
+NEW_REMOTE_SHA256 = "7cbc65af08a6c01bacc3557532c2885cdeb6d66952d21d4d8aa45e9d04452c05"
 
 
 def script_backup_path():

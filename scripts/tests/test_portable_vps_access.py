@@ -228,6 +228,34 @@ class AccessTests(unittest.TestCase):
                 self.assertEqual(REMOTE.backup_release(digest, "123-1", plan_digest), 0)
                 self.assertEqual(runner.call_count, 3)
             self.assertEqual(json.loads((stage / "backup-dispatch-report.json").read_text())["status"], "PASS")
+            self.assertTrue((stage / "backup-dispatch-start.json").exists())
+
+    def test_existing_attempt_reservation_blocks_second_mutation(self):
+        raw = (json.dumps(self.candidate(), sort_keys=True) + "\n").encode()
+        digest = hashlib.sha256(raw).hexdigest()
+        for phase, operation in (("pause", REMOTE.pause_release), ("backup", REMOTE.backup_release)):
+            with self.subTest(phase=phase), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                stage = root / "evidence" / "release-stages" / "123-1"
+                stage.mkdir(parents=True)
+                (stage / "candidate.json").write_bytes(raw)
+                (stage / "pause-plan.json").write_text("reviewed plan")
+                (stage / "plan-report.json").write_text('{"phase":"plan","status":"PASS","checks":{"safe":true}}')
+                (stage / "pause-report.json").write_text('{"phase":"pause","status":"PASS","checks":{"safe":true}}')
+                (stage / f"{phase}-dispatch-start.json").write_text("first attempt")
+                plan_digest = hashlib.sha256((stage / "pause-plan.json").read_bytes()).hexdigest()
+                with patch.object(REMOTE, "EVIDENCE", root / "evidence"), patch.object(
+                    REMOTE, "EXTERNAL_REPORTS", root / "reports"
+                ), patch.object(REMOTE, "access_check", return_value=True), patch.object(
+                    REMOTE, "private_directory", side_effect=lambda path: path.is_dir()
+                ), patch.object(REMOTE, "private_file", return_value=True), patch.object(
+                    REMOTE, "reviewed_checkout", return_value=True
+                ), patch.object(REMOTE, "reviewed_script", return_value=True), patch.object(
+                    REMOTE.os, "geteuid", return_value=0
+                ), patch.object(REMOTE.subprocess, "run") as runner, redirect_stdout(io.StringIO()):
+                    self.assertEqual(operation(digest, "123-1", plan_digest), 1)
+                    runner.assert_not_called()
+                self.assertFalse((stage / f"{phase}-dispatch-report.json").exists())
 
     def test_managed_backup_client_reports_rejected_input_without_ssh(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(
@@ -306,6 +334,7 @@ class AccessTests(unittest.TestCase):
                 self.assertEqual(runner.call_count, 3)
             self.assertEqual(json.loads(output.getvalue())["status"], "PASS")
             self.assertEqual(json.loads((stage / "pause-dispatch-report.json").read_text())["status"], "PASS")
+            self.assertTrue((stage / "pause-dispatch-start.json").exists())
 
     def test_pause_plan_dispatch_records_only_bound_digest(self):
         raw = (json.dumps(self.candidate(), sort_keys=True) + "\n").encode()

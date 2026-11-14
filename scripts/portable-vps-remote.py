@@ -417,6 +417,8 @@ def pause_release(expected, run_id, plan_sha256):
                 checks["external_report_directory_private"] = private_directory(EXTERNAL_REPORTS)
             if (checks.get("external_report_directory_private")
                     and checks.get("dispatch_report_available")):
+                write_private(stage / "pause-dispatch-start.json", b'{"phase":"pause-dispatch","status":"INCOMPLETE"}\n')
+                checks["dispatch_reserved"] = True
                 external = EXTERNAL_REPORTS / f"{run_id}-pause.json"
                 result = subprocess.run(
                     ["/usr/bin/python3", "-I", "-B", str(PLAN_SCRIPT), "pause",
@@ -439,7 +441,7 @@ def pause_release(expected, run_id, plan_sha256):
             checks["pause_execution"] = False
     status = "PASS" if all(checks.values()) else "STOP"
     report = {"phase": "release-writer-pause-dispatch", "status": status, "checks": checks}
-    if checks.get("external_report_directory_private") and checks.get("dispatch_report_available"):
+    if checks.get("dispatch_reserved"):
         try:
             write_private(stage / "pause-dispatch-report.json", (json.dumps(report, sort_keys=True) + "\n").encode())
         except OSError:
@@ -507,6 +509,8 @@ def backup_release(expected, run_id, plan_sha256):
                 checks["external_report_directory_private"] = private_directory(EXTERNAL_REPORTS)
             if (checks.get("external_report_directory_private")
                     and checks.get("dispatch_report_available")):
+                write_private(stage / "backup-dispatch-start.json", b'{"phase":"backup-dispatch","status":"INCOMPLETE"}\n')
+                checks["dispatch_reserved"] = True
                 external = EXTERNAL_REPORTS / f"{run_id}-backup.json"
                 result = subprocess.run(
                     ["/usr/bin/python3", "-I", "-B", str(PLAN_SCRIPT), "backup",
@@ -529,7 +533,7 @@ def backup_release(expected, run_id, plan_sha256):
             checks["backup_execution"] = False
     status = "PASS" if all(checks.values()) else "STOP"
     report = {"phase": "release-managed-backup-dispatch", "status": status, "checks": checks}
-    if checks.get("external_report_directory_private") and checks.get("dispatch_report_available"):
+    if checks.get("dispatch_reserved"):
         try:
             write_private(stage / "backup-dispatch-report.json", (json.dumps(report, sort_keys=True) + "\n").encode())
         except OSError:
