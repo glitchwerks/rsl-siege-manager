@@ -2,11 +2,13 @@
 
 import importlib.util
 import json
+import http.client
 from pathlib import Path
 import tempfile
 import time
 import unittest
 from unittest.mock import patch
+from unittest.mock import MagicMock
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / "portable-vps-public-signal.py"
@@ -65,6 +67,16 @@ class PublicSignalTests(unittest.TestCase):
             result = SIGNAL.inspect(data)
         self.assertTrue(result["apex_home"])
         self.assertFalse(result["api_health"])
+
+    def test_valid_tls_survives_http_disconnect(self):
+        connection = MagicMock()
+        connection.sock.getpeercert.return_value = {"notAfter": "Jan  1 00:00:00 2035 GMT"}
+        connection.getresponse.side_effect = http.client.RemoteDisconnected("closed")
+        with patch.object(SIGNAL.http.client, "HTTPSConnection", return_value=connection):
+            result = SIGNAL.request("siege.example.io", "/api/health", True)
+        self.assertIsNone(result["status"])
+        self.assertGreater(result["tls_expiry"], time.time())
+        connection.close.assert_called_once()
 
     def test_requires_explicit_dispatch_and_omits_origin_and_version_from_report(self):
         with tempfile.TemporaryDirectory() as temporary:

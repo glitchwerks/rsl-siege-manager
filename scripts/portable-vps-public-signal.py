@@ -82,16 +82,21 @@ def request(host, path, read_json=False):
         connection.connect()
         certificate = connection.sock.getpeercert()
         expiry = ssl.cert_time_to_seconds(certificate["notAfter"])
-        connection.request("GET", path, headers={"Accept": "application/json" if read_json
-                           else "text/html", "Connection": "close", "User-Agent": "Siege-public-signal/1"})
-        response = connection.getresponse()
-        result = {"status": response.status, "location": response.getheader("Location"),
-                  "tls_expiry": expiry}
-        if read_json:
-            raw = response.read(MAX_API + 1)
-            if len(raw) > MAX_API:
-                raise ValueError("API response too large")
-            result["json"] = json.loads(raw)
+        result = {"status": None, "location": None, "json": None, "tls_expiry": expiry}
+        try:
+            connection.request("GET", path, headers={"Accept": "application/json" if read_json
+                               else "text/html", "Connection": "close", "User-Agent": "Siege-public-signal/1"})
+            response = connection.getresponse()
+            result["status"] = response.status
+            result["location"] = response.getheader("Location")
+            if read_json:
+                raw = response.read(MAX_API + 1)
+                if len(raw) > MAX_API:
+                    raise ValueError("API response too large")
+                result["json"] = json.loads(raw)
+        except (OSError, ValueError, TypeError, http.client.HTTPException, TimeoutError):
+            # Preserve the verified certificate result even when HTTP fails.
+            pass
         return result
     finally:
         connection.close()
