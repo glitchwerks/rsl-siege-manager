@@ -27,6 +27,10 @@ MAX_CONFIG = 4096
 MAX_API = 4096
 
 
+class DeadlineExpired(Exception):
+    """Whole-observation deadline; deliberately not an OSError subtype."""
+
+
 def config(path):
     descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     with os.fdopen(descriptor, "rb") as source:
@@ -66,7 +70,7 @@ def deadline(seconds=30):
     previous = signal.getsignal(signal.SIGALRM)
 
     def expired(*_args):
-        raise TimeoutError("observation deadline")
+        raise DeadlineExpired("observation deadline")
 
     signal.signal(signal.SIGALRM, expired)
     try:
@@ -134,6 +138,8 @@ def inspect(settings):
                     checks[label] = response["status"] == 200 and response["json"] == {"status": "healthy"}
                 else:
                     checks[label] = response["status"] == 200 and response["json"] == settings["versions"]
+            except DeadlineExpired:
+                break
             except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError,
                     http.client.HTTPException, ssl.SSLError, TimeoutError):
                 continue
@@ -180,7 +186,7 @@ def main(argv=None):
         try:
             report["checks"] = inspect(settings)
             report["status"] = "PASS" if all(report["checks"].values()) else "STOP"
-        except (OSError, ValueError, TimeoutError):
+        except (OSError, ValueError, TimeoutError, DeadlineExpired):
             pass
         publish_report(args.report, report)
     except (OSError, ValueError, TypeError, KeyError, UnicodeError):

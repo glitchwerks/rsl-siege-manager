@@ -78,6 +78,13 @@ class PublicSignalTests(unittest.TestCase):
         self.assertGreater(result["tls_expiry"], time.time())
         connection.close.assert_called_once()
 
+    def test_global_deadline_uses_exception_outside_socket_retry_family(self):
+        self.assertFalse(issubclass(SIGNAL.DeadlineExpired, OSError))
+        with patch.object(SIGNAL, "request", side_effect=SIGNAL.DeadlineExpired("expired")) as request:
+            result = SIGNAL.inspect(settings())
+        self.assertEqual(request.call_count, 1)
+        self.assertFalse(any(result.values()))
+
     def test_requires_explicit_dispatch_and_omits_origin_and_version_from_report(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
