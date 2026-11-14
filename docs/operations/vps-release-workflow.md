@@ -82,9 +82,9 @@ configuration, execute backup/migration, or touch Compose services. Keep the
 candidate and reports for the later preflight/promotion phases.
 
 The host-side forced-command script must be installed separately from a reviewed
-commit. Its current `update-script` phase accepts only the four reviewed prior
+commit. Its current `update-script` phase accepts only the five reviewed prior
 script hashes, preserves a root-private copy at
-`/root/portable-vps-remote.py.before-release-pause`,
+`/root/portable-vps-remote.py.before-release-backup`,
 and atomically changes only that script with its committed `0644` mode. An
 earlier stage-only installation may also have left the separate reviewed
 `scripts/portable-vps-remote.py.before-release-stage` backup in the checkout;
@@ -163,9 +163,9 @@ GitHub. It does not change images or services.
 Before dispatch, separately review and install the new forced-command script
 from the exact reviewed checkout with `portable-vps-host-access.py
 update-script --confirm update-script`, a fresh root-private report, and the
-dedicated public key. The current updater accepts only the four reviewed
+dedicated public key. The current updater accepts only the five reviewed
 earlier script hashes, backs up the current script to
-`/root/portable-vps-remote.py.before-release-pause`,
+`/root/portable-vps-remote.py.before-release-backup`,
 and requires the new reviewed hash. Verify the installation with a second
 fresh report, a new admin login, and the existing read-only GitHub access
 check. `restore-script --confirm restore-script` restores only that exact
@@ -210,7 +210,9 @@ The fixed restricted SSH command is
 the private candidate and accepted plan, clean reviewed checkout, root-private
 backup profile, and active read-only baseline before invoking only the reviewed
 `pause` phase. The pause script independently checks the current baseline and
-plan before stopping Mom and backend. GitHub receives a boolean-only report;
+plan before stopping Mom and backend. An exclusive private stage marker
+reserves the attempt so a concurrent request cannot replace its final report.
+GitHub receives a boolean-only report;
 private phase reports remain on the host.
 
 This operation stops production writers. Dispatch only as part of an approved
@@ -223,6 +225,31 @@ new writers until the old writer state and database backup status are known.
 The host forced-command script must be installed and verified with the
 hash-bound `update-script`/`restore-script` phases before dispatch. No host
 update or writer-pause dispatch has been performed for this workflow.
+
+## Confirmed managed backup workflow
+
+The manual **VPS release managed backup** workflow is a separate protected
+phase after an accepted writer pause. It requires the staged candidate digest,
+stage run ID, the exact accepted pause-plan digest, and the literal
+`backup-reviewed-writers` confirmation. It runs only from `main` in the
+protected `vps-prod` environment under the production-promotion concurrency
+group. The restricted SSH command is
+`backup-release <digest> <run-id> <plan-sha256> confirm-backup`.
+
+The host checks the private candidate, accepted plan and pause reports,
+reviewed checkout, root-private backup profile, and an available final report
+path before reserving an exclusive private stage attempt and invoking the
+reviewed `backup` phase. The phase independently
+rechecks paused writers, the current preflight baseline, backup unit digest,
+and service idle state; starts the existing managed backup service once; and
+requires one new run with ordering and post-backup checks. Only boolean checks
+return to GitHub. The run selector and full private evidence remain on the
+host. A failed or timed-out backup is a STOP, and the old writers remain
+paused. Inspect `/root/vps-release-reports/<run-id>-backup.json` and the
+private stage reports before recovery; do not retry the same stage or resume
+writers until backup state is known. The workflow must only be dispatched as
+part of an approved full release. No host update or backup dispatch has been
+performed for this bridge.
 
 ## Promotion phases to implement and rehearse
 
