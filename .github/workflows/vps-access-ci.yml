@@ -16,6 +16,7 @@ on:
       - "scripts/tests/test_portable_vps_release_migration_docker.py"
       - "scripts/tests/test_portable_vps_release_migrate.py"
       - "scripts/tests/test_portable_vps_release_migrate_docker.py"
+      - "scripts/tests/test_portable_vps_release_promotion_ready.py"
       - "docs/operations/vps-github-access.md"
       - "docs/operations/vps-release-workflow.md"
   push:
@@ -35,6 +36,7 @@ on:
       - "scripts/tests/test_portable_vps_release_migration_docker.py"
       - "scripts/tests/test_portable_vps_release_migrate.py"
       - "scripts/tests/test_portable_vps_release_migrate_docker.py"
+      - "scripts/tests/test_portable_vps_release_promotion_ready.py"
       - "docs/operations/vps-github-access.md"
       - "docs/operations/vps-release-workflow.md"
 permissions:
@@ -64,6 +66,8 @@ jobs:
         run: python3 -m unittest discover -s scripts/tests -p test_portable_vps_release_migration_ready.py -v
       - name: Test one-step confirmed migration safety gates
         run: python3 -m unittest discover -s scripts/tests -p test_portable_vps_release_migrate.py -v
+      - name: Test read-only final promotion readiness gate
+        run: python3 -m unittest discover -s scripts/tests -p test_portable_vps_release_promotion_ready.py -v
   docker-rehearsal:
     runs-on: ubuntu-latest
     timeout-minutes: 10
