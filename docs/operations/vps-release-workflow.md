@@ -82,12 +82,14 @@ configuration, execute backup/migration, or touch Compose services. Keep the
 candidate and reports for the later preflight/promotion phases.
 
 The host-side forced-command script must be installed separately from a reviewed
-commit. Its current `update-script` phase accepts only the two reviewed prior
+commit. Its current `update-script` phase accepts only the three reviewed prior
 script hashes, preserves a root-private copy at
-`/root/portable-vps-remote.py.before-release-preflight`,
+`/root/portable-vps-remote.py.before-release-plan`,
 and atomically changes only that script with its committed `0644` mode. An
 earlier stage-only installation may also have left the separate reviewed
-`scripts/portable-vps-remote.py.before-release-stage` backup in the checkout.
+`scripts/portable-vps-remote.py.before-release-stage` backup in the checkout;
+a prior preflight installation may have left the preserved
+`/root/portable-vps-remote.py.before-release-preflight` backup.
 Keep an admin SSH session and provider
 console recovery available. From the reviewed checkout on the VPS, run the
 phase-scoped installer and verification with fresh report paths:
@@ -161,9 +163,9 @@ GitHub. It does not change images or services.
 Before dispatch, separately review and install the new forced-command script
 from the exact reviewed checkout with `portable-vps-host-access.py
 update-script --confirm update-script`, a fresh root-private report, and the
-dedicated public key. The updater accepts only either of the two reviewed
+dedicated public key. The current updater accepts only the three reviewed
 earlier script hashes, backs up the current script to
-`/root/portable-vps-remote.py.before-release-preflight`,
+`/root/portable-vps-remote.py.before-release-plan`,
 and requires the new reviewed hash. Verify the installation with a second
 fresh report, a new admin login, and the existing read-only GitHub access
 check. `restore-script --confirm restore-script` restores only that exact
@@ -172,6 +174,30 @@ available through this host update. A clean candidate checkout and protected
 Compose/bind files are separate preflight prerequisites; the workflow does not
 check out source or copy configuration onto the VPS. No host update or workflow
 dispatch has been performed for this preflight bridge.
+
+## Read-only writer pause plan
+
+The manual **VPS release pause plan** workflow accepts the same exact staged
+manifest SHA-256 and run ID, uses the protected `vps-prod` environment and
+production promotion concurrency group, and sends only
+`plan-release <digest> <run-id> confirm-readonly-plan` through the restricted
+SSH key. The host checks the staged candidate digest, reviewed clean checkout,
+and a root-private `/srv/rsl-siege/runtime/release-backup-profile.json` before
+invoking the reviewed `portable-vps-release-pause-backup.py plan` phase. The
+profile binds the project, backup owner/root, installed backup unit and timer,
+and SHA-256 digests of the unit file and effective loaded unit. Create and
+review this profile separately from measured host state; the workflow does not
+guess or write those values.
+
+The plan script requires the accepted preflight baseline to remain current,
+healthy backend/Mom/PostgreSQL and proxy containers, no extra writers, an active
+backup timer, and an idle backup service. It records a root-private plan bound
+to the candidate and baseline. GitHub receives only boolean checks and the
+SHA-256 of that private plan for a later separately confirmed pause phase. It
+does not stop containers, start a backup, or enable deletion. The updated host
+script must be installed and verified through the separate hash-bound
+`update-script` phase before a plan dispatch. No plan dispatch or VPS host
+update has been performed for this bridge.
 
 ## Promotion phases to implement and rehearse
 
