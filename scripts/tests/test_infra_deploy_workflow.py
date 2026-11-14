@@ -151,8 +151,9 @@ def test_production_deployments_and_retention_share_a_non_replacing_queue() -> N
 def test_retention_activation_and_deletion_are_separately_gated() -> None:
     workflow = (WORKFLOW_PATH.parent / "registry-retention.yml").read_text()
     assert "default: preflight" in workflow
+    assert "schedule:" not in workflow
     assert "inputs.phase == 'activate'" in workflow
-    assert "github.event_name == 'schedule' || inputs.phase == 'apply'" in workflow
+    assert workflow.count("inputs.phase == 'apply'") == 2
     assert 'activate --report "$RUNNER_TEMP/registry-retention/report.json" --confirm' in workflow
     assert 'apply --report "$RUNNER_TEMP/registry-retention/report.json" --confirm' in workflow
     assert "environment: prod" in workflow
