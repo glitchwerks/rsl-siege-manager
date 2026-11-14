@@ -136,6 +136,16 @@ files are never silently replaced.
 
 ## Promotion phases to implement and rehearse
 
+The read-only `scripts/portable-vps-release-promotion-ready.py` gate now checks
+the exact accepted migration chain and final revisions in both databases. It
+requires the same accepted recovery proof, stopped writers, unchanged installed
+configuration and container identities, and cached candidate image digests.
+For a database with `mode: none`, any migration attempt is a STOP. It records a
+root-private baseline and a separate sanitized pass/fail report. A passing
+report does not switch images or start writers; promotion still needs its own
+confirmed implementation and isolated rehearsal. This script is reviewed code
+only and is not installed on the VPS or callable by the GitHub deploy key.
+
 1. **Preflight integration:** expose the reviewed read-only candidate gate
    through a phase-scoped host command, bind later phases to its baseline, and
    rehearse the complete configuration path without activating services.
