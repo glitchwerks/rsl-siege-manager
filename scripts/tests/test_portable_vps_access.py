@@ -26,6 +26,7 @@ STAGE = load("vps_stage", "scripts/portable-vps-stage.py")
 PREFLIGHT_DISPATCH = load("vps_preflight_dispatch", "scripts/portable-vps-release-preflight-dispatch.py")
 PLAN_DISPATCH = load("vps_plan_dispatch", "scripts/portable-vps-release-plan-dispatch.py")
 PAUSE_DISPATCH = load("vps_pause_dispatch", "scripts/portable-vps-release-pause-dispatch.py")
+BACKUP_DISPATCH = load("vps_backup_dispatch", "scripts/portable-vps-release-backup-dispatch.py")
 
 
 class AccessTests(unittest.TestCase):
@@ -147,6 +148,94 @@ class AccessTests(unittest.TestCase):
             report = Path(directory) / "report.json"
             with redirect_stdout(io.StringIO()):
                 self.assertEqual(PAUSE_DISPATCH.main([
+                    "--manifest-sha256", "bad", "--stage-run-id", "123-1",
+                    "--plan-sha256", "b" * 64, "--report", str(report)]), 1)
+            baseline.assert_not_called()
+            self.assertEqual(json.loads(report.read_text())["status"], "STOP")
+
+    def test_managed_backup_requires_exact_confirmed_command(self):
+        base = "backup-release " + "a" * 64 + " 123-1 " + "b" * 64
+        for command in (base, base + " confirm-backup; id", base + " confirm-backup extra"):
+            with self.subTest(command=command), patch.dict(
+                os.environ, {"SSH_ORIGINAL_COMMAND": command}
+            ), patch.object(REMOTE, "backup_release") as backup:
+                self.assertEqual(REMOTE.main(), 1)
+                backup.assert_not_called()
+
+    def test_managed_backup_rejects_missing_accepted_pause_before_subprocess(self):
+        raw = (json.dumps(self.candidate(), sort_keys=True) + "\n").encode()
+        digest = hashlib.sha256(raw).hexdigest()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            stage = root / "evidence" / "release-stages" / "123-1"
+            stage.mkdir(parents=True)
+            (stage / "candidate.json").write_bytes(raw)
+            (stage / "pause-plan.json").write_text("reviewed plan")
+            (stage / "plan-report.json").write_text('{"phase":"plan","status":"PASS","checks":{"safe":true}}')
+            (stage / "pause-report.json").write_text('{"phase":"pause","status":"STOP","checks":{"safe":false}}')
+            plan_digest = hashlib.sha256((stage / "pause-plan.json").read_bytes()).hexdigest()
+            with patch.object(REMOTE, "EVIDENCE", root / "evidence"), patch.object(
+                REMOTE, "access_check", return_value=True
+            ), patch.object(REMOTE, "private_directory", return_value=True), patch.object(
+                REMOTE, "private_file", return_value=True
+            ), patch.object(REMOTE.os, "geteuid", return_value=0), patch.object(
+                REMOTE.subprocess, "run"
+            ) as runner, redirect_stdout(io.StringIO()):
+                self.assertEqual(REMOTE.backup_release(digest, "123-1", plan_digest), 1)
+                runner.assert_not_called()
+            self.assertFalse((stage / "backup-dispatch-report.json").exists())
+
+    def test_managed_backup_invokes_only_reviewed_backup_phase(self):
+        raw = (json.dumps(self.candidate(), sort_keys=True) + "\n").encode()
+        digest = hashlib.sha256(raw).hexdigest()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            stage = root / "evidence" / "release-stages" / "123-1"
+            stage.mkdir(parents=True)
+            (stage / "candidate.json").write_bytes(raw)
+            (stage / "pause-plan.json").write_text("reviewed plan")
+            (stage / "plan-report.json").write_text('{"phase":"plan","status":"PASS","checks":{"safe":true}}')
+            (stage / "pause-report.json").write_text('{"phase":"pause","status":"PASS","checks":{"safe":true}}')
+            plan_digest = hashlib.sha256((stage / "pause-plan.json").read_bytes()).hexdigest()
+            script = root / "reviewed" / "scripts" / "portable-vps-release-pause-backup.py"
+            script.parent.mkdir(parents=True)
+            script.write_text("# reviewed\n")
+
+            def run(arguments, **kwargs):
+                if arguments[0] == "git" and "rev-parse" in arguments:
+                    return SimpleNamespace(returncode=0, stdout=("1" * 40 + "\n").encode())
+                if arguments[0] == "git":
+                    return SimpleNamespace(returncode=0, stdout=b"")
+                self.assertEqual(arguments[:5], ["/usr/bin/python3", "-I", "-B", str(script), "backup"])
+                self.assertIn("--confirm-backup", arguments)
+                self.assertNotIn("--confirm-pause", arguments)
+                (root / "reports" / "123-1-backup.json").write_text(
+                    '{"phase":"backup","status":"PASS","checks":{"safe":true}}'
+                )
+                return SimpleNamespace(returncode=0, stdout=b"PASS\n")
+
+            with patch.object(REMOTE, "EVIDENCE", root / "evidence"), patch.object(
+                REMOTE, "PLAN_SCRIPT", script
+            ), patch.object(REMOTE, "BACKUP_PROFILE", root / "profile.json"), patch.object(
+                REMOTE, "EXTERNAL_REPORTS", root / "reports"
+            ), patch.object(REMOTE, "access_check", return_value=True), patch.object(
+                REMOTE, "private_directory", side_effect=lambda path: path.is_dir()
+            ), patch.object(REMOTE, "private_file", return_value=True), patch.object(
+                REMOTE, "reviewed_script", return_value=True
+            ), patch.object(REMOTE.os, "geteuid", return_value=0), patch.object(
+                REMOTE.subprocess, "run", side_effect=run
+            ) as runner, redirect_stdout(io.StringIO()):
+                self.assertEqual(REMOTE.backup_release(digest, "123-1", plan_digest), 0)
+                self.assertEqual(runner.call_count, 3)
+            self.assertEqual(json.loads((stage / "backup-dispatch-report.json").read_text())["status"], "PASS")
+
+    def test_managed_backup_client_reports_rejected_input_without_ssh(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+            BACKUP_DISPATCH.ACCESS, "check"
+        ) as baseline:
+            report = Path(directory) / "report.json"
+            with redirect_stdout(io.StringIO()):
+                self.assertEqual(BACKUP_DISPATCH.main([
                     "--manifest-sha256", "bad", "--stage-run-id", "123-1",
                     "--plan-sha256", "b" * 64, "--report", str(report)]), 1)
             baseline.assert_not_called()
