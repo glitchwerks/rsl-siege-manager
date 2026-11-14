@@ -135,7 +135,10 @@ part of implementation or disposable fixture CI.
 The [Portable integration smoke workflow](../../../.github/workflows/portable-integration-smoke.yml)
 runs the same runner from reviewed `main` under the protected
 `integration-smoke` environment. Its repository-wide concurrency group keeps
-read-only and full runs from overlapping. The environment must require an
+read-only and full **workflow dispatches** from overlapping. Local operator
+runs use a different lock and are not serialized with GitHub dispatches; check
+for an active local or GitHub run and do not start the other until it finishes.
+The environment must require an
 operator review and allow only `main` before any dispatch. Store the exact
 reviewed `pilot.json` content as `INTEGRATION_SMOKE_CONFIG_JSON` and its sidecar
 bearer as `INTEGRATION_SIDECAR_BEARER` **environment secrets**; never put the
