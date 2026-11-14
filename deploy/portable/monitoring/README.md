@@ -108,8 +108,9 @@ during the window stops the report; it does not restart anything automatically.
 ## Independent monitoring contract
 
 The off-host [public web/API/TLS signal contract](../../../docs/operations/vps-public-monitoring.md)
-provides a bounded read-only producer for #584. It is not scheduled or connected
-to an alert receiver by this repository change.
+provides a bounded read-only producer and separately confirmed private receiver
+sender for #584/#579. Neither is scheduled or connected to a live receiver by
+this repository change.
 
 The [database signal contract](../../../docs/operations/vps-database-monitoring.md)
 provides a local, read-only PostgreSQL producer for #585. Its receiver and

@@ -1,7 +1,8 @@
 # Independent public web signal contract
 
-This is the read-only signal producer for #584. It is repository code only;
-there is no scheduled job, monitor account, receiver or production activation.
+This is the read-only signal producer for #584. Its optional sender uses the
+private missed-signal receiver contract in #579. There is no scheduled job,
+monitor account, receiver configuration or production activation.
 Run it only from a separately approved machine outside the production VPS.
 Its exit status and one private JSON report can feed the independent receiver
 tracked by #579. That receiver must send down, recovery and missed-signal
@@ -43,6 +44,36 @@ an `INCOMPLETE` marker if interrupted. Final evidence has a UTC timestamp,
 fixed check labels and PASS/STOP; it omits URLs, versions, response bodies,
 certificate details and raw exceptions. Retain STOP/INCOMPLETE reports for
 triage and use a new path for another attempt.
+
+## Optional independent receiver delivery
+
+After the receiver and notification test check are separately approved, place
+its private success URL alone in a mode 0600 file under a mode 0700 directory
+on the independent runner. Keep the public signal configuration in a separate
+private directory and use fresh, distinct observation and delivery reports.
+The URL follows the same [empty POST/`OK` contract](../../deploy/portable/monitoring/signals.md)
+as the runtime sender. No Slack credential is stored on the runner. A successful
+observation sends the receiver's success signal; a completed failed observation
+sends its `/fail` signal. Invalid inputs, overlap or an incomplete observation
+send nothing, so the independent receiver can detect a missed signal.
+
+With separate approval of the target and receiver notification, run one bounded
+invocation from outside the VPS:
+
+```sh
+python3 scripts/portable-vps-public-monitor.py \
+  --config /protected/public/public-signal.json \
+  --endpoint-file /protected/receiver/public-url \
+  --observation-report /protected/evidence/public-observation-001.json \
+  --report /protected/evidence/public-delivery-001.json \
+  --confirm-external-readonly --confirm-notification
+```
+
+The delivery report contains only a UTC timestamp, status and booleans for
+observation and receiver acknowledgement. It never records the URL, versions,
+response bodies or raw errors. An acknowledged signal proves receiver receipt,
+not Slack/email delivery. Preserve failed or incomplete reports. A receiver
+failure does not turn a successful public observation into a monitoring PASS.
 
 ## Receiver policy and activation boundary
 
