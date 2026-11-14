@@ -108,6 +108,11 @@ public key and a new report path; it restores only the preserved script. The
 stage command is a state-changing validation and needs its own approval after
 the host update.
 
+`restore-script` deliberately retains its backup. A later `update-script`
+stops while that backup path is occupied. To retry an upgrade after a restore,
+review a new installer revision with a distinct root-private backup path; keep
+the earlier recovery copy rather than deleting or renaming it in place.
+
 ## Read-only candidate configuration preflight
 
 `scripts/portable-vps-release-preflight.py` accepts an existing staged run ID
