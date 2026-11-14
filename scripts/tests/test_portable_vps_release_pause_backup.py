@@ -74,6 +74,9 @@ class ReleasePauseBackupTests(unittest.TestCase):
             PHASE, "unchanged_running", return_value=True
         ), patch.object(PHASE, "command", side_effect=["", ""]) as run, patch.object(
             PHASE, "paused", return_value=True
+        ), patch.object(PHASE, "service_baseline", return_value={"services": {
+            "backend": {"finished_at": "2026-11-14T10:00:00Z"},
+            "mom": {"finished_at": "2026-11-14T10:00:01Z"}}}
         ), patch.object(PHASE, "bound_preflight", return_value=(True, {})), patch.object(
             PHASE.GATE, "read_private", return_value=b"plan"):
             checks = PHASE.pause({}, value, Path(temporary))
@@ -83,6 +86,8 @@ class ReleasePauseBackupTests(unittest.TestCase):
                 ["docker", "stop", "--time", "30", value["ids"]["backend"]],
             ])
             self.assertEqual(json.loads((Path(temporary) / "pause-start.json").read_text())["phase"], "pause-start")
+            self.assertEqual(json.loads((Path(temporary) / "pause-writer-stops.json").read_text())["finished_at"]["mom"],
+                             "2026-11-14T10:00:01Z")
 
     def test_drift_and_failed_first_stop_do_not_start_backend(self):
         value = plan_fixture()
