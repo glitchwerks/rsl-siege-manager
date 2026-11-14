@@ -1,0 +1,10 @@
+{
+  "origin": "https://REPLACE-approved-apex.example.invalid",
+  "versions": {
+    "backend_version": "REPLACE",
+    "frontend_version": "REPLACE",
+    "bot_version": "REPLACE",
+    "git_sha": "REPLACE"
+  },
+  "minimum_tls_days": 14
+}

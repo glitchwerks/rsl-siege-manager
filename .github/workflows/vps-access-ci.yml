@@ -21,8 +21,12 @@ on:
       - "scripts/tests/test_portable_vps_release_promote_docker.py"
       - "scripts/tests/test_portable_vps_release_accept.py"
       - "scripts/tests/test_portable_vps_release_recover.py"
+      - "scripts/tests/test_portable_vps_public_signal.py"
       - "docs/operations/vps-github-access.md"
       - "docs/operations/vps-release-workflow.md"
+      - "docs/operations/vps-public-monitoring.md"
+      - "deploy/portable/monitoring/public-signal.json.example"
+      - "deploy/portable/monitoring/README.md"
   push:
     branches: [main]
     paths:
@@ -45,8 +49,12 @@ on:
       - "scripts/tests/test_portable_vps_release_promote_docker.py"
       - "scripts/tests/test_portable_vps_release_accept.py"
       - "scripts/tests/test_portable_vps_release_recover.py"
+      - "scripts/tests/test_portable_vps_public_signal.py"
       - "docs/operations/vps-github-access.md"
       - "docs/operations/vps-release-workflow.md"
+      - "docs/operations/vps-public-monitoring.md"
+      - "deploy/portable/monitoring/public-signal.json.example"
+      - "deploy/portable/monitoring/README.md"
 permissions:
   contents: read
 jobs:
@@ -82,6 +90,8 @@ jobs:
         run: python3 -m unittest discover -s scripts/tests -p test_portable_vps_release_accept.py -v
       - name: Test pre-activation recovery boundary and protected file restore
         run: python3 -m unittest discover -s scripts/tests -p test_portable_vps_release_recover.py -v
+      - name: Test external public web, API and TLS signal contract
+        run: python3 -m unittest discover -s scripts/tests -p test_portable_vps_public_signal.py -v
   docker-rehearsal:
     runs-on: ubuntu-latest
     timeout-minutes: 10

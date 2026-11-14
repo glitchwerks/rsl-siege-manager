@@ -107,6 +107,10 @@ during the window stops the report; it does not restart anything automatically.
 
 ## Independent monitoring contract
 
+The off-host [public web/API/TLS signal contract](../../../docs/operations/vps-public-monitoring.md)
+provides a bounded read-only producer for #584. It is not scheduled or connected
+to an alert receiver by this repository change.
+
 `monitor-policy.json.example` is an inert, provider-neutral requirements template,
 not an executable monitor configuration. The chosen external monitoring service
 must implement HTTPS health/identity checks, certificate-expiry alerts, failure
