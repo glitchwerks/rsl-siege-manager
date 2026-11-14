@@ -41,6 +41,23 @@ def proof_baseline():
 
 
 class MigrationReadyTests(unittest.TestCase):
+    def test_stage_report_path_rejected_before_creating_any_file(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            project = root / "project"
+            stage = project / "evidence" / "release-stages" / "123-1"
+            stage.mkdir(parents=True)
+            report = stage / "migration-ready-report.json"
+            with patch.object(READY.os, "geteuid", return_value=0), patch.object(
+                READY.PAUSE, "profile", return_value=({"project_directory": project}, "b" * 64)
+            ), patch.object(READY.PAUSE, "stage") as lookup:
+                code = READY.main(["--profile", str(root / "profile"),
+                    "--stage-run-id", "123-1", "--manifest-sha256", "a" * 64,
+                    "--plan-sha256", "b" * 64, "--report", str(report)])
+            self.assertEqual(code, 2)
+            self.assertFalse(report.exists())
+            lookup.assert_not_called()
+
     def test_postgres_query_uses_mounted_secret_and_exact_read_only_sql(self):
         identifier = "f" * 64
         with patch.object(READY.subprocess, "run", return_value=SimpleNamespace(
@@ -91,14 +108,22 @@ class MigrationReadyTests(unittest.TestCase):
             def read(path, owner, limit=65536):
                 self.assertEqual(path, directory / "candidate.json")
                 return raw
+            sequence = []
+            def proof(*args):
+                sequence.append("proof")
+                return {"valid": True}, baseline
+            def revision(identifier, database):
+                sequence.append(database)
+                return {"siege": "0012", "mom_bot": "b6_member"}[database]
             with patch.object(READY.os, "geteuid", return_value=0), patch.object(
                 READY, "accepted_proof", return_value=(baseline, "e" * 64)
-            ), patch.object(READY.PROOF, "inspect", return_value=({"valid": True}, baseline)), patch.object(
+            ), patch.object(READY.PROOF, "inspect", side_effect=proof), patch.object(
                 READY.GATE, "read_private", side_effect=read
-            ), patch.object(READY, "current_revision", side_effect=["0012", "b6_member", "0012", "b6_member"]):
+            ), patch.object(READY, "current_revision", side_effect=revision):
                 checks, result = READY.inspect({}, directory, value, "b" * 64, manifest_digest)
                 self.assertTrue(all(checks.values()), checks)
                 self.assertEqual(result["migration_order"], ["siege"])
+                self.assertEqual(sequence, ["proof", "siege", "mom_bot", "siege", "mom_bot", "proof"])
             with patch.object(READY.os, "geteuid", return_value=0), patch.object(
                 READY, "accepted_proof", return_value=(baseline, "e" * 64)
             ), patch.object(READY.PROOF, "inspect", return_value=({"valid": True}, baseline)), patch.object(

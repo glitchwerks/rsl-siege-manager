@@ -97,11 +97,13 @@ def inspect(data, directory, value, plan_digest, manifest_digest):
             and revisions[name] == candidate["migrations"][name]["from_revision"])
     if not all(checks.values()):
         return checks, None
-    checks["selected_backup_proof_still_current"] = proof_current(
-        data, directory, value, plan_digest, manifest_digest, baseline)
     checks["revisions_still_exact"] = all(current_revision(postgres_id, database) == revisions[name]
         for name, database in (("siege", "siege"), ("mom", "mom_bot")))
     if not all(checks.values()):
+        return checks, None
+    checks["selected_backup_proof_still_current"] = proof_current(
+        data, directory, value, plan_digest, manifest_digest, baseline)
+    if not checks["selected_backup_proof_still_current"]:
         return checks, None
     ready = {"schema": 1, "phase": "release-migration-readiness-baseline",
              "manifest_sha256": manifest_digest, "plan_sha256": plan_digest,
@@ -123,6 +125,16 @@ def main(argv=None):
         print("STOP invalid_report_path")
         return 2
     try:
+        if os.geteuid() != 0:
+            raise ValueError("root required")
+        data, profile_digest = PAUSE.profile(args.profile)
+        if args.report.is_relative_to(data["project_directory"]):
+            raise ValueError("report outside project required")
+    except (OSError, ValueError, TypeError, KeyError, UnicodeError, RuntimeError,
+            subprocess.TimeoutExpired):
+        print("STOP profile_preflight_failed")
+        return 2
+    try:
         if not GATE.protected(args.report.parent, 0, directory=True):
             raise OSError("unsafe report directory")
         PAUSE.write_private(args.report, {"phase": "release-migration-ready", "status": "INCOMPLETE"})
@@ -134,10 +146,7 @@ def main(argv=None):
     try:
         if not checks["root_execution"]:
             raise ValueError("root required")
-        data, profile_digest = PAUSE.profile(args.profile)
         directory = PAUSE.stage(data["project_directory"], args.stage_run_id, args.manifest_sha256)
-        if args.report.is_relative_to(data["project_directory"]):
-            raise ValueError("report outside project required")
         if any((directory / name).exists() for name in
                ("migration-ready-report.json", "migration-ready-baseline.json")):
             raise ValueError("readiness already attempted")
