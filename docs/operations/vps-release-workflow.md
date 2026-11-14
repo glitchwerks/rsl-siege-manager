@@ -170,6 +170,32 @@ exposed by the forced SSH command. It has not switched production images. Its
 operator invocation and rollback rehearsal must be reviewed alongside the
 production acceptance and recovery phases before any live deployment.
 
+The read-only `scripts/portable-vps-release-accept.py` phase requires an accepted
+promotion report and the exact preserved old configuration. An operator-owned
+private pilot configuration must name the staged candidate's API, frontend, and
+Mom image digests, the original PostgreSQL/proxy digests, the exact source SHAs
+in version metadata, and the approved public HTTPS origin. The script holds the
+project promotion lock, checks the current container identities/configuration
+and both database revisions, runs the bounded portable observer, verifies the
+frontend marker, tests anonymous rejection and a fresh authenticated session at
+`/api/auth/me`, and probes Mom's private sidecar authentication from the backend
+container. The sidecar probe uses the backend container's existing key in memory
+and returns only booleans and a version; it never emits the member roster. The
+operator provides the **session cookie value only** in a separate root-owned
+0600 file outside Git and evidence. Do not place it on a command line or in a
+report. Use a short-lived test account session and delete that file after
+acceptance. The command requires `--confirm-readonly-acceptance` for the
+reviewed target. An unsuccessful acceptance is STOP; it never restarts services,
+changes images, sends a Discord message, or attempts recovery.
+
+The private acceptance baseline records the exact installed images, source
+SHAs, versions, container IDs, and configuration hashes. The separate report
+contains fixed pass/fail checks only. This phase is reviewed repository code,
+not installed on the VPS or exposed to the GitHub deploy key. It has not run
+against production. It does not establish independent monitor notification
+delivery or a full Discord write acceptance. Those remain separate release
+gates, with production Discord writes requiring their own authorization.
+
 1. **Preflight integration:** expose the reviewed read-only candidate gate
    through a phase-scoped host command, bind later phases to its baseline, and
    rehearse the complete configuration path without activating services.
