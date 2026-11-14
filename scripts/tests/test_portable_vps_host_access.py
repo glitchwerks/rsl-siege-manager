@@ -14,6 +14,7 @@ spec.loader.exec_module(host_access)
 
 def test_host_update_pin_matches_reviewed_remote_script():
     assert hashlib.sha256(host_access.SOURCE_SCRIPT.read_bytes()).hexdigest() == host_access.NEW_REMOTE_SHA256
+    assert not host_access.script_backup_path().is_relative_to(host_access.REMOTE_SCRIPT.parents[1])
 
 
 def test_install_then_rollback_preserves_existing_key(tmp_path):
@@ -40,6 +41,7 @@ def test_install_then_rollback_preserves_existing_key(tmp_path):
             assert authorized.read_bytes().startswith(original)
             assert authorized.read_bytes().splitlines()[-1] == host_access.key_entry(key).encode()
             assert destination.read_bytes() == source.read_bytes()
+            assert destination.stat().st_mode & 0o777 == 0o644
             assert list(ssh.glob("authorized_keys.before-github-deploy.*"))[0].read_bytes() == original
             assert not all(host_access.install(key).values())
             removed = host_access.rollback(key)
@@ -100,9 +102,11 @@ def test_reviewed_remote_script_update_and_restore(tmp_path):
     with mock.patch.object(host_access, "AUTHORIZED_KEYS", authorized), mock.patch.object(
         host_access, "REMOTE_SCRIPT", remote
     ), mock.patch.object(host_access, "SOURCE_SCRIPT", source), mock.patch.object(
-        host_access, "OLD_REMOTE_SHA256", hashlib.sha256(old_data).hexdigest()
+        host_access, "OLD_REMOTE_SHA256S", (hashlib.sha256(old_data).hexdigest(),)
     ), mock.patch.object(
         host_access, "NEW_REMOTE_SHA256", hashlib.sha256(new_data).hexdigest()
+    ), mock.patch.object(
+        host_access, "script_backup_path", return_value=tmp_path / "portable-vps-remote.py.before-release-preflight"
     ), mock.patch.object(host_access, "preflight", side_effect=lambda: {"baseline": True}
     ), mock.patch.object(host_access, "checked_file", side_effect=lambda path: path.is_file()
     ), mock.patch.object(host_access, "private_file", side_effect=lambda path: path.is_file()
@@ -111,11 +115,13 @@ def test_reviewed_remote_script_update_and_restore(tmp_path):
         result = host_access.update_script(key)
         assert all(result.values())
         assert remote.read_bytes() == new_data
+        assert remote.stat().st_mode & 0o777 == 0o644
         assert host_access.script_backup_path().read_bytes() == old_data
         assert not all(host_access.update_script(key).values())
         restored = host_access.restore_script(key)
         assert all(restored.values())
         assert remote.read_bytes() == old_data
+        assert remote.stat().st_mode & 0o777 == 0o644
 
 
 def test_rotate_and_restore_only_the_restricted_key(tmp_path):

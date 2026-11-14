@@ -17,12 +17,15 @@ REMOTE_SCRIPT = Path("/opt/rsl-siege-manager/scripts/portable-vps-remote.py")
 SOURCE_SCRIPT = Path(__file__).with_name("portable-vps-remote.py")
 KEY_COMMENT = "github-vps-deploy"
 FORCED_COMMAND = f'restrict,command="/usr/bin/python3 {REMOTE_SCRIPT}"'
-OLD_REMOTE_SHA256 = "f965a4edc244c7ece696bbeb30b650f67c3c21e82584c44185ca57a94db31da7"
-NEW_REMOTE_SHA256 = "70030e03fa566033397d876bf408883b86e0de8d626edb177feac839907b28b4"
+OLD_REMOTE_SHA256S = (
+    "f965a4edc244c7ece696bbeb30b650f67c3c21e82584c44185ca57a94db31da7",
+    "70030e03fa566033397d876bf408883b86e0de8d626edb177feac839907b28b4",
+)
+NEW_REMOTE_SHA256 = "379f6fa1709fd0490abc4820fddf1826492426349d239148a30d5dafa92dbf30"
 
 
 def script_backup_path():
-    return REMOTE_SCRIPT.with_name("portable-vps-remote.py.before-release-stage")
+    return Path("/root/portable-vps-remote.py.before-release-preflight")
 
 
 def digest(data):
@@ -156,7 +159,7 @@ def install(key):
         if not checks["script_destination_directory_ready"]:
             return checks
         if not REMOTE_SCRIPT.exists():
-            atomic_write(REMOTE_SCRIPT, script_data, 0o700)
+            atomic_write(REMOTE_SCRIPT, script_data, 0o644)
         checks["script_installed"] = checked_file(REMOTE_SCRIPT) and REMOTE_SCRIPT.read_bytes() == script_data
         if not checks["script_installed"]:
             return checks
@@ -208,7 +211,7 @@ def update_script(key):
         return checks
     entry = key_entry(key).encode()
     checks["restricted_key_exactly_once"] = AUTHORIZED_KEYS.read_bytes().splitlines().count(entry) == 1
-    checks["old_script_reviewed"] = checked_file(REMOTE_SCRIPT) and digest(REMOTE_SCRIPT.read_bytes()) == OLD_REMOTE_SHA256
+    checks["old_script_reviewed"] = checked_file(REMOTE_SCRIPT) and digest(REMOTE_SCRIPT.read_bytes()) in OLD_REMOTE_SHA256S
     checks["new_script_reviewed"] = digest(SOURCE_SCRIPT.read_bytes()) == NEW_REMOTE_SHA256
     backup = script_backup_path()
     checks["backup_path_unused"] = not backup.exists() and not backup.is_symlink()
@@ -225,12 +228,12 @@ def update_script(key):
     if not checks["old_script_backup"]:
         return checks
     try:
-        atomic_write(REMOTE_SCRIPT, new_data, 0o700)
+        atomic_write(REMOTE_SCRIPT, new_data, 0o644)
         checks["updated_script_installed"] = checked_file(REMOTE_SCRIPT) and REMOTE_SCRIPT.read_bytes() == new_data
     except OSError:
         checks["script_update"] = False
     if not checks.get("updated_script_installed"):
-        atomic_write(REMOTE_SCRIPT, old_data, 0o700)
+        atomic_write(REMOTE_SCRIPT, old_data, 0o644)
         checks["old_script_restored"] = REMOTE_SCRIPT.read_bytes() == old_data
     return checks
 
@@ -245,11 +248,11 @@ def restore_script(key):
     checks["updated_script_present"] = checked_file(REMOTE_SCRIPT) and digest(REMOTE_SCRIPT.read_bytes()) == NEW_REMOTE_SHA256
     checks["new_script_reviewed"] = digest(SOURCE_SCRIPT.read_bytes()) == NEW_REMOTE_SHA256
     backup = script_backup_path()
-    checks["reviewed_old_script_backup"] = private_file(backup) and digest(backup.read_bytes()) == OLD_REMOTE_SHA256
+    checks["reviewed_old_script_backup"] = private_file(backup) and digest(backup.read_bytes()) in OLD_REMOTE_SHA256S
     if not all(checks.values()):
         return checks
     old_data = backup.read_bytes()
-    atomic_write(REMOTE_SCRIPT, old_data, 0o700)
+    atomic_write(REMOTE_SCRIPT, old_data, 0o644)
     checks["old_script_restored"] = REMOTE_SCRIPT.read_bytes() == old_data
     return checks
 

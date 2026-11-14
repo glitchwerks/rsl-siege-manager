@@ -82,10 +82,13 @@ configuration, execute backup/migration, or touch Compose services. Keep the
 candidate and reports for the later preflight/promotion phases.
 
 The host-side forced-command script must be installed separately from a reviewed
-commit. Its `update-script` phase requires the exact currently installed
-read-only script hash, preserves a root-private copy at
-`/opt/rsl-siege-manager/scripts/portable-vps-remote.py.before-release-stage`,
-and atomically changes only that script. Keep an admin SSH session and provider
+commit. Its current `update-script` phase accepts only the two reviewed prior
+script hashes, preserves a root-private copy at
+`/root/portable-vps-remote.py.before-release-preflight`,
+and atomically changes only that script with its committed `0644` mode. An
+earlier stage-only installation may also have left the separate reviewed
+`scripts/portable-vps-remote.py.before-release-stage` backup in the checkout.
+Keep an admin SSH session and provider
 console recovery available. From the reviewed checkout on the VPS, run the
 phase-scoped installer and verification with fresh report paths:
 
@@ -104,6 +107,11 @@ must be removed, use `restore-script --confirm restore-script` with the same
 public key and a new report path; it restores only the preserved script. The
 stage command is a state-changing validation and needs its own approval after
 the host update.
+
+`restore-script` deliberately retains its backup. A later `update-script`
+stops while that backup path is occupied. To retry an upgrade after a restore,
+review a new installer revision with a distinct root-private backup path; keep
+the earlier recovery copy rather than deleting or renaming it in place.
 
 ## Read-only candidate configuration preflight
 
@@ -131,11 +139,39 @@ STOP. The writer pause plan binds the exact accepted baseline digest and
 rechecks it before each state-changing boundary; this command alone does not
 authorize a pause or deployment.
 
-This command is reviewed code only. It is not installed in the forced SSH
-command or called by GitHub Actions, and no live VPS preflight was run. Candidate
+No live VPS preflight has run. Candidate
 source changes to the Compose or bind files require a separately reviewed
 configuration staging step before this gate can pass; the current installed
 files are never silently replaced.
+
+The manual **VPS release preflight** workflow now provides the read-only
+dispatch path. It accepts the exact manifest SHA-256 and the successful stage
+run ID, uses the protected `vps-prod` environment and the same production
+promotion concurrency group, and sends only
+`preflight-release <digest> <run-id> confirm-readonly-preflight` through the
+restricted SSH key. The host rechecks the private stage candidate and its
+successful report, then requires a clean root-owned checkout at the candidate's
+configuration source SHA before executing the fixed preflight script. The one
+previous installer backup is permitted in that checkout only if root-private
+and equal to its reviewed hash; any other untracked file is a STOP. It keeps
+the preflight baseline under the private stage, puts the script's separate
+report under `/root/vps-release-reports/`, and returns only boolean checks to
+GitHub. It does not change images or services.
+
+Before dispatch, separately review and install the new forced-command script
+from the exact reviewed checkout with `portable-vps-host-access.py
+update-script --confirm update-script`, a fresh root-private report, and the
+dedicated public key. The updater accepts only either of the two reviewed
+earlier script hashes, backs up the current script to
+`/root/portable-vps-remote.py.before-release-preflight`,
+and requires the new reviewed hash. Verify the installation with a second
+fresh report, a new admin login, and the existing read-only GitHub access
+check. `restore-script --confirm restore-script` restores only that exact
+preserved script if the update must be reversed. Keep provider-console access
+available through this host update. A clean candidate checkout and protected
+Compose/bind files are separate preflight prerequisites; the workflow does not
+check out source or copy configuration onto the VPS. No host update or workflow
+dispatch has been performed for this preflight bridge.
 
 ## Promotion phases to implement and rehearse
 
