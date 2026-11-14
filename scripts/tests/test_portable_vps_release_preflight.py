@@ -136,9 +136,16 @@ class ReleasePreflightTests(unittest.TestCase):
                     {"backend.env": "a" * 64}, {"backend.env": "b" * 64}
                 ]):
                     drift_checks, drift_baseline = PHASE.inspect(project, stage, expected)
+                render.side_effect = [current, proposed]
+                with patch.object(PHASE, "config_hashes", side_effect=[
+                    {"Caddyfile": "a" * 64}, {"Caddyfile": "b" * 64}
+                ]):
+                    bind_checks, bind_baseline = PHASE.inspect(project, stage, expected)
             self.assertTrue(all(checks.values()), checks)
             self.assertFalse(drift_checks["baseline_unchanged"])
             self.assertIsNone(drift_baseline)
+            self.assertFalse(bind_checks["baseline_unchanged"])
+            self.assertIsNone(bind_baseline)
             self.assertEqual(baseline["manifest_sha256"], expected)
             self.assertEqual(baseline["installed"], installed)
             self.assertNotIn("credential", json.dumps(baseline).lower())

@@ -27,6 +27,7 @@ REMOTE = PAUSE.REMOTE
 PREFLIGHT = module("portable_preflight", "portable-preflight.py")
 SERVICES = ("backend", "frontend", "mom", "postgres", "proxy")
 RUNTIME_FILES = ("backend.env", "database.env", "mom.env", "postgres-admin", "mom-image.json")
+CONFIG_FILES = ("compose.yml", "compose.mom.yml", "Caddyfile", "init-databases.sql")
 
 
 def digest(raw):
@@ -36,6 +37,10 @@ def digest(raw):
 def runtime_hashes(project):
     return {name: digest(GATE.read_private(project / "runtime" / name, 0))
             for name in RUNTIME_FILES}
+
+
+def config_hashes(project):
+    return {name: digest((project / name).read_bytes()) for name in CONFIG_FILES}
 
 
 def reviewed_config(path, expected):
@@ -113,6 +118,7 @@ def inspect(project, stage_directory, manifest_digest):
         return checks, None
     stack_raw = GATE.read_private(stack, 0)
     runtime_before = runtime_hashes(project)
+    config_before = config_hashes(project)
     current = PREFLIGHT.render("mom", stack, project, {})
     approval = PREFLIGHT.read_mom_approval(project / "runtime" / "mom-image.json")
     checks["current_mom_approval"] = (approval is not None and
@@ -140,6 +146,8 @@ def inspect(project, stage_directory, manifest_digest):
     checks["candidate_configuration_valid"] = bool(validation) and all(validation.values())
     checks["baseline_unchanged"] = (digest(GATE.read_private(stack, 0)) == digest(stack_raw)
         and runtime_hashes(project) == runtime_before
+        and config_hashes(project) == config_before
+        and checkout_at(candidate["configuration"]["source_sha"])
         and all(reviewed_config(project / file, (PREFLIGHT.PORTABLE / file).read_bytes())
                 for file in ("compose.yml", "compose.mom.yml"))
         and PREFLIGHT.deployment_bind_sources_current(project)
@@ -153,8 +161,7 @@ def inspect(project, stage_directory, manifest_digest):
                 "installed_mom_source_sha": approval["source_commit"],
                 "project": name, "stack_env_sha256": digest(stack_raw),
                 "runtime_sha256": runtime_before,
-                "config_sha256": {file: digest((project / file).read_bytes()) for file in
-                    ("compose.yml", "compose.mom.yml", "Caddyfile", "init-databases.sql")},
+                "config_sha256": config_before,
                 "installed": installed}
     return checks, baseline
 
