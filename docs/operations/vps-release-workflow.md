@@ -82,9 +82,9 @@ configuration, execute backup/migration, or touch Compose services. Keep the
 candidate and reports for the later preflight/promotion phases.
 
 The host-side forced-command script must be installed separately from a reviewed
-commit. Its current `update-script` phase accepts only the eight reviewed prior
+commit. Its current `update-script` phase accepts only the nine reviewed prior
 script hashes, preserves a root-private copy at
-`/root/portable-vps-remote.py.before-release-migrate`,
+`/root/portable-vps-remote.py.before-promotion-ready`,
 and atomically changes only that script with its committed `0644` mode. An
 earlier stage-only installation may also have left the separate reviewed
 `scripts/portable-vps-remote.py.before-release-stage` backup in the checkout;
@@ -163,9 +163,9 @@ GitHub. It does not change images or services.
 Before dispatch, separately review and install the new forced-command script
 from the exact reviewed checkout with `portable-vps-host-access.py
 update-script --confirm update-script`, a fresh root-private report, and the
-dedicated public key. The current updater accepts only the eight reviewed
+dedicated public key. The current updater accepts only the nine reviewed
 earlier script hashes, backs up the current script to
-`/root/portable-vps-remote.py.before-release-migrate`,
+`/root/portable-vps-remote.py.before-promotion-ready`,
 and requires the new reviewed hash. Verify the installation with a second
 fresh report, a new admin login, and the existing read-only GitHub access
 check. `restore-script --confirm restore-script` restores only that exact
@@ -320,6 +320,27 @@ checks; private evidence stays on the host. STOP leaves writers paused for
 manual diagnosis and recovery. Never blindly retry a timed-out or failed
 migration; database writes may already have occurred. No migration workflow
 has been dispatched and no VPS host script has been updated for this bridge.
+
+## Read-only final promotion readiness workflow
+
+The manual **VPS release promotion readiness** workflow runs after every
+required database migration has passed. It accepts the staged candidate,
+pause-plan, and migration-readiness SHA-256 values; runs only from `main` under
+the protected `vps-prod` environment and production-promotion concurrency
+group; and sends
+`promotion-ready-release <digest> <run-id> <plan-sha256> <readiness-sha256> confirm-readonly-promotion-ready`
+through the restricted SSH key.
+
+The host binds the accepted readiness baseline and candidate before invoking
+the reviewed `portable-vps-release-promotion-ready.py` script. That script
+requires the exact migration chain, final revisions in both databases,
+current same-copy restore proof, stopped original writers, cached candidate
+images, valid candidate Compose configuration, and idle maintenance services.
+It records a private promotion-readiness baseline and returns only boolean
+checks plus that baseline's SHA-256 to GitHub for the later separately
+confirmed promotion. STOP requires operator review; no image switch or writer
+restart occurs. No VPS host update or readiness dispatch has been performed
+for this bridge.
 
 ## Promotion phases to implement and rehearse
 
