@@ -123,6 +123,32 @@ class PromotionReadyTests(unittest.TestCase):
             self.assertEqual(baseline["revisions"], {"siege": "s2", "mom": "m1"})
             self.assertEqual(baseline["migration_order"], ["siege"])
 
+    def test_writer_restart_during_late_probes_stops_baseline(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            plan = {"ids": {"postgres": "f" * 64}, "project": "example",
+                    "preflight_baseline_sha256": "c" * 64}
+            ready = {"migration_order": ["siege"], "postgres_id": "f" * 64,
+                     "revisions": {"siege": "s1", "mom": "m1"},
+                     "recovery_proof_sha256": "d" * 64}
+            with patch.object(PROMOTE.os, "geteuid", return_value=0), patch.object(
+                PROMOTE.MIGRATE, "accepted_readiness", return_value=ready
+            ), patch.object(PROMOTE.MIGRATE, "candidate", return_value=manifest(["siege"])), patch.object(
+                PROMOTE.READY, "accepted_proof", return_value=({}, "d" * 64)
+            ), patch.object(PROMOTE.READY, "proof_current", side_effect=[True, False]), patch.object(
+                PROMOTE.PAUSE, "paused", side_effect=[True, False]
+            ), patch.object(PROMOTE.PAUSE, "bound_preflight", return_value=(True, {})), patch.object(
+                PROMOTE, "completed_step", return_value=True
+            ), patch.object(PROMOTE.MIGRATE, "revisions_match", return_value=True), patch.object(
+                PROMOTE.MIGRATE, "candidate_config", return_value=(True, {})
+            ), patch.object(PROMOTE.MIGRATE, "image_cached", return_value=True), patch.object(
+                PROMOTE.PAUSE, "no_extra_writers", return_value=True):
+                checks, baseline = PROMOTE.inspect({"project_directory": directory}, directory,
+                    plan, "a" * 64, "b" * 64, "e" * 64)
+            self.assertFalse(checks["selected_recovery_proof_still_current"])
+            self.assertFalse(checks["writers_still_paused"])
+            self.assertIsNone(baseline)
+
 
 if __name__ == "__main__":
     unittest.main()

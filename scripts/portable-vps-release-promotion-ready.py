@@ -76,6 +76,11 @@ def inspect(data, directory, plan, manifest_digest, plan_digest, readiness_diges
         manifest["siege"]["api_image"], manifest["siege"]["frontend_image"],
         manifest["mom"]["image"]))
     checks["maintenance_idle"] = PAUSE.no_extra_writers(plan["project"])
+    checks["selected_recovery_proof_still_current"] = READY.proof_current(
+        data, directory, plan, plan_digest, manifest_digest, proof)
+    checks["writers_still_paused"] = PAUSE.paused(data, plan)
+    checks["database_revisions_still_exact"] = MIGRATE.revisions_match(
+        readiness["postgres_id"], expected)
     if not all(checks.values()):
         return checks, None
     baseline = {"schema": 1, "phase": "release-promotion-readiness-baseline",
