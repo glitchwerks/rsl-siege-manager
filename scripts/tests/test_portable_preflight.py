@@ -26,6 +26,7 @@ def fixture(directory):
     directory = Path(directory)
     for name in ("Caddyfile", "init-databases.sql"):
         (directory / name).write_bytes((preflight.PORTABLE / name).read_bytes())
+        (directory / name).chmod(0o644)
     runtime = directory / "runtime"
     runtime.mkdir(mode=0o700)
     replacements = {
@@ -635,7 +636,36 @@ class RuntimePermissionTests(unittest.TestCase):
                         elif path.is_symlink() or path.exists():
                             path.unlink()
                         path.write_bytes(content)
+                        path.chmod(0o644)
                 self.assertTrue(preflight.deployment_bind_sources_current(root))
+
+    def test_reviewed_www_redirect_is_accepted_without_accepting_other_edits(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            fixture(root)
+            caddy = root / "Caddyfile"
+            approved = (preflight.PORTABLE / "Caddyfile.www-redirect").read_bytes()
+            caddy.write_bytes(approved)
+            self.assertTrue(preflight.deployment_bind_sources_current(root))
+            caddy.write_bytes(approved.replace(b"permanent", b"temporary"))
+            self.assertFalse(preflight.deployment_bind_sources_current(root))
+
+    def test_unreadable_or_writable_bootstrap_sql_stops_before_render(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            stack = fixture(root)
+            sql = root / "init-databases.sql"
+            for mode in (0o600, 0o640, 0o666):
+                with self.subTest(mode=oct(mode)):
+                    sql.chmod(mode)
+                    self.assertFalse(preflight.deployment_bind_sources_current(root))
+                    with patch("sys.argv", ["preflight", "--topology", "mom", "--stack-env", str(stack),
+                            "--project-directory", str(root), "--report", str(root / f"mode-{mode}.json")]), \
+                            patch.object(preflight, "render") as render, redirect_stdout(io.StringIO()):
+                        self.assertEqual(preflight.main(), 1)
+                        render.assert_not_called()
+            sql.chmod(0o644)
+            self.assertTrue(preflight.deployment_bind_sources_current(root))
 
     def test_exposed_credentials_stop_before_render(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -684,6 +714,21 @@ class AdministratorSecretTests(unittest.TestCase):
 
 @unittest.skipUnless(os.environ.get("PORTABLE_COMPOSE_TEST") == "1", "Compose rendering runs in CI")
 class ComposeTests(unittest.TestCase):
+    def test_reviewed_www_redirect_adapts_to_canonical_host(self):
+        result = subprocess.run([
+            "docker", "run", "--rm", "--network", "none",
+            "-e", "PUBLIC_HOST=pilot.fixture-domain.net",
+            "-e", "ACME_EMAIL=ci@fixture-domain.net",
+            "-e", "ROLE_SYNC_UPSTREAM=mom:8001",
+            "-e", "ROLE_SYNC_PATH=/api/internal/role-sync",
+            "-v", f"{preflight.PORTABLE / 'Caddyfile.www-redirect'}:/etc/caddy/Caddyfile:ro",
+            "caddy:2", "caddy", "adapt", "--config", "/etc/caddy/Caddyfile"],
+            capture_output=True, text=True, check=True, timeout=120)
+        config = json.dumps(json.loads(result.stdout), sort_keys=True)
+        self.assertIn("www.pilot.fixture-domain.net", config)
+        self.assertIn("https://pilot.fixture-domain.net", config)
+        self.assertIn("permanent", (preflight.PORTABLE / "Caddyfile.www-redirect").read_text())
+
     def test_caddy_routes_only_role_sync_post_before_backend(self):
         for bot, path in (("mom", "/api/internal/role-sync"), ("api-proxy", "/api/internal/role-sync")):
             with self.subTest(bot=bot):

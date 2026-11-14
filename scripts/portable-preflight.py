@@ -292,9 +292,15 @@ def deployment_bind_sources_current(project_directory):
             fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
             with os.fdopen(fd, "rb") as source:
                 metadata = os.fstat(source.fileno())
-                if not stat.S_ISREG(metadata.st_mode) or metadata.st_size > 65536:
+                if (not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.geteuid()
+                        or metadata.st_mode & 0o022 or metadata.st_size > 65536
+                        or (name == "init-databases.sql" and not metadata.st_mode & 0o004)):
                     return False
-                if source.read(65537) != (PORTABLE / name).read_bytes():
+                content = source.read(65537)
+                reviewed = ((PORTABLE / "Caddyfile").read_bytes(),
+                            (PORTABLE / "Caddyfile.www-redirect").read_bytes()) if name == "Caddyfile" else (
+                                (PORTABLE / name).read_bytes(),)
+                if content not in reviewed:
                     return False
         return True
     except OSError:

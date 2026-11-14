@@ -1,10 +1,10 @@
 name: Portable configuration
 on:
   pull_request:
-    paths: ["deploy/portable/**", "scripts/portable-preflight.py", "scripts/tests/test_portable_preflight.py", "scripts/portable-pilot.py", "scripts/tests/test_portable_pilot.py", "scripts/portable-monitor.py", "scripts/tests/test_portable_monitor.py", "scripts/portable-integration.py", "scripts/tests/test_portable_integration.py", ".github/workflows/portable-config.yml"]
+    paths: ["deploy/portable/**", "scripts/portable-preflight.py", "scripts/tests/test_portable_preflight.py", "scripts/portable-db-bootstrap-readiness.py", "scripts/tests/test_portable_db_bootstrap_readiness.py", "scripts/portable-pilot.py", "scripts/tests/test_portable_pilot.py", "scripts/portable-monitor.py", "scripts/tests/test_portable_monitor.py", "scripts/portable-integration.py", "scripts/tests/test_portable_integration.py", ".github/workflows/portable-config.yml"]
   push:
     branches: [main]
-    paths: ["deploy/portable/**", "scripts/portable-preflight.py", "scripts/tests/test_portable_preflight.py", "scripts/portable-pilot.py", "scripts/tests/test_portable_pilot.py", "scripts/portable-monitor.py", "scripts/tests/test_portable_monitor.py", "scripts/portable-integration.py", "scripts/tests/test_portable_integration.py", ".github/workflows/portable-config.yml"]
+    paths: ["deploy/portable/**", "scripts/portable-preflight.py", "scripts/tests/test_portable_preflight.py", "scripts/portable-db-bootstrap-readiness.py", "scripts/tests/test_portable_db_bootstrap_readiness.py", "scripts/portable-pilot.py", "scripts/tests/test_portable_pilot.py", "scripts/portable-monitor.py", "scripts/tests/test_portable_monitor.py", "scripts/portable-integration.py", "scripts/tests/test_portable_integration.py", ".github/workflows/portable-config.yml"]
 permissions:
   contents: read
 jobs:
@@ -18,6 +18,8 @@ jobs:
         env:
           PORTABLE_COMPOSE_TEST: "1"
         run: python3 -m unittest discover -s scripts/tests -p test_portable_preflight.py -v
+      - name: Validate new-instance database proof behavior
+        run: python3 -m unittest discover -s scripts/tests -p test_portable_db_bootstrap_readiness.py -v
       - name: Verify read-only pilot observation with synthetic containers and mocked HTTPS
         env:
           PORTABLE_PILOT_TEST: "1"
@@ -32,8 +34,17 @@ jobs:
         run: |
           set -euo pipefail
           container="portable-db-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          trap 'docker rm -f "$container" >/dev/null 2>&1 || true' EXIT
+          partial="${container}-partial"
+          evidence_root="$(mktemp -d)"
+          trap 'docker rm -f "$container" "$partial" >/dev/null 2>&1 || true; rm -rf "$evidence_root"' EXIT
+          project="portable_ci_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"
+          printf 'COMPOSE_PROJECT_NAME=%s\n' "$project" > "$evidence_root/stack.env"
+          chmod 600 "$evidence_root/stack.env"
           docker run -d --name "$container" \
+            --label "com.docker.compose.project=$project" \
+            --label 'com.docker.compose.service=postgres' \
+            --health-cmd 'pg_isready -h 127.0.0.1 -U postgres -d postgres' \
+            --health-interval 2s \
             -e POSTGRES_PASSWORD=synthetic-admin-password-long-enough \
             -e SIEGE_DB_PASSWORD=synthetic-siege-password-long-enough \
             -e MOM_DB_PASSWORD=synthetic-mom-password-long-enough \
@@ -58,3 +69,41 @@ jobs:
               exit 1
             fi
           done
+          for attempt in {1..30}; do
+            if test "$(docker inspect -f '{{.State.Health.Status}}' "$container")" = healthy; then
+              break
+            fi
+            sleep 1
+          done
+          python3 scripts/portable-db-bootstrap-readiness.py \
+            --project-directory "$evidence_root" --report "$evidence_root/complete.json"
+          python3 -c 'import json,sys; report=json.load(open(sys.argv[1])); assert report["status"] == "PASS" and all(report["checks"].values())' "$evidence_root/complete.json"
+          docker run -d --name "$partial" \
+            --label "com.docker.compose.project=${project}_partial" \
+            --label 'com.docker.compose.service=postgres' \
+            --health-cmd 'pg_isready -h 127.0.0.1 -U postgres -d postgres' \
+            --health-interval 2s \
+            -e POSTGRES_PASSWORD=synthetic-admin-password-long-enough postgres:16 >/dev/null
+          for attempt in {1..60}; do
+            if docker exec "$partial" pg_isready -h 127.0.0.1 -U postgres -d postgres >/dev/null 2>&1; then
+              break
+            fi
+            sleep 1
+          done
+          docker exec "$partial" psql -U postgres -d postgres -c \
+            'CREATE ROLE siege_app LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE' >/dev/null
+          docker exec "$partial" psql -U postgres -d postgres -c \
+            'CREATE DATABASE siege OWNER siege_app' >/dev/null
+          for attempt in {1..30}; do
+            if test "$(docker inspect -f '{{.State.Health.Status}}' "$partial")" = healthy; then
+              break
+            fi
+            sleep 1
+          done
+          printf 'COMPOSE_PROJECT_NAME=%s\n' "${project}_partial" > "$evidence_root/stack.env"
+          if python3 scripts/portable-db-bootstrap-readiness.py \
+            --project-directory "$evidence_root" --report "$evidence_root/partial.json"; then
+            echo 'Partial database bootstrap unexpectedly passed'
+            exit 1
+          fi
+          python3 -c 'import json,sys; checks=json.load(open(sys.argv[1]))["checks"]; assert checks["single_healthy_postgres"] and checks["only_postgres_running"] and not checks["mom_app_least_privilege"]' "$evidence_root/partial.json"
