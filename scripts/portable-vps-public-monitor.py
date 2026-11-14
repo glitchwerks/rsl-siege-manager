@@ -43,38 +43,33 @@ def main(argv=None):
             json.dump({"status": "INCOMPLETE"}, output)
             output.flush()
             os.fsync(output.fileno())
-            try:
-                sender.require(args.confirm_external_readonly and args.confirm_notification,
-                               "confirmation_required")
-                paths = [args.config, args.endpoint_file, args.observation_report, args.report]
-                sender.require(all(path.is_absolute() for path in paths)
-                               and len({path.resolve() for path in paths}) == 4, "distinct_absolute_paths_required")
-                sender.pilot.private(args.config.parent, True)
-                sender.pilot.private(args.config)
-                public.config(args.config)  # Validate target before any notification or public request.
-                sender.pilot.private(args.observation_report.parent, True)
-                sender.require(not args.observation_report.exists()
-                               and not args.observation_report.is_symlink(), "fresh_observation_required")
-                url = sender.endpoint(args.endpoint_file)
-                with sender.locked(args.endpoint_file.parent):
-                    with redirect_stdout(io.StringIO()):
-                        code = public.main(["--config", str(args.config),
-                                            "--report", str(args.observation_report),
-                                            "--confirm-external-readonly"])
-                    if code in (0, 1):
-                        result["observation_passed"] = code == 0
-                        sender.deliver(url, code == 0)
-                        result["delivery_acknowledged"] = True
-                        if code == 0:
-                            result["status"] = "PASS"
-            except (Exception, KeyboardInterrupt):
-                pass  # Report only fixed booleans; never expose target or endpoint details.
-            output.seek(0)
-            output.truncate()
-            json.dump(result, output, sort_keys=True)
-            output.write("\n")
-            output.flush()
-            os.fsync(output.fileno())
+        try:
+            sender.require(args.confirm_external_readonly and args.confirm_notification,
+                           "confirmation_required")
+            paths = [args.config, args.endpoint_file, args.observation_report, args.report]
+            sender.require(all(path.is_absolute() for path in paths)
+                           and len({path.resolve() for path in paths}) == 4, "distinct_absolute_paths_required")
+            sender.pilot.private(args.config.parent, True)
+            sender.pilot.private(args.config)
+            public.config(args.config)  # Validate target before any notification or public request.
+            sender.pilot.private(args.observation_report.parent, True)
+            sender.require(not args.observation_report.exists()
+                           and not args.observation_report.is_symlink(), "fresh_observation_required")
+            url = sender.endpoint(args.endpoint_file)
+            with sender.locked(args.endpoint_file.parent):
+                with redirect_stdout(io.StringIO()):
+                    code = public.main(["--config", str(args.config),
+                                        "--report", str(args.observation_report),
+                                        "--confirm-external-readonly"])
+                if code in (0, 1):
+                    result["observation_passed"] = code == 0
+                    sender.deliver(url, code == 0)
+                    result["delivery_acknowledged"] = True
+                    if code == 0:
+                        result["status"] = "PASS"
+        except (Exception, KeyboardInterrupt):
+            pass  # Report only fixed booleans; never expose target or endpoint details.
+        public.publish_report(args.report, result)
     except (OSError, ValueError, sender.Stop):
         print("STOP")
         return 2

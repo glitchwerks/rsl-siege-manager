@@ -106,6 +106,16 @@ class PublicMonitorTests(unittest.TestCase):
         self.assertTrue(result["observation_passed"])
         self.assertFalse(result["delivery_acknowledged"])
 
+    def test_failed_final_publication_preserves_incomplete_marker(self):
+        with patch.object(MONITOR.public, "inspect", return_value={
+                name: True for name in MONITOR.public.CHECKS}), patch.object(
+                MONITOR.sender, "deliver"), patch.object(
+                MONITOR.public.os, "replace", side_effect=OSError("publication failed")):
+            with redirect_stdout(io.StringIO()) as output:
+                self.assertEqual(MONITOR.main(self.args + self.gates), 2)
+        self.assertEqual(output.getvalue().strip(), "STOP")
+        self.assertEqual(json.loads(self.report.read_text()), {"status": "INCOMPLETE"})
+
 
 if __name__ == "__main__":
     unittest.main()
