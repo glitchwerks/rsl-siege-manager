@@ -3,6 +3,7 @@
 import importlib.util
 import json
 from pathlib import Path
+import subprocess
 from types import SimpleNamespace
 import tempfile
 import time
@@ -104,6 +105,27 @@ class DatabaseSignalTests(unittest.TestCase):
             self.assertNotIn("private-name", raw)
             self.assertEqual(json.loads(raw)["status"], "PASS")
             self.assertEqual(report.stat().st_mode & 0o777, 0o600)
+
+    def test_overall_deadline_is_incomplete_not_database_failure(self):
+        with patch.object(SIGNAL.time, "monotonic", return_value=100):
+            with self.assertRaises(SIGNAL.Incomplete):
+                SIGNAL.command(["docker", "ps"], 99)
+        with patch.object(SIGNAL.time, "monotonic", side_effect=(0, 2)), patch.object(
+                SIGNAL.subprocess, "run", side_effect=subprocess.TimeoutExpired(["docker"], 1)):
+            with self.assertRaises(SIGNAL.Incomplete):
+                SIGNAL.command(["docker", "ps"], 1)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            configuration = root / "config.json"
+            report = root / "report.json"
+            configuration.write_text("{}")
+            with patch.object(SIGNAL.os, "geteuid", return_value=0), patch.object(
+                    SIGNAL, "read_config", return_value={}), patch.object(
+                    SIGNAL, "private"), patch.object(SIGNAL, "inspect", side_effect=SIGNAL.Incomplete()):
+                self.assertEqual(SIGNAL.main(["--config", str(configuration),
+                    "--report", str(report), "--confirm-readonly-databases"]), 2)
+            self.assertEqual(json.loads(report.read_text())["status"], "INCOMPLETE")
 
 
 if __name__ == "__main__":

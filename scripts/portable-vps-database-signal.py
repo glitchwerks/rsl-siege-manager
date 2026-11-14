@@ -57,6 +57,10 @@ CHECK_NAMES = ("postgres_exact", "postgres_running_healthy", "postgres_no_restar
                "connections_within_budget", "postgres_stable_after_probe")
 
 
+class Incomplete(Exception):
+    """The overall observation deadline expired before all checks completed."""
+
+
 def private(path, directory=False):
     metadata = path.lstat()
     valid = stat.S_ISDIR(metadata.st_mode) if directory else stat.S_ISREG(metadata.st_mode)
@@ -111,11 +115,15 @@ def read_config(path):
 def command(arguments, deadline, cap=20):
     remaining = deadline - time.monotonic()
     if remaining <= 0:
-        return None
+        raise Incomplete("observation deadline")
     try:
         result = subprocess.run(arguments, env=ENVIRONMENT, stdin=subprocess.DEVNULL,
                                 capture_output=True, text=True, timeout=min(cap, remaining), check=False)
-    except (OSError, subprocess.TimeoutExpired):
+    except subprocess.TimeoutExpired:
+        if time.monotonic() >= deadline:
+            raise Incomplete("observation deadline") from None
+        return None
+    except OSError:
         return None
     return result.stdout if result.returncode == 0 and len(result.stdout) <= 4096 else None
 
@@ -186,12 +194,16 @@ def inspect(cfg):
         and info.get("service") == "postgres" and info.get("id") == cfg["postgres_id"]
         and info.get("image") == cfg["postgres_image"])
     if not checks["postgres_exact"]:
+        if time.monotonic() >= deadline:
+            raise Incomplete("observation deadline")
         return checks, measurements
     checks["postgres_running_healthy"] = info.get("running") is True and info.get("health") == "healthy"
     checks["postgres_no_restart_or_oom"] = (info.get("oom") is False
         and info.get("restarts") == cfg["postgres_restarts"]
         and info.get("started_at") == cfg["postgres_started_at"])
     if not checks["postgres_running_healthy"] or not checks["postgres_no_restart_or_oom"]:
+        if time.monotonic() >= deadline:
+            raise Incomplete("observation deadline")
         return checks, measurements
     source = storage_source(info["id"], deadline)
     checks["storage_mount_exact"] = (source is not None and source.resolve() == Path(cfg["storage_path"]))
@@ -213,6 +225,8 @@ def inspect(cfg):
             <= measurements["max_connections"] * cfg["max_connection_percent"])
     after = postgres(cfg, deadline)
     checks["postgres_stable_after_probe"] = after == info
+    if time.monotonic() >= deadline:
+        raise Incomplete("observation deadline")
     return checks, measurements
 
 
@@ -262,14 +276,16 @@ def main(argv=None):
             result["checks"] = checks
             result["measurements"] = measurements
             result["status"] = "PASS" if all(checks.values()) else "STOP"
+        except Incomplete:
+            result["status"] = "INCOMPLETE"
         except (OSError, ValueError, TypeError, KeyError, UnicodeError):
-            pass
+            result["status"] = "INCOMPLETE"
         publish(args.report, result)
     except (OSError, ValueError, TypeError, KeyError, UnicodeError):
         print("STOP")
         return 2
     print(result["status"])
-    return 0 if result["status"] == "PASS" else 1
+    return 0 if result["status"] == "PASS" else (2 if result["status"] == "INCOMPLETE" else 1)
 
 
 if __name__ == "__main__":

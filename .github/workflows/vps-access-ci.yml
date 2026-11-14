@@ -24,6 +24,7 @@ on:
       - "scripts/tests/test_portable_vps_public_signal.py"
       - "scripts/tests/test_portable_vps_public_monitor.py"
       - "scripts/tests/test_portable_vps_database_signal.py"
+      - "scripts/tests/test_portable_vps_database_monitor.py"
       - "scripts/tests/test_portable_vps_database_signal_docker.py"
       - "docs/operations/vps-github-access.md"
       - "docs/operations/vps-release-workflow.md"
@@ -57,6 +58,7 @@ on:
       - "scripts/tests/test_portable_vps_public_signal.py"
       - "scripts/tests/test_portable_vps_public_monitor.py"
       - "scripts/tests/test_portable_vps_database_signal.py"
+      - "scripts/tests/test_portable_vps_database_monitor.py"
       - "scripts/tests/test_portable_vps_database_signal_docker.py"
       - "docs/operations/vps-github-access.md"
       - "docs/operations/vps-release-workflow.md"
@@ -106,6 +108,8 @@ jobs:
         run: python3 -m unittest discover -s scripts/tests -p test_portable_vps_public_monitor.py -v
       - name: Test authenticated database and pressure signal contract
         run: python3 -m unittest discover -s scripts/tests -p test_portable_vps_database_signal.py -v
+      - name: Test independent database signal delivery boundary
+        run: python3 -m unittest discover -s scripts/tests -p test_portable_vps_database_monitor.py -v
   docker-rehearsal:
     runs-on: ubuntu-latest
     timeout-minutes: 10
