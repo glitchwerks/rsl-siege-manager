@@ -28,12 +28,13 @@ OLD_REMOTE_SHA256S = (
     "db6adebe691a3b789bf704490783d7d19aa6f737e1897bcae1ecd520bc698fcd",
     "1f8a125e6888ac4798fd4af0605ef7d96ffab28ec20efecb603a1b5bd23db5aa",
     "7dc70bcf1526ca8e674298bb872a014d1bded145d675bae7866cc9ff2630817e",
+    "834723a9e99cabbac34ce04f21e5db71942d234fcdbe8df54dda450781931ef3",
 )
-NEW_REMOTE_SHA256 = "834723a9e99cabbac34ce04f21e5db71942d234fcdbe8df54dda450781931ef3"
+NEW_REMOTE_SHA256 = "e8f57a8a8d874d555f8e946caed170dffda49e090804601471954c47d2a5c95c"
 
 
 def script_backup_path():
-    return Path("/root/portable-vps-remote.py.before-profile-binding")
+    return Path("/root/portable-vps-remote.py.before-release-promote")
 
 
 def digest(data):

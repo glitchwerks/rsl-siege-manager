@@ -31,6 +31,7 @@ PROOF_DISPATCH = load("vps_proof_dispatch", "scripts/portable-vps-release-proof-
 READY_DISPATCH = load("vps_ready_dispatch", "scripts/portable-vps-release-ready-dispatch.py")
 MIGRATE_DISPATCH = load("vps_migrate_dispatch", "scripts/portable-vps-release-migrate-dispatch.py")
 PROMOTION_READY_DISPATCH = load("vps_promotion_ready_dispatch", "scripts/portable-vps-release-promotion-ready-dispatch.py")
+PROMOTE_DISPATCH = load("vps_promote_dispatch", "scripts/portable-vps-release-promote-dispatch.py")
 
 
 class AccessTests(unittest.TestCase):
@@ -325,6 +326,100 @@ class AccessTests(unittest.TestCase):
             ), patch.object(REMOTE, "promotion_ready_release") as ready:
                 self.assertEqual(REMOTE.main(), 1)
                 ready.assert_not_called()
+
+    def test_confirmed_promotion_requires_exact_stage_command(self):
+        base = "promote-release " + "a" * 64 + " 123-1 " + "b" * 64 + " " + "c" * 64 + " " + "d" * 64
+        for command in (base, base + " confirm-promote-123-2", base + " confirm-promote-123-1; id",
+                        base + " confirm-promote-123-1 extra"):
+            with self.subTest(command=command), patch.dict(
+                os.environ, {"SSH_ORIGINAL_COMMAND": command}
+            ), patch.object(REMOTE, "promote_release") as promote:
+                self.assertEqual(REMOTE.main(), 1)
+                promote.assert_not_called()
+
+    def test_confirmed_promotion_client_rejects_bad_digest_without_ssh(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+            PROMOTE_DISPATCH.ACCESS, "check"
+        ) as baseline:
+            report = Path(directory) / "report.json"
+            with redirect_stdout(io.StringIO()):
+                self.assertEqual(PROMOTE_DISPATCH.main([
+                    "--manifest-sha256", "a" * 64, "--stage-run-id", "123-1",
+                    "--plan-sha256", "b" * 64, "--readiness-sha256", "c" * 64,
+                    "--promotion-ready-sha256", "bad", "--report", str(report)]), 1)
+            baseline.assert_not_called()
+            self.assertEqual(json.loads(report.read_text())["status"], "STOP")
+
+    def test_confirmed_promotion_rejects_wrong_baseline_before_subprocess(self):
+        raw = (json.dumps(self.candidate(), sort_keys=True) + "\n").encode()
+        digest = hashlib.sha256(raw).hexdigest()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            stage = root / "evidence" / "release-stages" / "123-1"
+            stage.mkdir(parents=True)
+            (stage / "candidate.json").write_bytes(raw)
+            (stage / "pause-plan.json").write_text("reviewed plan")
+            (stage / "promotion-ready-report.json").write_text(
+                '{"phase":"release-promotion-ready","status":"PASS","checks":{"safe":true}}')
+            (stage / "promotion-ready-baseline.json").write_text("reviewed promotion")
+            plan_digest = hashlib.sha256((stage / "pause-plan.json").read_bytes()).hexdigest()
+            with patch.object(REMOTE, "EVIDENCE", root / "evidence"), patch.object(
+                REMOTE, "access_check", return_value=True
+            ), patch.object(REMOTE, "private_directory", return_value=True), patch.object(
+                REMOTE, "private_file", return_value=True
+            ), patch.object(REMOTE.os, "geteuid", return_value=0), patch.object(
+                REMOTE.subprocess, "run"
+            ) as runner, redirect_stdout(io.StringIO()):
+                self.assertEqual(REMOTE.promote_release(digest, "123-1", plan_digest,
+                    "c" * 64, "d" * 64), 1)
+                runner.assert_not_called()
+            self.assertFalse((stage / "promote-dispatch-report.json").exists())
+
+    def test_confirmed_promotion_invokes_only_reviewed_promote_script(self):
+        raw = (json.dumps(self.candidate(), sort_keys=True) + "\n").encode()
+        digest = hashlib.sha256(raw).hexdigest()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            stage = root / "evidence" / "release-stages" / "123-1"
+            stage.mkdir(parents=True)
+            (stage / "candidate.json").write_bytes(raw)
+            (stage / "pause-plan.json").write_text("reviewed plan")
+            (stage / "promotion-ready-report.json").write_text(
+                '{"phase":"release-promotion-ready","status":"PASS","checks":{"safe":true}}')
+            (stage / "promotion-ready-baseline.json").write_text("reviewed promotion")
+            plan_digest = hashlib.sha256((stage / "pause-plan.json").read_bytes()).hexdigest()
+            promotion_sha = hashlib.sha256((stage / "promotion-ready-baseline.json").read_bytes()).hexdigest()
+            script = root / "reviewed" / "scripts" / "portable-vps-release-promote.py"
+            script.parent.mkdir(parents=True)
+            script.write_text("# reviewed\n")
+
+            def run(arguments, **kwargs):
+                if arguments[0] == "git" and "rev-parse" in arguments:
+                    return SimpleNamespace(returncode=0, stdout=("1" * 40 + "\n").encode())
+                if arguments[0] == "git":
+                    return SimpleNamespace(returncode=0, stdout=b"")
+                self.assertEqual(arguments[:4], ["/usr/bin/python3", "-I", "-B", str(script)])
+                self.assertEqual(arguments[arguments.index("--promotion-ready-sha256") + 1], promotion_sha)
+                self.assertEqual(arguments[arguments.index("--confirm-promote") + 1], "123-1")
+                (root / "reports" / "123-1-promote.json").write_text(
+                    '{"phase":"release-promote","status":"PASS","checks":{"safe":true}}')
+                return SimpleNamespace(returncode=0, stdout=b"PASS\n")
+
+            with patch.object(REMOTE, "EVIDENCE", root / "evidence"), patch.object(
+                REMOTE, "PROMOTE_SCRIPT", script
+            ), patch.object(REMOTE, "BACKUP_PROFILE", root / "profile.json"), patch.object(
+                REMOTE, "EXTERNAL_REPORTS", root / "reports"
+            ), patch.object(REMOTE, "access_check", return_value=True), patch.object(
+                REMOTE, "private_directory", side_effect=lambda path: path.is_dir()
+            ), patch.object(REMOTE, "private_file", return_value=True), patch.object(
+                REMOTE, "reviewed_script", return_value=True), patch.object(REMOTE, "profile_bound", return_value=True
+            ), patch.object(REMOTE.os, "geteuid", return_value=0), patch.object(
+                REMOTE.subprocess, "run", side_effect=run
+            ) as runner, redirect_stdout(io.StringIO()):
+                self.assertEqual(REMOTE.promote_release(digest, "123-1", plan_digest,
+                    "c" * 64, promotion_sha), 0)
+                self.assertEqual(runner.call_count, 3)
+            self.assertEqual(json.loads((stage / "promote-dispatch-report.json").read_text())["status"], "PASS")
 
     def test_promotion_ready_client_rejects_bad_readiness_without_ssh(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(
