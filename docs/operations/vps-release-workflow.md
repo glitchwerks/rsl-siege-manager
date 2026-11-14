@@ -291,7 +291,9 @@ That script rechecks the selected backup proof and paused writers, queries only
 the two database schema revision identifiers, compares them to the manifest's
 exact `from_revision` values, and records a private migration-readiness
 baseline. GitHub receives only boolean checks. A mismatch is STOP; a corrected
-candidate requires a new stage. This workflow does not run a migration or
+candidate requires a new stage. A successful dispatch also returns the
+SHA-256 of the private readiness baseline for the separately confirmed
+migration phase. This workflow does not run a migration or
 restart writers. No VPS host update or readiness dispatch has been performed
 for this bridge.
 

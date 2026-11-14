@@ -22,12 +22,13 @@ RUN = re.compile(r"[1-9][0-9]{0,19}-[1-9][0-9]{0,2}\Z")
 def ready(expected, run_id, plan_sha256):
     checks = {"request_shape": bool(SHA256.fullmatch(expected)) and bool(RUN.fullmatch(run_id)) and bool(SHA256.fullmatch(plan_sha256))}
     if not all(checks.values()):
-        return checks
+        return checks, None
     baseline = ACCESS.check()
     checks["read_only_vps_baseline"] = bool(baseline) and all(baseline.values())
     if not checks["read_only_vps_baseline"]:
-        return checks
+        return checks, None
     _, host, user, _, key, known_hosts = ACCESS.settings()
+    readiness_sha256 = None
     old_umask = os.umask(0o077)
     try:
         with tempfile.TemporaryDirectory(prefix="vps-ready-") as directory:
@@ -51,16 +52,20 @@ def ready(expected, run_id, plan_sha256):
                 report = None
             checks["remote_ready_report"] = (
                 result.returncode == 0 and isinstance(report, dict)
-                and set(report) == {"phase", "status", "checks"}
+                and set(report) == {"phase", "status", "checks", "readiness_sha256"}
                 and report["phase"] == "release-migration-readiness-dispatch" and report["status"] == "PASS"
                 and isinstance(report["checks"], dict) and bool(report["checks"])
                 and all(value is True for value in report["checks"].values())
+                and isinstance(report["readiness_sha256"], str)
+                and bool(SHA256.fullmatch(report["readiness_sha256"]))
             )
+            if checks["remote_ready_report"]:
+                readiness_sha256 = report["readiness_sha256"]
     except (OSError, subprocess.TimeoutExpired):
         checks["remote_ready_report"] = False
     finally:
         os.umask(old_umask)
-    return checks
+    return checks, readiness_sha256
 
 
 def main(argv=None):
@@ -71,11 +76,13 @@ def main(argv=None):
     parser.add_argument("--report", required=True, type=Path)
     args = parser.parse_args(argv)
     try:
-        checks = ready(args.manifest_sha256, args.stage_run_id, args.plan_sha256)
+        checks, readiness_sha256 = ready(args.manifest_sha256, args.stage_run_id, args.plan_sha256)
     except (OSError, UnicodeError, ValueError):
-        checks = {"local_ready": False}
-    status = "PASS" if checks and all(checks.values()) else "STOP"
+        checks, readiness_sha256 = {"local_ready": False}, None
+    status = "PASS" if checks and all(checks.values()) and readiness_sha256 else "STOP"
     report = {"phase": "release-migration-readiness-dispatch", "status": status, "checks": checks}
+    if status == "PASS":
+        report["readiness_sha256"] = readiness_sha256
     try:
         descriptor = os.open(args.report, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
         with os.fdopen(descriptor, "w") as output:

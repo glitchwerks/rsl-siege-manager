@@ -352,8 +352,10 @@ class AccessTests(unittest.TestCase):
                 self.assertNotIn("--confirm-backup", arguments)
                 (root / "reports" / "123-1-migration-ready.json").write_text(
                     '{"phase":"release-migration-ready","status":"PASS","checks":{"safe":true}}')
+                (stage / "migration-ready-baseline.json").write_text("reviewed readiness")
                 return SimpleNamespace(returncode=0, stdout=b"PASS\n")
 
+            output = io.StringIO()
             with patch.object(REMOTE, "EVIDENCE", root / "evidence"), patch.object(
                 REMOTE, "MIGRATION_READY_SCRIPT", script
             ), patch.object(REMOTE, "BACKUP_PROFILE", root / "profile.json"), patch.object(
@@ -364,10 +366,12 @@ class AccessTests(unittest.TestCase):
                 REMOTE, "reviewed_script", return_value=True
             ), patch.object(REMOTE.os, "geteuid", return_value=0), patch.object(
                 REMOTE.subprocess, "run", side_effect=run
-            ) as runner, redirect_stdout(io.StringIO()):
+            ) as runner, redirect_stdout(output):
                 self.assertEqual(REMOTE.ready_release(digest, "123-1", plan_digest), 0)
                 self.assertEqual(runner.call_count, 3)
             self.assertEqual(json.loads((stage / "ready-dispatch-report.json").read_text())["status"], "PASS")
+            self.assertEqual(json.loads(output.getvalue())["readiness_sha256"],
+                             hashlib.sha256((stage / "migration-ready-baseline.json").read_bytes()).hexdigest())
 
     def test_recovery_proof_client_rejects_unbounded_paths_without_ssh(self):
         for path in ("relative/recover.json", "/private/../secret.json", "/private/report;id"):

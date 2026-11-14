@@ -640,6 +640,7 @@ def ready_release(expected, run_id, plan_sha256):
             and bool(SHA256.fullmatch(plan_sha256)),
         "read_only_baseline": access_check(),
     }
+    readiness_sha256 = None
     if all(checks.values()):
         try:
             checks["stage_private"] = private_directory(stage)
@@ -698,10 +699,19 @@ def ready_release(expected, run_id, plan_sha256):
                     and isinstance(evidence.get("checks"), dict) and bool(evidence["checks"])
                     and all(value is True for value in evidence["checks"].values())
                 )
+            if checks.get("ready_passed"):
+                readiness = stage / "migration-ready-baseline.json"
+                checks["readiness_private_bounded"] = (
+                    private_file(readiness) and 0 < readiness.stat().st_size <= 4096
+                )
+                if checks["readiness_private_bounded"]:
+                    readiness_sha256 = hashlib.sha256(readiness.read_bytes()).hexdigest()
         except (OSError, ValueError, TypeError, KeyError, subprocess.TimeoutExpired):
             checks["ready_execution"] = False
-    status = "PASS" if all(checks.values()) else "STOP"
+    status = "PASS" if all(checks.values()) and readiness_sha256 is not None else "STOP"
     report = {"phase": "release-migration-readiness-dispatch", "status": status, "checks": checks}
+    if status == "PASS":
+        report["readiness_sha256"] = readiness_sha256
     if checks.get("dispatch_reserved"):
         try:
             write_private(stage / "ready-dispatch-report.json", (json.dumps(report, sort_keys=True) + "\n").encode())
