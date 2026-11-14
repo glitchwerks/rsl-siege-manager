@@ -100,6 +100,20 @@ class PublicSignalTests(unittest.TestCase):
             self.assertEqual(SIGNAL.main(["--config", str(configuration),
                 "--report", str(report), "--confirm-external-readonly"]), 2)
 
+    def test_failed_final_publication_preserves_incomplete_marker(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            configuration = root / "config.json"
+            report = root / "report.json"
+            configuration.write_text(json.dumps({"origin": "https://siege.example.io",
+                "versions": settings()["versions"], "minimum_tls_days": 14}))
+            with patch.object(SIGNAL, "inspect", return_value={name: True for name in SIGNAL.CHECKS}), patch.object(
+                SIGNAL.os, "replace", side_effect=OSError("interrupted")
+            ):
+                self.assertEqual(SIGNAL.main(["--config", str(configuration),
+                    "--report", str(report), "--confirm-external-readonly"]), 2)
+            self.assertEqual(json.loads(report.read_text()), {"status": "INCOMPLETE"})
+
 
 if __name__ == "__main__":
     unittest.main()

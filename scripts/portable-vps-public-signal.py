@@ -15,6 +15,7 @@ import re
 import signal
 import ssl
 import stat
+import tempfile
 import time
 from urllib.parse import urlsplit
 
@@ -139,6 +140,26 @@ def inspect(settings):
     return checks
 
 
+def publish_report(path, report):
+    descriptor, temporary = tempfile.mkstemp(prefix=".public-signal-", dir=path.parent)
+    try:
+        with os.fdopen(descriptor, "w") as output:
+            os.fchmod(output.fileno(), 0o600)
+            json.dump(report, output, sort_keys=True)
+            output.write("\n")
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(temporary, path)
+        directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", required=True, type=Path)
@@ -156,17 +177,12 @@ def main(argv=None):
             json.dump({"status": "INCOMPLETE"}, output)
             output.flush()
             os.fsync(output.fileno())
-            try:
-                report["checks"] = inspect(settings)
-                report["status"] = "PASS" if all(report["checks"].values()) else "STOP"
-            except (OSError, ValueError, TimeoutError):
-                pass
-            output.seek(0)
-            output.truncate()
-            json.dump(report, output, sort_keys=True)
-            output.write("\n")
-            output.flush()
-            os.fsync(output.fileno())
+        try:
+            report["checks"] = inspect(settings)
+            report["status"] = "PASS" if all(report["checks"].values()) else "STOP"
+        except (OSError, ValueError, TimeoutError):
+            pass
+        publish_report(args.report, report)
     except (OSError, ValueError, TypeError, KeyError, UnicodeError):
         print("STOP")
         return 2
