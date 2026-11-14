@@ -180,7 +180,7 @@ def proof_paths(args):
             and all(restored["checks"].get(f"{app}_restored_controls_match") is True for app in copies.recovery.APPS),
             "verified_restore_proof_required")
     uuid.UUID(recovered["copy_id"])
-    return recovered["copy_id"]
+    return recovered["copy_id"], recovered["bundle_id"]
 
 
 def inventory(directory):
@@ -210,18 +210,20 @@ def retention_plan(config, anchor, now):
         captured = datetime.fromisoformat(evidence["timestamp"])
         finished = datetime.fromisoformat(evidence["finished_at"])
         require(captured.tzinfo and finished.tzinfo and captured <= finished <= now, "invalid_job_timestamp")
-        successes.append((captured, finished, directory, evidence["copy_id"]))
-    require(any(item[3] == anchor for item in successes), "restore_anchor_job_required")
+        successes.append((captured, finished, directory, evidence["copy_id"], evidence["bundle_id"]))
+    require(any(item[3:5] == anchor for item in successes), "restore_anchor_job_required")
     require(successes and now - max(item[1] for item in successes) <= timedelta(hours=2), "fresh_verified_backup_required")
     newest = sorted(successes, reverse=True)[:config["keep_successful"]]
     keep = {item[2].name for item in newest}
     entries = {}
-    for captured, _, directory, copy_id in successes:
-        if (directory.name in keep or copy_id == anchor or now - captured < timedelta(days=config["keep_days"])
+    for captured, _, directory, copy_id, bundle_id in successes:
+        if (directory.name in keep or (copy_id, bundle_id) == anchor or now - captured < timedelta(days=config["keep_days"])
                 or (directory / "pruned.json").exists()):
             continue
         entries[directory.name] = inventory(directory)
-    return {"schema": 1, "created_at": now.isoformat(), "anchor_copy_id": anchor,
+    return {"schema": 1, "created_at": now.isoformat(), "anchor_copy_id": anchor[0],
+            "anchor_bundle_id": anchor[1], "candidate_bytes": sum(item["bytes"] for files in entries.values()
+                                                          for item in files.values()),
             "root": str(config["root"]), "config_sha256": config["config_sha256"],
             "keep_days": config["keep_days"], "keep_successful": config["keep_successful"], "entries": entries}
 

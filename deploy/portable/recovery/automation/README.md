@@ -132,7 +132,7 @@ retention is configurable; lower than these proposed floors is refused.
 
 Keep a recovery-phase PASS report and its matching database-restore PASS report
 from the approved rehearsal. They must match bundle identity; the recovered copy
-UUID identifies the protected anchor. That anchor must belong to a successful
+UUID **and bundle UUID** identify the protected anchor. Both must match a successful
 managed job. The newest complete backup must be no older than two hours. Preserve
 these proof reports outside the data folders scheduled for cleanup.
 
@@ -148,8 +148,14 @@ python3 scripts/portable-backup-job.py plan --config /protected/job.json \
   --report /protected/evidence/retention-plan-check-001.json
 ```
 
-Review this concrete plan, its source root, protected anchor, capacity benefit,
-impact and recovery path. Only after explicit local deletion approval:
+Review this concrete plan, its source root, protected anchor, `candidate_bytes`
+(the sum of exact local files proposed for deletion), available disk space,
+impact and recovery path. `candidate_bytes` is a planning estimate, not a promise
+of free space after cleanup. Set the local free-space and NAS capacity alert
+thresholds from measured production job sizes, growth and restore workspace needs;
+record the chosen RPO/RTO and the actual hourly-job timing separately. A seven-day
+floor and hourly schedule alone do not establish a recovery guarantee. Only after
+explicit local deletion approval:
 
 ```sh
 python3 scripts/portable-backup-job.py apply --config /protected/job.json \
@@ -177,6 +183,14 @@ that could delete that anchor or its receipt. Rotating the protected anchor requ
 a successful recovery/restoration of its replacement first. Provider lifecycle
 rules/deletion credentials and scheduling of local retention need separate,
 concrete reviews; this PR grants neither remote-delete permissions nor activation.
+
+The separately sealed configuration recovery package is outside `root/runs` and
+outside this database-job retention policy. Preserve its encrypted object, receipt,
+trusted manifest and independently held decryption key until a replacement package
+has been recovered on an isolated host and its configuration verified. Record who
+can retrieve the package and key from outside the VPS, and test that custody as part
+of replacement-host recovery. Do not put the private age key in the package or
+grant a database retention job deletion access to configuration packages.
 
 Existing Azure definitions and alert infrastructure remain supported. Completing
 this preparation does not close #557: actual independent storage/monitor acceptance,

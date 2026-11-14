@@ -195,6 +195,9 @@ class JobTests(unittest.TestCase):
         plan = json.loads(plan_path.read_text())
         self.assertEqual(len(plan["entries"]), 5)
         self.assertNotIn(data[0][0].name, plan["entries"])
+        self.assertEqual(plan["anchor_bundle_id"], data[0][1]["bundle_id"])
+        self.assertEqual(plan["candidate_bytes"], sum(item["bytes"] for files in plan["entries"].values()
+                                                       for item in files.values()))
         code, report = self.invoke("apply", *args, "--confirm-retention")
         self.assertEqual(code, 0, report)
         for directory, _ in data:
@@ -240,10 +243,27 @@ class JobTests(unittest.TestCase):
         private(self.root / "restore.json", '{"phase":"restore","result":"STOP"}')
         self.assertEqual(self.invoke("plan", *args)[1]["error"], "verified_restore_proof_required")
 
+    def test_restored_copy_must_match_the_managed_job_bundle(self):
+        data, args, plan_path = self.prepare_retention()
+        recover = self.root / "recover.json"
+        restore = self.root / "restore.json"
+        other_bundle = str(uuid.uuid4())
+        recovered = json.loads(recover.read_text())
+        restored = json.loads(restore.read_text())
+        recovered["bundle_id"] = other_bundle
+        restored["bundle_id"] = other_bundle
+        private(recover, json.dumps(recovered))
+        private(restore, json.dumps(restored))
+        code, report = self.invoke("plan", *args)
+        self.assertEqual(code, 1)
+        self.assertEqual(report["error"], "restore_anchor_job_required")
+        self.assertFalse(plan_path.exists())
+        self.assertTrue(all((directory / "source/mom.dump").exists() for directory, _ in data))
+
     def test_stale_backups_stop_retention(self):
         data = runs(self.config, job.timestamp() - timedelta(hours=3))
         with self.assertRaisesRegex(job.Stop, "fresh_verified_backup_required"):
-            job.retention_plan(self.config, data[0][1]["copy_id"], job.timestamp())
+            job.retention_plan(self.config, (data[0][1]["copy_id"], data[0][1]["bundle_id"]), job.timestamp())
 
     def test_policy_and_secret_configuration_errors_are_sanitized(self):
         private(self.config_path, '{"secret": "private token"}')
