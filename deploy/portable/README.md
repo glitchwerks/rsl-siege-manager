@@ -22,8 +22,12 @@ so OAuth callback query credentials are not written into access logs.
 
 An operator prepares these files under a protected deployment directory. Copy
 `Caddyfile` and `init-databases.sql` there too; Compose resolves their mounts
-relative to `--project-directory`. Preflight requires both copies to match the
-reviewed repository versions; refresh them after updating this configuration:
+relative to `--project-directory`. Use either the reviewed `Caddyfile` for the
+canonical hostname alone or copy `Caddyfile.www-redirect` to `Caddyfile` when
+the reviewed `www.PUBLIC_HOST` to `PUBLIC_HOST` HTTPS redirect is approved.
+Preflight accepts only those exact two Caddy templates and the exact reviewed
+initialization SQL. Refresh the selected copy after a reviewed configuration
+change; an arbitrary local edit remains a STOP:
 
 - `stack.env`: copy the shape of `stack.env.example`; use actual image digests
   obtained from CI/registry metadata. These examples are intentionally invalid
@@ -113,6 +117,19 @@ passwords correctly; portable database URLs must have no query options or fragme
 are not reinitialized when environment passwords change. Rotation must update the
 actual database role and all consumers through a separate reviewed procedure;
 never remove a volume to make changed credentials take effect.
+The nonsecret `init-databases.sql` bind source must be a regular file owned by
+the deployment operator, readable by other users (for the PostgreSQL container
+user), and not group/other writable. Mode 0644 is appropriate. A 0600 file can
+look valid on the host while being unreadable during initialization. After a new
+PostgreSQL instance reports healthy, run the read-only
+`scripts/portable-db-bootstrap-readiness.py` against its protected project
+directory and a fresh private report path **before** considering bootstrap
+complete. It requires only PostgreSQL running, both least-privilege application
+roles, the correct database owners and isolation, and both application databases
+empty. A partial bootstrap is STOP; preserve the volume and report for diagnosis.
+This new-instance check is not applicable to the populated production databases
+or to schema migrations. Existing production readiness uses the separate live
+revision and backup gates.
 
 The portable API services explicitly clear the existing image's entrypoint,
 which otherwise runs migrations automatically and ignores the supplied command.
@@ -192,7 +209,10 @@ raw stderr. This report does not validate host suitability or live identity acce
 
 CI renders both actual topologies using synthetic secrets without starting apps.
 A separate disposable CI PostgreSQL check verifies database initialization and
-role separation. None of that evidence replaces a pilot on the intended target.
+role separation, runs the new-instance checker against a complete bootstrap,
+and requires a deliberately partial bootstrap to STOP. None of that evidence
+replaces a pilot on the intended target. Any later production runtime
+configuration change requires fresh acceptance evidence before promotion.
 
 ## Resource and health baseline
 
