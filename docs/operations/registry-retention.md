@@ -2,10 +2,23 @@
 
 Ticket: [#553](https://github.com/glitchwerks/rsl-siege-manager/issues/553).
 
-Production registry `siegeacrprod` uses a daily GitHub Actions cleanup at
-04:17 UTC, after the replacement is explicitly activated. GitHub schedules can
-be delayed; this is not a hard seven-day maximum storage age. The operator runs
-without installing packages or Azure CLI extensions.
+The former Azure production apps are retained as stopped recovery sources after
+the VPS cutover. The `Production Registry Retention` workflow is disabled and
+has no schedule. The last scheduled attempts stopped at preflight because the
+old baseline required those apps to be running; no deletion followed. This
+operator now requires the production Azure source groups to remain `Stopped`,
+while still requiring successful provisioning, a complete application/revision
+inventory, a stable baseline and public website health. A production Azure app
+that starts again stops preflight for review.
+
+This operator only deletes from Azure Container Registry `siegeacrprod`. VPS
+images are in GHCR and cannot be deleted by this operator. There is no GHCR
+cleanup workflow in this repository. Preserve every installed and approved
+rollback GHCR digest. Before any future GHCR retention policy, capture those
+digests from a reviewed protected deployment baseline and prove that a clean
+replacement runner can authenticate and pull each exact digest. Docker's VPS
+cache is not replacement-host recovery. The release candidate verifier proves
+candidate registry access; it does not establish the installed/rollback set.
 
 ## Retention policy
 
@@ -33,7 +46,8 @@ retry or broad purge occurs after an uncertain write.
 
 ## Activation and evidence
 
-Merge the workflow and operator before retiring the legacy task. Run
+Do not re-enable this disabled workflow or dispatch a destructive phase under
+the current freeze. After separate approval for Azure cleanup, run
 `Production Registry Retention` manually with `phase=preflight` on main first.
 The job refuses execution from branches or tags other than main.
 This proves the existing production environment's `AZURE_CREDENTIALS` can read
@@ -43,12 +57,12 @@ permissions silently if this fails.
 Next run the workflow with `phase=activate`. This takes a fresh baseline,
 checks that no legacy cleanup is running, disables only the legacy task status,
 and verifies its other configuration. Activation does not delete images.
-The daily schedule and a manual `phase=apply` both refuse deletion until the
-legacy task is disabled. A scheduled run never disables it itself. Production
-Bicep records `acrLegacyPurgeEnabled=false`; development keeps its prior task.
+Manual `phase=apply` refuses deletion until the legacy task is disabled.
+Production Bicep records `acrLegacyPurgeEnabled=false`; development keeps its
+prior task. No automatic deletion is configured for the frozen Azure source.
 
-Activation and deletion each use an explicit `--confirm`. Schedule execution
-is standing authorization for the fixed policy after activation. Every run
+Activation and deletion each use an explicit `--confirm`. An approved manual
+dispatch is required for each future deletion attempt. Every run
 uploads a sanitized report for 30 days, including retained/deleted manifest
 metadata, hashes, service checks, and before/after bytes. Reports contain no
 credentials, environment variables, or workload logs. Failed GitHub Actions
@@ -82,7 +96,7 @@ reconstructing deleted historical images requires rebuilding their source
 commits and is not a guaranteed byte-for-byte recovery. Stop and inspect the
 report after a failure; never blindly resume an incomplete deletion list.
 
-To pause replacement cleanup, disable its GitHub workflow. Before re-enabling
+The replacement cleanup workflow is currently disabled. Before re-enabling
 the legacy purge, review its proposed candidates: it does not inspect deployed
 revisions. Scheduling recovery only, using the saved activation baseline:
 

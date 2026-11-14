@@ -14,6 +14,9 @@ SUBSCRIPTION = "213aa1f8-32d1-4ffe-8f4d-6e60f1cd9dc0"
 REGISTRY = "siegeacrprod"
 REPOSITORIES = {"siege-api", "siege-bot", "siege-frontend"}
 GROUPS = ("siege-web-prod", "siege-web-dev", "mom-bot")
+# These are retained Azure recovery sources after the VPS cutover. A running
+# production source is unexpected and needs review before ACR cleanup.
+FROZEN_GROUPS = {"siege-web-prod", "mom-bot"}
 REGISTRY_ID = f"/subscriptions/{SUBSCRIPTION}/resourceGroups/siege-web-prod/providers/Microsoft.ContainerRegistry/registries/{REGISTRY}"
 TASK_URL = f"https://management.azure.com{REGISTRY_ID}/tasks/weekly-purge?api-version=2019-06-01-preview"
 DAYS = 7
@@ -118,7 +121,8 @@ def applications():
             props = app["properties"]
             if props.get("provisioningState") != "Succeeded":
                 raise Stop("Deployment in progress or application failed")
-            if props.get("runningStatus") not in (("Running", "Stopped") if group == "siege-web-dev" else ("Running",)):
+            expected_statuses = ("Stopped",) if group in FROZEN_GROUPS else ("Running", "Stopped")
+            if props.get("runningStatus") not in expected_statuses:
                 raise Stop("Application baseline unhealthy")
             images = template_images(props)
             refs.extend(images)
