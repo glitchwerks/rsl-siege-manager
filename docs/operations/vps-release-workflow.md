@@ -146,6 +146,26 @@ report does not switch images or start writers; promotion still needs its own
 confirmed implementation and isolated rehearsal. This script is reviewed code
 only and is not installed on the VPS or callable by the GitHub deploy key.
 
+The separately confirmed `scripts/portable-vps-release-promote.py` phase consumes
+that accepted baseline by exact digest and re-runs its checks immediately before
+writing. It preserves the original protected `stack.env` and Mom image approval
+bytes in the stage directory, replaces only the three application image
+assignments and the Mom approval, and verifies the rendered candidate. Before
+activation it rechecks paused writers, database revisions, and the existing
+PostgreSQL/proxy container identities. It then runs `docker compose up` for
+`backend`, `mom`, and `frontend` only, with `--no-deps`, `--no-build`, and
+`--pull never`. It requires one healthy container for each candidate service,
+unchanged PostgreSQL/proxy identities, no bundled bot or maintenance writer,
+and unchanged database revisions. A failed pre-activation check restores the
+two original files. Once activation has started, it leaves the files and stage
+evidence in place for separately confirmed recovery; new writes may already
+have occurred, so it never attempts automatic image or database rollback.
+
+The promotion script is reviewed code only. It is not installed on the VPS or
+exposed by the forced SSH command. It has not switched production images. Its
+operator invocation and rollback rehearsal must be reviewed alongside the
+production acceptance and recovery phases before any live deployment.
+
 1. **Preflight integration:** expose the reviewed read-only candidate gate
    through a phase-scoped host command, bind later phases to its baseline, and
    rehearse the complete configuration path without activating services.
