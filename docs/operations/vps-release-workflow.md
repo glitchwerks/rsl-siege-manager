@@ -82,9 +82,9 @@ configuration, execute backup/migration, or touch Compose services. Keep the
 candidate and reports for the later preflight/promotion phases.
 
 The host-side forced-command script must be installed separately from a reviewed
-commit. Its current `update-script` phase accepts only the nine reviewed prior
+commit. Its current `update-script` phase accepts only the ten reviewed prior
 script hashes, preserves a root-private copy at
-`/root/portable-vps-remote.py.before-promotion-ready`,
+`/root/portable-vps-remote.py.before-profile-binding`,
 and atomically changes only that script with its committed `0644` mode. An
 earlier stage-only installation may also have left the separate reviewed
 `scripts/portable-vps-remote.py.before-release-stage` backup in the checkout;
@@ -163,9 +163,9 @@ GitHub. It does not change images or services.
 Before dispatch, separately review and install the new forced-command script
 from the exact reviewed checkout with `portable-vps-host-access.py
 update-script --confirm update-script`, a fresh root-private report, and the
-dedicated public key. The current updater accepts only the nine reviewed
+dedicated public key. The current updater accepts only the ten reviewed
 earlier script hashes, backs up the current script to
-`/root/portable-vps-remote.py.before-promotion-ready`,
+`/root/portable-vps-remote.py.before-profile-binding`,
 and requires the new reviewed hash. Verify the installation with a second
 fresh report, a new admin login, and the existing read-only GitHub access
 check. `restore-script --confirm restore-script` restores only that exact
@@ -182,7 +182,8 @@ manifest SHA-256 and run ID, uses the protected `vps-prod` environment and
 production promotion concurrency group, and sends only
 `plan-release <digest> <run-id> confirm-readonly-plan` through the restricted
 SSH key. The host checks the staged candidate digest, reviewed clean checkout,
-and a root-private `/srv/rsl-siege/runtime/release-backup-profile.json` before
+and a root-private `/srv/rsl-siege/runtime/release-backup-profile.json` bound
+to `/srv/rsl-siege` before
 invoking the reviewed `portable-vps-release-pause-backup.py plan` phase. The
 profile binds the project, backup owner/root, installed backup unit and timer,
 and SHA-256 digests of the unit file and effective loaded unit. Create and

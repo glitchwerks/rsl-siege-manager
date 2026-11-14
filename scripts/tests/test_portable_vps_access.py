@@ -59,6 +59,21 @@ class AccessTests(unittest.TestCase):
             },
         }
 
+    def test_profile_project_must_match_staged_project(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            profile = root / "profile.json"
+            project = root / "project"
+            with patch.object(REMOTE, "BACKUP_PROFILE", profile), patch.object(
+                REMOTE, "PROJECT", project
+            ), patch.object(REMOTE, "private_file", return_value=True):
+                profile.write_text(json.dumps({"project_directory": str(root / "other")}))
+                self.assertFalse(REMOTE.profile_bound())
+                profile.write_text(json.dumps({"project_directory": str(project)}))
+                self.assertTrue(REMOTE.profile_bound())
+                profile.write_text('{"project_directory":"' + str(project) + '","project_directory":"' + str(root / "other") + '"}')
+                self.assertFalse(REMOTE.profile_bound())
+
     def test_private_host_identity_comes_from_environment_secrets(self):
         workflow = (ROOT / ".github/workflows/vps-access-check.yml").read_text()
         for name in ("VPS_TAILSCALE_HOST", "VPS_SSH_HOST_FINGERPRINT"):
@@ -225,7 +240,7 @@ class AccessTests(unittest.TestCase):
             ), patch.object(REMOTE, "access_check", return_value=True), patch.object(
                 REMOTE, "private_directory", side_effect=lambda path: path.is_dir()
             ), patch.object(REMOTE, "private_file", return_value=True), patch.object(
-                REMOTE, "reviewed_script", return_value=True
+                REMOTE, "reviewed_script", return_value=True), patch.object(REMOTE, "profile_bound", return_value=True
             ), patch.object(REMOTE.os, "geteuid", return_value=0), patch.object(
                 REMOTE.subprocess, "run", side_effect=run
             ) as runner, redirect_stdout(io.StringIO()):
@@ -254,7 +269,7 @@ class AccessTests(unittest.TestCase):
                     REMOTE, "private_directory", side_effect=lambda path: path.is_dir()
                 ), patch.object(REMOTE, "private_file", return_value=True), patch.object(
                     REMOTE, "reviewed_checkout", return_value=True
-                ), patch.object(REMOTE, "reviewed_script", return_value=True), patch.object(
+                ), patch.object(REMOTE, "reviewed_script", return_value=True), patch.object(REMOTE, "profile_bound", return_value=True), patch.object(
                     REMOTE.os, "geteuid", return_value=0
                 ), patch.object(REMOTE.subprocess, "run") as runner, redirect_stdout(io.StringIO()):
                     self.assertEqual(operation(digest, "123-1", plan_digest), 1)
@@ -386,7 +401,7 @@ class AccessTests(unittest.TestCase):
             ), patch.object(REMOTE, "access_check", return_value=True), patch.object(
                 REMOTE, "private_directory", side_effect=lambda path: path.is_dir()
             ), patch.object(REMOTE, "private_file", return_value=True), patch.object(
-                REMOTE, "reviewed_script", return_value=True
+                REMOTE, "reviewed_script", return_value=True), patch.object(REMOTE, "profile_bound", return_value=True
             ), patch.object(REMOTE.os, "geteuid", return_value=0), patch.object(
                 REMOTE.subprocess, "run", side_effect=run
             ) as runner, redirect_stdout(output):
@@ -470,7 +485,7 @@ class AccessTests(unittest.TestCase):
                 ), patch.object(REMOTE, "access_check", return_value=True), patch.object(
                     REMOTE, "private_directory", side_effect=lambda path: path.is_dir()
                 ), patch.object(REMOTE, "private_file", return_value=True), patch.object(
-                    REMOTE, "reviewed_script", return_value=True
+                    REMOTE, "reviewed_script", return_value=True), patch.object(REMOTE, "profile_bound", return_value=True
                 ), patch.object(REMOTE.os, "geteuid", return_value=0), patch.object(
                     REMOTE.subprocess, "run", side_effect=run
                 ) as runner, redirect_stdout(io.StringIO()):
@@ -552,7 +567,7 @@ class AccessTests(unittest.TestCase):
             ), patch.object(REMOTE, "access_check", return_value=True), patch.object(
                 REMOTE, "private_directory", side_effect=lambda path: path.is_dir()
             ), patch.object(REMOTE, "private_file", return_value=True), patch.object(
-                REMOTE, "reviewed_script", return_value=True
+                REMOTE, "reviewed_script", return_value=True), patch.object(REMOTE, "profile_bound", return_value=True
             ), patch.object(REMOTE.os, "geteuid", return_value=0), patch.object(
                 REMOTE.subprocess, "run", side_effect=run
             ) as runner, redirect_stdout(output):
@@ -639,7 +654,7 @@ class AccessTests(unittest.TestCase):
             ), patch.object(REMOTE, "access_check", return_value=True), patch.object(
                 REMOTE, "private_directory", side_effect=lambda path: path.is_dir()
             ), patch.object(REMOTE, "private_file", return_value=True), patch.object(
-                REMOTE, "reviewed_script", return_value=True
+                REMOTE, "reviewed_script", return_value=True), patch.object(REMOTE, "profile_bound", return_value=True
             ), patch.object(REMOTE.os, "geteuid", return_value=0), patch.object(
                 REMOTE.subprocess, "run", side_effect=run
             ) as runner, redirect_stdout(io.StringIO()):
@@ -705,7 +720,7 @@ class AccessTests(unittest.TestCase):
             ), patch.object(REMOTE, "access_check", return_value=True), patch.object(
                 REMOTE, "private_directory", side_effect=lambda path: path.is_dir()
             ), patch.object(REMOTE, "private_file", return_value=True), patch.object(
-                REMOTE, "reviewed_script", return_value=True
+                REMOTE, "reviewed_script", return_value=True), patch.object(REMOTE, "profile_bound", return_value=True
             ), patch.object(REMOTE.os, "geteuid", return_value=0), patch.object(
                 REMOTE.subprocess, "run", side_effect=run
             ) as runner, redirect_stdout(output):
@@ -753,7 +768,7 @@ class AccessTests(unittest.TestCase):
                 REMOTE, "access_check", return_value=True
             ), patch.object(REMOTE, "private_directory", side_effect=lambda path: path.is_dir()), patch.object(
                 REMOTE, "private_file", return_value=True
-            ), patch.object(REMOTE, "reviewed_script", return_value=True), patch.object(
+            ), patch.object(REMOTE, "reviewed_script", return_value=True), patch.object(REMOTE, "profile_bound", return_value=True), patch.object(
                 REMOTE.os, "geteuid", return_value=0
             ), patch.object(REMOTE.subprocess, "run", side_effect=run) as runner, redirect_stdout(output):
                 self.assertEqual(REMOTE.plan_release(digest, "123-1"), 0)
@@ -824,7 +839,7 @@ class AccessTests(unittest.TestCase):
             ), patch.object(REMOTE, "EXTERNAL_REPORTS", root / "reports"
             ), patch.object(REMOTE, "access_check", return_value=True), patch.object(
                 REMOTE, "private_directory", side_effect=lambda path: path.is_dir() and not path.is_symlink()
-            ), patch.object(REMOTE, "reviewed_script", return_value=True
+            ), patch.object(REMOTE, "reviewed_script", return_value=True), patch.object(REMOTE, "profile_bound", return_value=True
             ), patch.object(REMOTE, "private_file", return_value=True
             ), patch.object(REMOTE.os, "geteuid", return_value=0), patch.object(
                 REMOTE.subprocess, "run", side_effect=run
@@ -854,7 +869,7 @@ class AccessTests(unittest.TestCase):
             ), patch.object(
                 REMOTE, "access_check", return_value=True
             ), patch.object(REMOTE, "private_directory", return_value=True), patch.object(
-                REMOTE, "reviewed_script", return_value=True
+                REMOTE, "reviewed_script", return_value=True), patch.object(REMOTE, "profile_bound", return_value=True
             ), patch.object(REMOTE, "private_file", return_value=True
             ), patch.object(
                 REMOTE.os, "geteuid", return_value=0

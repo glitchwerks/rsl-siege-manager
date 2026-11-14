@@ -61,6 +61,17 @@ def private_file(path):
     return stat.S_ISREG(info.st_mode) and info.st_uid == 0 and not info.st_mode & 0o077
 
 
+def profile_bound():
+    """Keep every profile-driven operation inside the staged project."""
+    try:
+        if not private_file(BACKUP_PROFILE) or not 0 < BACKUP_PROFILE.stat().st_size <= 4096:
+            return False
+        value = json.loads(BACKUP_PROFILE.read_bytes(), object_pairs_hook=no_duplicate_keys)
+        return isinstance(value, dict) and value.get("project_directory") == str(PROJECT)
+    except (OSError, ValueError, TypeError, UnicodeError):
+        return False
+
+
 def reviewed_checkout(source_sha):
     head = subprocess.run(
         ["git", "-C", str(REVIEWED_SOURCE), "rev-parse", "HEAD"],
@@ -329,9 +340,9 @@ def plan_release(expected, run_id):
                 source_sha = json.loads(raw, object_pairs_hook=no_duplicate_keys)["configuration"]["source_sha"]
                 checks["reviewed_checkout"] = reviewed_checkout(source_sha)
                 checks["reviewed_script"] = reviewed_script(PLAN_SCRIPT)
-                checks["profile_private"] = private_file(BACKUP_PROFILE)
+                checks["profile_bound"] = profile_bound()
             if (checks.get("reviewed_checkout") and checks.get("reviewed_script")
-                    and checks.get("profile_private")):
+                    and checks.get("profile_bound")):
                 EXTERNAL_REPORTS.mkdir(mode=0o700, exist_ok=True)
                 checks["external_report_directory_private"] = private_directory(EXTERNAL_REPORTS)
             if checks.get("external_report_directory_private"):
@@ -415,9 +426,9 @@ def pause_release(expected, run_id, plan_sha256):
                 source_sha = json.loads(raw, object_pairs_hook=no_duplicate_keys)["configuration"]["source_sha"]
                 checks["reviewed_checkout"] = reviewed_checkout(source_sha)
                 checks["reviewed_script"] = reviewed_script(PLAN_SCRIPT)
-                checks["profile_private"] = private_file(BACKUP_PROFILE)
+                checks["profile_bound"] = profile_bound()
             if (checks.get("reviewed_checkout") and checks.get("reviewed_script")
-                    and checks.get("profile_private")):
+                    and checks.get("profile_bound")):
                 EXTERNAL_REPORTS.mkdir(mode=0o700, exist_ok=True)
                 checks["external_report_directory_private"] = private_directory(EXTERNAL_REPORTS)
             if (checks.get("external_report_directory_private")
@@ -507,9 +518,9 @@ def backup_release(expected, run_id, plan_sha256):
                 source_sha = json.loads(raw, object_pairs_hook=no_duplicate_keys)["configuration"]["source_sha"]
                 checks["reviewed_checkout"] = reviewed_checkout(source_sha)
                 checks["reviewed_script"] = reviewed_script(PLAN_SCRIPT)
-                checks["profile_private"] = private_file(BACKUP_PROFILE)
+                checks["profile_bound"] = profile_bound()
             if (checks.get("reviewed_checkout") and checks.get("reviewed_script")
-                    and checks.get("profile_private")):
+                    and checks.get("profile_bound")):
                 EXTERNAL_REPORTS.mkdir(mode=0o700, exist_ok=True)
                 checks["external_report_directory_private"] = private_directory(EXTERNAL_REPORTS)
             if (checks.get("external_report_directory_private")
@@ -592,9 +603,9 @@ def proof_release(expected, run_id, plan_sha256, recover_report, restore_report)
                 source_sha = json.loads(raw, object_pairs_hook=no_duplicate_keys)["configuration"]["source_sha"]
                 checks["reviewed_checkout"] = reviewed_checkout(source_sha)
                 checks["reviewed_script"] = reviewed_script(RECOVERY_PROOF_SCRIPT)
-                checks["profile_private"] = private_file(BACKUP_PROFILE)
+                checks["profile_bound"] = profile_bound()
             if (checks.get("reviewed_checkout") and checks.get("reviewed_script")
-                    and checks.get("profile_private")):
+                    and checks.get("profile_bound")):
                 EXTERNAL_REPORTS.mkdir(mode=0o700, exist_ok=True)
                 checks["external_report_directory_private"] = private_directory(EXTERNAL_REPORTS)
             if (checks.get("external_report_directory_private")
@@ -674,9 +685,9 @@ def ready_release(expected, run_id, plan_sha256):
                 source_sha = json.loads(raw, object_pairs_hook=no_duplicate_keys)["configuration"]["source_sha"]
                 checks["reviewed_checkout"] = reviewed_checkout(source_sha)
                 checks["reviewed_script"] = reviewed_script(MIGRATION_READY_SCRIPT)
-                checks["profile_private"] = private_file(BACKUP_PROFILE)
+                checks["profile_bound"] = profile_bound()
             if (checks.get("reviewed_checkout") and checks.get("reviewed_script")
-                    and checks.get("profile_private")):
+                    and checks.get("profile_bound")):
                 EXTERNAL_REPORTS.mkdir(mode=0o700, exist_ok=True)
                 checks["external_report_directory_private"] = private_directory(EXTERNAL_REPORTS)
             if (checks.get("external_report_directory_private")
@@ -765,9 +776,9 @@ def promotion_ready_release(expected, run_id, plan_sha256, readiness_sha256):
                 source_sha = json.loads(raw, object_pairs_hook=no_duplicate_keys)["configuration"]["source_sha"]
                 checks["reviewed_checkout"] = reviewed_checkout(source_sha)
                 checks["reviewed_script"] = reviewed_script(PROMOTION_READY_SCRIPT)
-                checks["profile_private"] = private_file(BACKUP_PROFILE)
+                checks["profile_bound"] = profile_bound()
             if (checks.get("reviewed_checkout") and checks.get("reviewed_script")
-                    and checks.get("profile_private")):
+                    and checks.get("profile_bound")):
                 EXTERNAL_REPORTS.mkdir(mode=0o700, exist_ok=True)
                 checks["external_report_directory_private"] = private_directory(EXTERNAL_REPORTS)
             if (checks.get("external_report_directory_private")
@@ -857,9 +868,9 @@ def migrate_release(expected, run_id, plan_sha256, readiness_sha256, database):
                 source_sha = json.loads(raw, object_pairs_hook=no_duplicate_keys)["configuration"]["source_sha"]
                 checks["reviewed_checkout"] = reviewed_checkout(source_sha)
                 checks["reviewed_script"] = reviewed_script(MIGRATE_SCRIPT)
-                checks["profile_private"] = private_file(BACKUP_PROFILE)
+                checks["profile_bound"] = profile_bound()
             if (checks.get("reviewed_checkout") and checks.get("reviewed_script")
-                    and checks.get("profile_private")):
+                    and checks.get("profile_bound")):
                 EXTERNAL_REPORTS.mkdir(mode=0o700, exist_ok=True)
                 checks["external_report_directory_private"] = private_directory(EXTERNAL_REPORTS)
             if (checks.get("external_report_directory_private")
