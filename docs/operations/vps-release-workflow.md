@@ -239,6 +239,30 @@ ID, current revisions, and manifest migration order. Its external report is
 boolean-only. This gate performs no migration or promotion. A later confirmed
 migration phase must recheck this baseline immediately before any schema write.
 
+`scripts/portable-vps-release-migrate.py` runs one explicitly confirmed
+database migration per invocation, in the manifest's order. It requires the
+accepted readiness baseline digest, a fresh selected backup/restore proof,
+paused original writers, exact live `from_revision` values (or the prior
+step's target), and the prior step's PASS report when migrating the second
+database. The candidate image must already be cached by digest. The script
+validates the candidate Compose configuration and checks that the image's
+single Alembic head equals the manifest's target before creating a private
+start marker. It then runs only the selected maintenance service with
+`docker compose run --no-deps --rm --pull never -T`, overriding its entrypoint
+to Alembic and passing the explicit target revision. Docker's documented
+[`run` options](https://docs.docker.com/reference/cli/docker/compose/run/)
+prevent dependency startup and implicit image pulls here.
+
+After that one command, it requires the exact target revision, the other
+database's unchanged revision, no running maintenance container, and the
+still-current paused backup proof. A failure or timeout records STOP and leaves
+the writers stopped; the stage marker prevents an automatic retry. An operator
+must inspect the resulting schema and any remaining maintenance container
+before separately approving recovery or another candidate. This reviewed
+script is not installed in the forced SSH command or invoked by GitHub Actions.
+The CI rehearsal uses disposable services only. No production migration has
+run, and promotion remains a separate phase.
+
 ## Writer pause and backup ordering gate
 
 After a separately approved pause of the `backend` and `mom` writers, the

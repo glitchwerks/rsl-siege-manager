@@ -14,6 +14,8 @@ on:
       - "scripts/tests/test_portable_vps_release_recovery_proof.py"
       - "scripts/tests/test_portable_vps_release_migration_ready.py"
       - "scripts/tests/test_portable_vps_release_migration_docker.py"
+      - "scripts/tests/test_portable_vps_release_migrate.py"
+      - "scripts/tests/test_portable_vps_release_migrate_docker.py"
       - "docs/operations/vps-github-access.md"
       - "docs/operations/vps-release-workflow.md"
   push:
@@ -31,6 +33,8 @@ on:
       - "scripts/tests/test_portable_vps_release_recovery_proof.py"
       - "scripts/tests/test_portable_vps_release_migration_ready.py"
       - "scripts/tests/test_portable_vps_release_migration_docker.py"
+      - "scripts/tests/test_portable_vps_release_migrate.py"
+      - "scripts/tests/test_portable_vps_release_migrate_docker.py"
       - "docs/operations/vps-github-access.md"
       - "docs/operations/vps-release-workflow.md"
 permissions:
@@ -58,6 +62,8 @@ jobs:
         run: python3 -m unittest discover -s scripts/tests -p test_portable_vps_release_recovery_proof.py -v
       - name: Test candidate-bound migration readiness
         run: python3 -m unittest discover -s scripts/tests -p test_portable_vps_release_migration_ready.py -v
+      - name: Test one-step confirmed migration safety gates
+        run: python3 -m unittest discover -s scripts/tests -p test_portable_vps_release_migrate.py -v
   docker-rehearsal:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -69,3 +75,5 @@ jobs:
         run: sudo env VPS_WRITER_DOCKER_TEST=1 python3 -m unittest discover -s scripts/tests -p test_portable_vps_writer_docker.py -v
       - name: Exercise post-pause revision query against disposable PostgreSQL
         run: sudo env VPS_WRITER_DOCKER_TEST=1 python3 -m unittest discover -s scripts/tests -p test_portable_vps_release_migration_docker.py -v
+      - name: Rehearse one-off maintenance container without starting dependencies
+        run: sudo env VPS_WRITER_DOCKER_TEST=1 python3 -m unittest discover -s scripts/tests -p test_portable_vps_release_migrate_docker.py -v
