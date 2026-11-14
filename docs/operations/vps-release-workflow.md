@@ -124,8 +124,9 @@ installed configuration, `stack.env`, and private runtime inputs. Runtime files
 and bind files are hashed before rendering and rechecked afterward; private
 contents never enter the baseline or report. The separate report contains
 booleans only. Any source, bind file, image, health, or configuration drift is
-STOP. A later phase must bind to the accepted baseline and recheck it before
-mutation; this command alone does not authorize a pause or deployment.
+STOP. The writer pause plan binds the exact accepted baseline digest and
+rechecks it before each state-changing boundary; this command alone does not
+authorize a pause or deployment.
 
 This command is reviewed code only. It is not installed in the forced SSH
 command or called by GitHub Actions, and no live VPS preflight was run. Candidate
@@ -258,27 +259,33 @@ changes invalidate an earlier plan. Inspect and record the installed values
 before creating this profile; the repository service template does not attest
 to the production unit or account.
 
-The **plan** phase verifies the staged candidate digest, four unique running
+The **plan** phase requires the accepted read-only release preflight report and
+its root-private baseline for the same staged candidate. It rechecks the
+reviewed checkout, installed Compose and bind files, private runtime hashes,
+Mom approval, and exact IDs, images, and health of all five installed services.
+It then verifies the staged candidate digest, four unique running
 Compose containers (`backend`, `mom`, `postgres`, `proxy`), health of the writers
 and PostgreSQL, an active backup timer, an idle backup service, and no running
 bundled bot or maintenance service. It saves the exact container IDs and
-profile/candidate digests in a root-private plan, with a sanitized PASS/STOP
+profile/candidate/preflight-baseline digests in a root-private plan, with a sanitized PASS/STOP
 report. No service changes occur.
 
 The **pause** phase requires the exact plan SHA-256 and `--confirm-pause`. It
-rechecks the running IDs and health, reserves an INCOMPLETE marker, stops only
+rechecks the bound preflight baseline, running IDs, and health before reserving
+an INCOMPLETE marker. It stops only
 the recorded Mom and backend containers in that order, then requires those
 same containers to be exited while PostgreSQL remains healthy, proxy keeps
 running, and the backup timer stays active. The **backup** phase independently
-requires `--confirm-backup`, the accepted pause report, the same stopped
-identities, an idle backup service,
+requires `--confirm-backup`, the accepted pause report, the unchanged preflight
+baseline with the two original writers stopped, an idle backup service,
 and the reviewed unit. It starts only that unit once, requires exactly one new
 managed run, and reuses the writer/backup ordering gate. Each phase writes a
 new root-private boolean-only report to a caller-selected private directory
 outside the Compose project. No phase automatically retries or restarts a
 writer. The backup phase stores only the new run UUID in a separate private
 selector for later recovery proof, after rechecking the complete paused
-baseline so a writer or migration container started during backup causes STOP.
+baseline, including frontend identity and private input hashes, so a writer,
+migration container, or configuration drift during backup causes STOP.
 
 Partial stop, command timeout, new container, unit drift, a failed backup, or
 missing evidence is STOP. Preserve all markers and reports. Do not migrate or

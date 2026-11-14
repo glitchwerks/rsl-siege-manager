@@ -223,14 +223,31 @@ def planned(data, expected):
             "ids": {name: item["id"] for name, item in services.items()}}
 
 
+def bound_preflight(data, directory, manifest_digest, baseline_digest=None, writers_paused=False):
+    spec = importlib.util.spec_from_file_location("release_preflight_boundary", HERE / "portable-vps-release-preflight.py")
+    preflight = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(preflight)
+    baseline, actual_digest = preflight.accepted_baseline(directory, manifest_digest)
+    current = ((baseline_digest is None or actual_digest == baseline_digest)
+               and preflight.baseline_current(data["project_directory"], baseline,
+                                              writers_paused=writers_paused))
+    return (actual_digest if baseline_digest is None and current else current), baseline
+
+
 def plan(data, profile_digest, directory, expected):
     checks = {"root_execution": os.geteuid() == 0, "plan_available": False}
     if not checks["root_execution"]:
         return checks
+    baseline_digest, baseline = bound_preflight(data, directory, expected)
+    checks["preflight_current"] = bool(baseline_digest)
+    if not checks["preflight_current"]:
+        return checks
     value = planned(data, expected)
-    checks["baseline_healthy"] = value is not None
+    checks["baseline_healthy"] = (value is not None and value["project"] == baseline["project"]
+        and all(value["ids"][name] == baseline["installed"][name]["id"] for name in value["ids"]))
     if not checks["baseline_healthy"]:
         return checks
+    value["preflight_baseline_sha256"] = baseline_digest
     value["profile_sha256"] = profile_digest
     value["created_at"] = stamp()
     write_private(directory / "pause-plan.json", value)
@@ -247,6 +264,8 @@ def load_plan(directory, digest_expected, profile_digest, manifest_digest):
             and value.get("schema") == 1 and value.get("phase") == "pause-plan"
             and value.get("profile_sha256") == profile_digest
             and value.get("manifest_sha256") == manifest_digest
+            and isinstance(value.get("preflight_baseline_sha256"), str)
+            and REMOTE.SHA256.fullmatch(value["preflight_baseline_sha256"])
             and isinstance(value.get("ids"), dict)
             and set(value["ids"]) == {"backend", "mom", "postgres", "proxy"}
             and all(isinstance(item, str) and CONTAINER_ID.fullmatch(item) for item in value["ids"].values())):
@@ -278,7 +297,11 @@ def paused(data, value):
 
 
 def pause(data, value, directory):
-    checks = {"baseline_unchanged": unchanged_running(data, value)}
+    checks = {"preflight_current": bound_preflight(data, directory, value["manifest_sha256"],
+        value["preflight_baseline_sha256"])[0]}
+    if not checks["preflight_current"]:
+        return checks
+    checks["baseline_unchanged"] = unchanged_running(data, value)
     if not checks["baseline_unchanged"]:
         return checks
     write_private(directory / "pause-start.json", {"phase": "pause-start", "plan_sha256": digest(
@@ -298,6 +321,8 @@ def backup(data, value, directory, manifest_digest):
                        object_pairs_hook=REMOTE.no_duplicate_keys)
     checks["pause_pass"] = (isinstance(prior, dict) and prior.get("phase") == "pause"
                             and prior.get("status") == "PASS")
+    checks["preflight_current"] = bound_preflight(data, directory, manifest_digest,
+        value["preflight_baseline_sha256"], writers_paused=True)[0]
     checks["writers_paused"] = paused(data, value)
     checks["backup_idle"] = backup_idle(data)
     checks["effective_unit_unchanged"] = effective_unit(data)
@@ -324,7 +349,9 @@ def backup(data, value, directory, manifest_digest):
                         data["backup_owner"], data["backup_root"], report)
     checks["pause_backup_order_verified"] = bool(gate) and all(gate.values())
     checks["post_backup_baseline"] = paused(data, value)
-    if checks["pause_backup_order_verified"] and checks["post_backup_baseline"]:
+    checks["post_backup_preflight"] = bound_preflight(data, directory, manifest_digest,
+        value["preflight_baseline_sha256"], writers_paused=True)[0]
+    if checks["pause_backup_order_verified"] and checks["post_backup_baseline"] and checks["post_backup_preflight"]:
         write_private(directory / "backup-selector.json", {"schema": 1, "run_id": run_id})
     return checks
 

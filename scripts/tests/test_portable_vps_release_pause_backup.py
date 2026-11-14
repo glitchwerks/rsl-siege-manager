@@ -17,12 +17,44 @@ SPEC.loader.exec_module(PHASE)
 
 def plan_fixture():
     return {"schema": 1, "phase": "pause-plan", "manifest_sha256": "a" * 64,
-            "profile_sha256": "b" * 64, "project": "siege-ci",
+            "profile_sha256": "b" * 64, "preflight_baseline_sha256": "e" * 64,
+            "project": "siege-ci",
             "ids": {name: character * 64 for name, character in
                     (("backend", "a"), ("mom", "b"), ("postgres", "c"), ("proxy", "d"))}}
 
 
 class ReleasePauseBackupTests(unittest.TestCase):
+    def test_plan_requires_matching_accepted_preflight(self):
+        value = plan_fixture()
+        baseline = {"project": value["project"], "installed": {
+            name: {"id": identifier} for name, identifier in value["ids"].items()}}
+        with tempfile.TemporaryDirectory() as temporary, patch.object(
+            PHASE.os, "geteuid", return_value=0
+        ), patch.object(PHASE, "planned", return_value=value), patch.object(
+            PHASE, "bound_preflight", return_value=(False, baseline)
+        ):
+            checks = PHASE.plan({}, "b" * 64, Path(temporary), "a" * 64)
+            self.assertFalse(checks["preflight_current"])
+            self.assertFalse((Path(temporary) / "pause-plan.json").exists())
+        with tempfile.TemporaryDirectory() as temporary, patch.object(
+            PHASE.os, "geteuid", return_value=0
+        ), patch.object(PHASE, "planned", return_value=value), patch.object(
+            PHASE, "bound_preflight", return_value=("e" * 64, baseline)
+        ):
+            checks = PHASE.plan({}, "b" * 64, Path(temporary), "a" * 64)
+            self.assertTrue(all(checks.values()))
+            self.assertEqual(json.loads((Path(temporary) / "pause-plan.json").read_text())[
+                "preflight_baseline_sha256"], "e" * 64)
+
+    def test_preflight_drift_denies_writer_stop(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.object(
+            PHASE, "bound_preflight", return_value=(False, {})
+        ), patch.object(PHASE, "command") as run:
+            checks = PHASE.pause({}, plan_fixture(), Path(temporary))
+            self.assertFalse(checks["preflight_current"])
+            run.assert_not_called()
+            self.assertFalse((Path(temporary) / "pause-start.json").exists())
+
     def test_effective_unit_requires_reviewed_drop_ins_and_loaded_state(self):
         unit = "# /etc/systemd/system/rsl-pilot-backup.service\n[Service]\nExecStart=/bin/true"
         data = {"backup_unit": "rsl-pilot-backup.service",
@@ -42,7 +74,8 @@ class ReleasePauseBackupTests(unittest.TestCase):
             PHASE, "unchanged_running", return_value=True
         ), patch.object(PHASE, "command", side_effect=["", ""]) as run, patch.object(
             PHASE, "paused", return_value=True
-        ), patch.object(PHASE.GATE, "read_private", return_value=b"plan"):
+        ), patch.object(PHASE, "bound_preflight", return_value=(True, {})), patch.object(
+            PHASE.GATE, "read_private", return_value=b"plan"):
             checks = PHASE.pause({}, value, Path(temporary))
             self.assertTrue(all(checks.values()))
             self.assertEqual([call.args[0] for call in run.call_args_list], [
@@ -55,14 +88,16 @@ class ReleasePauseBackupTests(unittest.TestCase):
         value = plan_fixture()
         with tempfile.TemporaryDirectory() as temporary, patch.object(
             PHASE, "unchanged_running", return_value=False
-        ), patch.object(PHASE, "command") as run:
+        ), patch.object(PHASE, "bound_preflight", return_value=(True, {})), patch.object(
+            PHASE, "command") as run:
             self.assertFalse(PHASE.pause({}, value, Path(temporary))["baseline_unchanged"])
             run.assert_not_called()
         with tempfile.TemporaryDirectory() as temporary, patch.object(
             PHASE, "unchanged_running", return_value=True
         ), patch.object(PHASE, "command", return_value=None) as run, patch.object(
             PHASE, "paused", return_value=False
-        ), patch.object(PHASE.GATE, "read_private", return_value=b"plan"):
+        ), patch.object(PHASE, "bound_preflight", return_value=(True, {})), patch.object(
+            PHASE.GATE, "read_private", return_value=b"plan"):
             checks = PHASE.pause({}, value, Path(temporary))
             self.assertFalse(checks["mom_stop"])
             self.assertEqual(run.call_count, 1)
@@ -77,7 +112,8 @@ class ReleasePauseBackupTests(unittest.TestCase):
                 PHASE, "paused", return_value=True
             ), patch.object(PHASE, "backup_idle", return_value=True), patch.object(
                 PHASE, "effective_unit", return_value=True
-            ), patch.object(PHASE, "command") as run:
+            ), patch.object(PHASE, "bound_preflight", return_value=(True, {})), patch.object(
+                PHASE, "command") as run:
                 checks = PHASE.backup({"backup_root": directory}, value, directory, "a" * 64)
             self.assertFalse(checks["pause_pass"])
             run.assert_not_called()
@@ -91,7 +127,8 @@ class ReleasePauseBackupTests(unittest.TestCase):
                 PHASE, "paused", return_value=True
             ), patch.object(PHASE, "backup_idle", return_value=True), patch.object(
                 PHASE, "effective_unit", return_value=False
-            ), patch.object(PHASE, "command") as run:
+            ), patch.object(PHASE, "bound_preflight", return_value=(True, {})), patch.object(
+                PHASE, "command") as run:
                 checks = PHASE.backup({"backup_root": directory}, value, directory, "a" * 64)
             self.assertFalse(checks["effective_unit_unchanged"])
             run.assert_not_called()
@@ -115,6 +152,7 @@ class ReleasePauseBackupTests(unittest.TestCase):
                 PHASE, "paused", return_value=True
             ), patch.object(PHASE, "backup_idle", return_value=True), patch.object(
                 PHASE, "effective_unit", return_value=True
+            ), patch.object(PHASE, "bound_preflight", return_value=(True, {})
             ), patch.object(
                 PHASE, "command", side_effect=start
             ), patch.object(PHASE.GATE, "inspect", return_value={"backup_after_pause": True}):
@@ -140,6 +178,7 @@ class ReleasePauseBackupTests(unittest.TestCase):
                 PHASE, "paused", side_effect=[True, False]
             ), patch.object(PHASE, "backup_idle", return_value=True), patch.object(
                 PHASE, "effective_unit", return_value=True
+            ), patch.object(PHASE, "bound_preflight", return_value=(True, {})
             ), patch.object(
                 PHASE, "command", side_effect=start
             ), patch.object(PHASE.GATE, "inspect", return_value={"backup_after_pause": True}):

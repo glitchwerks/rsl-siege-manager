@@ -30,6 +30,65 @@ def model(backend, frontend, mom):
 
 
 class ReleasePreflightTests(unittest.TestCase):
+    def test_accepted_baseline_rejects_failed_report_and_wrong_candidate(self):
+        baseline = {"schema": 1, "phase": "release-preflight-baseline",
+                    "manifest_sha256": "a" * 64, "candidate_source_sha": "b" * 40,
+                    "installed_mom_source_sha": "c" * 40, "project": "synthetic",
+                    "stack_env_sha256": "d" * 64,
+                    "runtime_sha256": {name: "e" * 64 for name in PHASE.RUNTIME_FILES},
+                    "config_sha256": {name: "f" * 64 for name in PHASE.CONFIG_FILES},
+                    "installed": {name: {"id": character * 64, "image": name + "@sha256:" + "0" * 64}
+                                  for name, character in zip(PHASE.SERVICES, "12345")}}
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            (directory / "preflight-baseline.json").write_text(json.dumps(baseline))
+            (directory / "preflight-report.json").write_text(
+                '{"phase":"release-preflight","status":"PASS"}')
+            with patch.object(PHASE.GATE, "read_private", side_effect=lambda path, owner: path.read_bytes()):
+                loaded, recorded_digest = PHASE.accepted_baseline(directory, "a" * 64)
+                self.assertEqual(loaded, baseline)
+                self.assertEqual(recorded_digest, PHASE.digest((directory / "preflight-baseline.json").read_bytes()))
+                with self.assertRaises(ValueError):
+                    PHASE.accepted_baseline(directory, "9" * 64)
+                (directory / "preflight-report.json").write_text(
+                    '{"phase":"release-preflight","status":"STOP"}')
+                with self.assertRaises(ValueError):
+                    PHASE.accepted_baseline(directory, "a" * 64)
+
+    def test_phase_boundary_catches_private_runtime_and_frontend_image_drift(self):
+        current = model("backend-image", "frontend-image", "mom-image")
+        installed = {name: {"id": character * 64, "image": current["services"][name]["image"]}
+                     for name, character in zip(PHASE.SERVICES, "abcde")}
+        runtime = {name: "d" * 64 for name in PHASE.RUNTIME_FILES}
+        config = {name: "e" * 64 for name in PHASE.CONFIG_FILES}
+        baseline = {"candidate_source_sha": "a" * 40, "installed_mom_source_sha": "b" * 40,
+                    "stack_env_sha256": PHASE.digest(b"stack"), "runtime_sha256": runtime,
+                    "config_sha256": config, "project": "synthetic", "installed": installed}
+        def docker(arguments, timeout=20):
+            service = next(name for name, item in installed.items() if item["id"] == arguments[-1])
+            if ".Config.Image" in arguments[3]:
+                return json.dumps(installed[service]["image"])
+            return json.dumps({"Running": True, "Status": "running", "Health": {"Status": "healthy"}})
+        with tempfile.TemporaryDirectory() as temporary, patch.object(
+            PHASE, "checkout_at", return_value=True
+        ), patch.object(PHASE.GATE, "read_private", return_value=b"stack"), patch.object(
+            PHASE, "runtime_hashes", return_value=runtime
+        ) as hashes, patch.object(PHASE, "config_hashes", return_value=config), patch.object(
+            PHASE.GATE, "project_name", return_value="synthetic"
+        ), patch.object(PHASE, "reviewed_config", return_value=True), patch.object(
+            PHASE.PREFLIGHT, "deployment_bind_sources_current", return_value=True
+        ), patch.object(PHASE.PAUSE, "no_extra_writers", return_value=True), patch.object(
+            PHASE.PREFLIGHT, "read_mom_approval", return_value={"source_commit": "b" * 40}
+        ), patch.object(PHASE.PREFLIGHT, "render", return_value=current), patch.object(
+            PHASE.PAUSE, "identifiers", side_effect=lambda project, service: installed[service]["id"]
+        ), patch.object(PHASE.PAUSE, "command", side_effect=docker):
+            self.assertTrue(PHASE.baseline_current(Path(temporary), baseline))
+            hashes.return_value = {**runtime, "mom.env": "0" * 64}
+            self.assertFalse(PHASE.baseline_current(Path(temporary), baseline))
+            hashes.return_value = runtime
+            installed["frontend"]["image"] = "different"
+            self.assertFalse(PHASE.baseline_current(Path(temporary), baseline))
+
     def test_report_inside_stage_is_rejected_before_any_write(self):
         with tempfile.TemporaryDirectory() as temporary:
             project = Path(temporary) / "project"
