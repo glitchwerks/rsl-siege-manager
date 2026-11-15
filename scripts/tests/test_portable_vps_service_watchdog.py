@@ -48,6 +48,21 @@ class PolicyTests(unittest.TestCase):
         self.assertEqual(watchdog.decide(unhealthy(cid="c" * 64), state, 2000), "OBSERVING")
         self.assertEqual(state["first_unhealthy"], 2000)
 
+    def test_stale_observation_restarts_window_without_erasing_allowances(self):
+        state = initial()
+        watchdog.decide(unhealthy(), state, 1000)
+        self.assertEqual(watchdog.decide(unhealthy(), state, 1000 + watchdog.WINDOW_SECONDS), "OBSERVING")
+        self.assertEqual(state["first_unhealthy"], 1000 + watchdog.WINDOW_SECONDS)
+        self.assertEqual(watchdog.decide(unhealthy(), state, 1000 + watchdog.WINDOW_SECONDS + 90), "ELIGIBLE")
+
+    def test_backward_clock_fails_closed_without_erasing_attempt(self):
+        state = initial()
+        state["attempts"] = [1000]
+        self.assertEqual(watchdog.decide(unhealthy(), state, 900), "ESCALATE")
+        self.assertEqual(state["attempts"], [1000])
+        self.assertEqual(watchdog.decide(unhealthy(), state, 1000), "OBSERVING")
+        self.assertEqual(watchdog.decide(unhealthy(), state, 1090), "ESCALATE")
+
 
 class RunnerTests(unittest.TestCase):
     def setUp(self):

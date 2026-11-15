@@ -139,6 +139,8 @@ def atomic(path, value):
 
 
 def decide(current, state, now):
+    if any(x > now for x in state["attempts"]):
+        return "ESCALATE"  # a backward clock correction must not erase an allowance
     attempts = [x for x in state["attempts"] if now - WINDOW_SECONDS <= x <= now]
     state["attempts"] = attempts
     if current is None or not current["running"] or current["oom"]:
@@ -152,8 +154,11 @@ def decide(current, state, now):
     if state["container_id"] != current["id"] or state["restart_count"] != current["restarts"]:
         state.update(first_unhealthy=now, container_id=current["id"], restart_count=current["restarts"])
         return "OBSERVING"
-    if state["first_unhealthy"] is None or not 0 <= now - state["first_unhealthy"] < WINDOW_SECONDS:
-        raise ValueError("invalid_first_observation")
+    if state["first_unhealthy"] is not None and state["first_unhealthy"] > now:
+        return "ESCALATE"
+    if state["first_unhealthy"] is None or now - state["first_unhealthy"] >= WINDOW_SECONDS:
+        state["first_unhealthy"] = now
+        return "OBSERVING"
     if now - state["first_unhealthy"] < MIN_UNHEALTHY_SECONDS:
         return "OBSERVING"
     if len(attempts) >= MAX_RESTARTS or attempts and now - attempts[-1] < COOLDOWN_SECONDS:
