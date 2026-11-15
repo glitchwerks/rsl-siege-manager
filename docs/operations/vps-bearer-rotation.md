@@ -1,10 +1,13 @@
-# Portable paired bearer rotation (draft)
+# Portable paired bearer rotation
 
-This runbook is under development for #638. Its script is not an authorization
-to change the production VPS. The shared [credential contract](https://github.com/glitchwerks/rsl-mom-apps/blob/main/docs/portable-credential-rotation.md)
+#638 implemented the phase-scoped runner and passed disposable Docker rehearsal.
+The remaining live-stack acceptance is tracked in
+[coordination #12](https://github.com/glitchwerks/rsl-mom-apps/issues/12).
+This runbook is not an authorization to change the production VPS. The shared
+[credential contract](https://github.com/glitchwerks/rsl-mom-apps/blob/main/docs/portable-credential-rotation.md)
 defines the two independent bearer pairs and the separate approval boundaries.
-Do not use this draft to perform a live rotation. The Azure Key Vault adapter
-remains available for a separately reviewed return path.
+Do not use this runbook for a live rotation before the remaining gates pass.
+The Azure Key Vault adapter remains available for a separately reviewed return path.
 
 ## Phases and evidence
 
@@ -84,8 +87,14 @@ not delete earlier evidence.
 
 ## Required before production use
 
-The draft still needs completed disposable Docker rehearsal for normal, drift,
-partial, interrupted, routine rollback, and exposed-value paths. It also needs
-one-bot and independent alerting acceptance, plus the final
-operator procedure and rollback review. Production activation is a separate
+The merged runner has focused tests for normal, drift, partial, interrupted,
+routine recovery, and exposed-value paths. CI also passed a disposable Docker
+rehearsal for both bearer directions, routine rollback, fresh recovery, and
+the two-peer pause. These are simulated/disposable checks, not acceptance of
+the isolated Discord application and stack.
+
+Exercise the complete procedure against the separately reviewed isolated
+stack, including one-bot ownership, both authenticated directions, failure and
+recovery evidence, and independent alert delivery. Review the operator procedure
+and rollback against that evidence. Production activation remains a separate
 gate after the full deployment window is approved.
