@@ -2,12 +2,15 @@
 """Phase-gated installation of the restricted GitHub VPS access key."""
 
 import argparse
+import gzip
 import hashlib
+import io
 import json
 import os
 import stat
 import subprocess
 import tempfile
+import zlib
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -34,14 +37,39 @@ OLD_REMOTE_SHA256S = (
     "e634b0eb9a8e01518b78e3dfc72d44cf4a2174c75ee36f858a678293cddaf30e",
 )
 NEW_REMOTE_SHA256 = "a223e74a4ecd2b285a47bd6e695fd437d8dc68f3cbe8093243b26dd6c0447e00"
+RELEASE_SOURCE_ARCHIVE = SOURCE_SCRIPT.with_name("portable-vps-remote-release.py.gz")
+DAY_ROLE_REMOTE_OLD_SHA256 = NEW_REMOTE_SHA256
+DAY_ROLE_REMOTE_NEW_SHA256 = "b5b8518a0a8a83cd3655e5a4da79df81f1582647e6ec166a9723fe42c8304e64"
 
 
 def script_backup_path():
     return Path("/root/portable-vps-remote.py.before-recovery-restore")
 
 
+def day_role_script_backup_path():
+    return Path("/root/portable-vps-remote.py.before-day-role-dispatch")
+
+
 def digest(data):
     return hashlib.sha256(data).hexdigest()
+
+
+def release_script_bytes():
+    """Read the pinned earlier script from the reviewed repository archive."""
+    current = SOURCE_SCRIPT.read_bytes()
+    if digest(current) == NEW_REMOTE_SHA256:
+        return current
+    archive = RELEASE_SOURCE_ARCHIVE.read_bytes()
+    if len(archive) > 30_000:
+        raise ValueError("reviewed release archive too large")
+    try:
+        with gzip.GzipFile(fileobj=io.BytesIO(archive)) as stream:
+            source = stream.read(200_001)
+    except (OSError, EOFError, zlib.error) as error:
+        raise ValueError("reviewed release archive unreadable") from error
+    if len(source) > 200_000 or digest(source) != NEW_REMOTE_SHA256:
+        raise ValueError("reviewed release source unavailable")
+    return source
 
 
 def checked_file(path, uid=0):
@@ -198,7 +226,8 @@ def verify(key):
     checks["restricted_key_exactly_once"] = lines.count(entry) == 1
     checks["no_other_deploy_key"] = sum(KEY_COMMENT.encode() in line for line in lines) == 1
     checks["reviewed_script_installed"] = (
-        checked_file(REMOTE_SCRIPT) and REMOTE_SCRIPT.read_bytes() == SOURCE_SCRIPT.read_bytes()
+        checked_file(REMOTE_SCRIPT)
+        and digest(REMOTE_SCRIPT.read_bytes()) in (NEW_REMOTE_SHA256, DAY_ROLE_REMOTE_NEW_SHA256)
     )
     if checks["reviewed_script_installed"]:
         environment = dict(os.environ, SSH_ORIGINAL_COMMAND="access-check")
@@ -224,13 +253,16 @@ def update_script(key):
     entry = key_entry(key).encode()
     checks["restricted_key_exactly_once"] = AUTHORIZED_KEYS.read_bytes().splitlines().count(entry) == 1
     checks["old_script_reviewed"] = checked_file(REMOTE_SCRIPT) and digest(REMOTE_SCRIPT.read_bytes()) in OLD_REMOTE_SHA256S
-    checks["new_script_reviewed"] = digest(SOURCE_SCRIPT.read_bytes()) == NEW_REMOTE_SHA256
+    try:
+        new_data = release_script_bytes()
+        checks["new_script_reviewed"] = digest(new_data) == NEW_REMOTE_SHA256
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        checks["new_script_reviewed"] = False
     backup = script_backup_path()
     checks["backup_path_unused"] = not backup.exists() and not backup.is_symlink()
     if not all(checks.values()):
         return checks
     old_data = REMOTE_SCRIPT.read_bytes()
-    new_data = SOURCE_SCRIPT.read_bytes()
     descriptor = os.open(backup, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(descriptor, "wb") as stream:
         stream.write(old_data)
@@ -258,9 +290,66 @@ def restore_script(key):
     entry = key_entry(key).encode()
     checks["restricted_key_exactly_once"] = AUTHORIZED_KEYS.read_bytes().splitlines().count(entry) == 1
     checks["updated_script_present"] = checked_file(REMOTE_SCRIPT) and digest(REMOTE_SCRIPT.read_bytes()) == NEW_REMOTE_SHA256
-    checks["new_script_reviewed"] = digest(SOURCE_SCRIPT.read_bytes()) == NEW_REMOTE_SHA256
+    try:
+        checks["new_script_reviewed"] = digest(release_script_bytes()) == NEW_REMOTE_SHA256
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        checks["new_script_reviewed"] = False
     backup = script_backup_path()
     checks["reviewed_old_script_backup"] = private_file(backup) and digest(backup.read_bytes()) in OLD_REMOTE_SHA256S
+    if not all(checks.values()):
+        return checks
+    old_data = backup.read_bytes()
+    atomic_write(REMOTE_SCRIPT, old_data, 0o644)
+    checks["old_script_restored"] = REMOTE_SCRIPT.read_bytes() == old_data
+    return checks
+
+
+def update_day_role_script(key):
+    """Replace only the reviewed forced-command script, preserving its exact old bytes."""
+    checks = preflight()
+    checks["public_key_valid"] = bool(key)
+    if not all(checks.values()):
+        return checks
+    entry = key_entry(key).encode()
+    checks["restricted_key_exactly_once"] = AUTHORIZED_KEYS.read_bytes().splitlines().count(entry) == 1
+    checks["old_script_reviewed"] = checked_file(REMOTE_SCRIPT) and digest(REMOTE_SCRIPT.read_bytes()) == DAY_ROLE_REMOTE_OLD_SHA256
+    new_data = SOURCE_SCRIPT.read_bytes()
+    checks["new_script_reviewed"] = digest(new_data) == DAY_ROLE_REMOTE_NEW_SHA256
+    backup = day_role_script_backup_path()
+    checks["backup_path_unused"] = not backup.exists() and not backup.is_symlink()
+    if not all(checks.values()):
+        return checks
+    old_data = REMOTE_SCRIPT.read_bytes()
+    descriptor = os.open(backup, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(descriptor, "wb") as stream:
+        stream.write(old_data)
+        stream.flush()
+        os.fsync(stream.fileno())
+    checks["old_script_backup"] = private_file(backup) and backup.read_bytes() == old_data
+    if not checks["old_script_backup"]:
+        return checks
+    try:
+        atomic_write(REMOTE_SCRIPT, new_data, 0o644)
+        checks["updated_script_installed"] = checked_file(REMOTE_SCRIPT) and REMOTE_SCRIPT.read_bytes() == new_data
+    except OSError:
+        checks["script_update"] = False
+    if not checks.get("updated_script_installed"):
+        atomic_write(REMOTE_SCRIPT, old_data, 0o644)
+        checks["old_script_restored"] = REMOTE_SCRIPT.read_bytes() == old_data
+    return checks
+
+
+def restore_day_role_script(key):
+    checks = preflight()
+    checks["public_key_valid"] = bool(key)
+    if not all(checks.values()):
+        return checks
+    entry = key_entry(key).encode()
+    checks["restricted_key_exactly_once"] = AUTHORIZED_KEYS.read_bytes().splitlines().count(entry) == 1
+    checks["updated_script_present"] = checked_file(REMOTE_SCRIPT) and digest(REMOTE_SCRIPT.read_bytes()) == DAY_ROLE_REMOTE_NEW_SHA256
+    checks["new_script_reviewed"] = digest(SOURCE_SCRIPT.read_bytes()) == DAY_ROLE_REMOTE_NEW_SHA256
+    backup = day_role_script_backup_path()
+    checks["reviewed_old_script_backup"] = private_file(backup) and digest(backup.read_bytes()) == DAY_ROLE_REMOTE_OLD_SHA256
     if not all(checks.values()):
         return checks
     old_data = backup.read_bytes()
@@ -331,10 +420,10 @@ def replace_restricted_key(old_key, new_key, phase):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("phase", choices=("inspect", "install", "verify", "rollback", "update-script", "restore-script", "rotate-key", "restore-key"))
+    parser.add_argument("phase", choices=("inspect", "install", "verify", "rollback", "update-script", "restore-script", "update-day-role-script", "restore-day-role-script", "rotate-key", "restore-key"))
     parser.add_argument("--public-key", type=Path)
     parser.add_argument("--old-public-key", type=Path)
-    parser.add_argument("--confirm", choices=("install", "rollback", "update-script", "restore-script", "rotate-key", "restore-key"))
+    parser.add_argument("--confirm", choices=("install", "rollback", "update-script", "restore-script", "update-day-role-script", "restore-day-role-script", "rotate-key", "restore-key"))
     parser.add_argument("--report", required=True, type=Path)
     args = parser.parse_args()
     checks = preflight()
@@ -347,7 +436,7 @@ def main():
             old_key = public_key(args.old_public_key) if args.old_public_key else ""
         except (OSError, ValueError, subprocess.TimeoutExpired):
             old_key = ""
-        if args.phase in ("install", "rollback", "update-script", "restore-script", "rotate-key", "restore-key") and args.confirm != args.phase:
+        if args.phase in ("install", "rollback", "update-script", "restore-script", "update-day-role-script", "restore-day-role-script", "rotate-key", "restore-key") and args.confirm != args.phase:
             checks["explicit_phase_confirmation"] = False
         elif args.phase == "install":
             checks = install(key)
@@ -357,6 +446,10 @@ def main():
             checks = update_script(key)
         elif args.phase == "restore-script":
             checks = restore_script(key)
+        elif args.phase == "update-day-role-script":
+            checks = update_day_role_script(key)
+        elif args.phase == "restore-day-role-script":
+            checks = restore_day_role_script(key)
         elif args.phase == "rotate-key":
             checks = replace_restricted_key(old_key, key, "rotation")
         elif args.phase == "restore-key":

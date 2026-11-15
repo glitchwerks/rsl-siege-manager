@@ -24,6 +24,66 @@ VARS = {"VPS_RELEASE_READ_USER", "VPS_SSH_USER"}
 
 
 class ReleaseTargetContract(unittest.TestCase):
+    def test_day_role_stage_uses_protected_target_and_secret_decision(self):
+        raw = (WORKFLOWS / "vps-day-role-stage.yml").read_text()
+        self.assertIn("group: vps-production-promotion", raw)
+        self.assertIn(ENVIRONMENT, raw)
+        self.assertIn(TAILSCALE_TAG, raw)
+        self.assertIn("default: rehearsal", raw)
+        self.assertIn("inputs.target == 'rehearsal' || inputs.target == 'production'", raw)
+        self.assertIn("'REHEARSAL_DAY_ROLE_DECISION_JSON' || 'DAY_ROLE_DECISION_JSON'", raw)
+        for name in HOST_SECRETS:
+            self.assertIn(f"'REHEARSAL_{name}'", raw)
+        self.assertIn("STAGE_ID: ${{ inputs.stage_id }}", raw)
+        self.assertIn('stage-id "$STAGE_ID"', raw)
+        self.assertNotIn("--stage-id '${{ inputs.stage_id }}'", raw)
+        self.assertNotIn("secrets.DAY_ROLE_DECISION_JSON", raw)
+
+        proof = (WORKFLOWS / "vps-day-role-proof.yml").read_text()
+        self.assertIn("group: vps-production-promotion", proof)
+        self.assertIn(ENVIRONMENT, proof)
+        self.assertIn(TAILSCALE_TAG, proof)
+        self.assertIn("default: rehearsal", proof)
+        self.assertIn("inputs.target == 'rehearsal' || inputs.target == 'production'", proof)
+        for name in HOST_SECRETS:
+            self.assertIn(f"'REHEARSAL_{name}'", proof)
+        self.assertIn('stage-id "$STAGE_ID"', proof)
+        self.assertNotIn("--stage-id '${{ inputs.stage_id }}'", proof)
+
+    def test_every_day_role_phase_keeps_target_credentials_and_approval_separate(self):
+        for phase in ("stage", "proof", "preflight", "activate", "recover"):
+            with self.subTest(phase=phase):
+                raw = (WORKFLOWS / f"vps-day-role-{phase}.yml").read_text()
+                self.assertIn("group: vps-production-promotion", raw)
+                self.assertIn(ENVIRONMENT, raw)
+                self.assertIn(TAILSCALE_TAG, raw)
+                self.assertIn("default: rehearsal", raw)
+                self.assertIn("github.ref == 'refs/heads/main'", raw)
+                self.assertIn("inputs.target == 'rehearsal' || inputs.target == 'production'", raw)
+                self.assertIn("STAGE_ID: ${{ inputs.stage_id }}", raw)
+                self.assertIn('stage-id "$STAGE_ID"', raw)
+                for name in HOST_SECRETS:
+                    self.assertIn(
+                        "secrets[inputs.target == 'rehearsal' && "
+                        f"'REHEARSAL_{name}' || '{name}']", raw)
+                    self.assertNotIn(f"secrets.{name}", raw)
+                self.assertIn(
+                    "vars[inputs.target == 'rehearsal' && "
+                    "'REHEARSAL_VPS_SSH_USER' || 'VPS_SSH_USER']", raw)
+                if phase == "stage":
+                    self.assertIn("SOURCE_SHA: ${{ github.sha }}", raw)
+                else:
+                    self.assertIn("SOURCE_SHA: ${{ inputs.source_sha }}", raw)
+                    self.assertIn("source_sha:\n", raw)
+                    self.assertIn("fetch-depth: 0", raw)
+                    self.assertIn('git merge-base --is-ancestor "$SOURCE_SHA" HEAD', raw)
+                if phase in {"activate", "recover"}:
+                    self.assertIn("Require separately approved", raw)
+                    self.assertIn("test \"$WINDOW_ID\" = \"$APPROVED_WINDOW_ID\"", raw)
+                    self.assertIn("'REHEARSAL_VPS_DAY_ROLE_WINDOW_ID' || 'VPS_DAY_ROLE_WINDOW_ID'", raw)
+                if phase in {"preflight", "activate", "recover"}:
+                    self.assertIn("'REHEARSAL_VPS_PUBLIC_SIGNAL_CONFIG_PATH' || 'VPS_PUBLIC_SIGNAL_CONFIG_PATH'", raw)
+
     def test_every_phase_requires_explicit_protected_target(self):
         paths = {path.stem.removeprefix("vps-release-"): path
                  for path in WORKFLOWS.glob("vps-release-*.yml")}

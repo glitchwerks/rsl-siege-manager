@@ -47,6 +47,26 @@ and an accepted record. Keep the directory private and off uploaded artifacts.
 A stage never edits the running project or sends a webhook. Re-stage after any
 STOP or baseline drift; never edit an accepted stage in place.
 
+The protected **VPS day-role stage** workflow accepts an exact UUID as its
+`stage_id` before environment approval. It chooses rehearsal or production
+credentials and tailnet tags separately, and sends the target's private
+`DAY_ROLE_DECISION_JSON` secret as bounded SSH stdin. The restricted host route
+checks the reviewed checkout and decision digest, invokes only the stage phase,
+and removes its temporary decision file. GitHub receives boolean checks and
+the already visible stage ID. The existing manual command may still generate
+its own UUID; `--stage-id` selects the exact ID for the protected route. This
+workflow does not install the host route, approve activation, or deploy a
+candidate. The host route must be installed through its separately reviewed
+hash-bound update procedure after isolated rehearsal.
+Record the full `github.sha` from the successful stage workflow run as the
+stage's `source_sha`. Supply that exact SHA to later protected proof,
+preflight, activation, and recovery dispatches even if `main` advances. Those
+workflows execute their dispatch code from current `main`; the host accepts
+the source SHA only when it matches its unchanged reviewed checkout. CI also
+requires that SHA to be an ancestor of current `main`. This
+keeps a failed activation recoverable after a later merge without running
+older workflow code.
+
 Before activation, complete the separately confirmed maintenance pause and
 two-peer drain, managed encrypted backup, off-host recovery and isolated
 same-copy restore. Write the successful maintenance `pause` report to the exact
@@ -73,9 +93,47 @@ python3 scripts/portable-vps-day-role-config.py proof \
 ```
 
 The example paths must be replaced with the protected paths on the selected
-host. The backup path must match the `backup_root` in the profile. Record the
-installed digest and public signal configuration. In the full approved window,
-activate the accepted stage using its exact private directory:
+host. The backup path must match the `backup_root` in the profile. The
+protected **VPS day-role proof** workflow dispatches the same read-only host
+phase with the exact stage UUID, successful `pause` or `drain` report selector,
+and three private evidence paths. The restricted route rejects path traversal,
+duplicate paths, an unreviewed checkout, and a repeated proof attempt. The
+sanitized artifact contains the accepted proof SHA-256 to bind a later
+activation; it contains no report paths, role IDs, receiver URL, or credentials.
+The protected **VPS day-role preflight** workflow takes that proof SHA-256 and
+records an exact, single-use baseline and public-health acceptance. Its
+sanitized artifact returns `preflight_sha256`. If the installed state, pause,
+proof, or public signal changes, discard the stage and start again.
+For a manual host sequence, run the equivalent preflight before activation:
+
+```sh
+python3 scripts/portable-vps-day-role-config.py preflight \
+  --project-directory /srv/rsl-siege \
+  --stage-directory /protected/day-role/evidence/REPLACE-RUN-ID \
+  --public-config /protected/public/public-signal.json \
+  --backup-profile /srv/rsl-siege/runtime/release-backup-profile.json \
+  --confirm preflight
+```
+
+This creates the private `preflight-accepted.json` required by activation.
+
+Before dispatching **VPS day-role activate** or **VPS day-role recover**, an
+operator must set a matching, separately approved full deployment window ID
+in the protected target environment variable `REHEARSAL_VPS_DAY_ROLE_WINDOW_ID`
+or `VPS_DAY_ROLE_WINDOW_ID`. The workflows fail closed when this variable is
+absent or differs from the dispatch input. The protected target also needs
+`REHEARSAL_VPS_PUBLIC_SIGNAL_CONFIG_PATH` or
+`VPS_PUBLIC_SIGNAL_CONFIG_PATH` pointing to its private public-signal
+configuration. Rehearsal and production use separate Tailscale identities,
+SSH credentials, host keys, and protected environment approvals. The workflow
+does not set either window variable itself.
+
+Activation takes the exact stage UUID, proof SHA-256, preflight SHA-256, and
+approved window ID. The restricted host route verifies both private records,
+reserves the attempt once, invokes the reviewed runner, and returns only
+boolean checks. The runner rechecks the accepted preflight just before it
+stops backend. No workflow resumes writers. In the full approved window, the
+equivalent host command is:
 
 ```sh
 python3 scripts/portable-vps-day-role-config.py activate \
@@ -123,6 +181,22 @@ post-pause role mutation occurred. Only then add
 `--confirm-restore-enabled-safe`. If that cannot be established, keep the
 path paused and prepare a new forward repair. The runner never automatically
 reconciles Discord roles or database history.
+
+The protected **VPS day-role recover** workflow is narrower than that manual
+command: it refuses stages whose old flag was enabled, requires an attempted
+activation that did not pass, and never supplies
+`--confirm-restore-enabled-safe`. It is a separate, single-use dispatch under
+the approved window. Preserve the private host reports for diagnosis after
+any STOP; do not retry the same stage.
+
+Installing the new restricted SSH route is a separate host operation. The
+reviewed `portable-vps-host-access.py update-day-role-script` phase requires
+the exact currently installed script hash and saves its bytes in
+`/root/portable-vps-remote.py.before-day-role-dispatch`, leaving the earlier
+release-script backup untouched. Its distinct `restore-day-role-script` phase
+restores only those reviewed bytes. Neither phase is run by the workflows or
+authorized by merging this change. Review and execute it on the isolated VM
+first, with a sanitized report, before considering a production host update.
 
 After an accepted activation or recovery, independently run the
 [effective-state checker](vps-day-role-effective.md) with a fresh private

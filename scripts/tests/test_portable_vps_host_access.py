@@ -13,8 +13,16 @@ spec.loader.exec_module(host_access)
 
 
 def test_host_update_pin_matches_reviewed_remote_script():
-    assert hashlib.sha256(host_access.SOURCE_SCRIPT.read_bytes()).hexdigest() == host_access.NEW_REMOTE_SHA256
+    assert host_access.NEW_REMOTE_SHA256 == host_access.DAY_ROLE_REMOTE_OLD_SHA256
     assert not host_access.script_backup_path().is_relative_to(host_access.REMOTE_SCRIPT.parents[1])
+
+
+def test_day_role_update_pin_and_backup_are_distinct():
+    assert hashlib.sha256(host_access.SOURCE_SCRIPT.read_bytes()).hexdigest() == host_access.DAY_ROLE_REMOTE_NEW_SHA256
+    assert host_access.DAY_ROLE_REMOTE_OLD_SHA256 == host_access.NEW_REMOTE_SHA256
+    assert hashlib.sha256(host_access.release_script_bytes()).hexdigest() == host_access.NEW_REMOTE_SHA256
+    assert host_access.day_role_script_backup_path() != host_access.script_backup_path()
+    assert not host_access.day_role_script_backup_path().is_relative_to(host_access.REMOTE_SCRIPT.parents[1])
 
 
 def test_install_then_rollback_preserves_existing_key(tmp_path):
@@ -122,6 +130,43 @@ def test_reviewed_remote_script_update_and_restore(tmp_path):
         assert all(restored.values())
         assert remote.read_bytes() == old_data
         assert remote.stat().st_mode & 0o777 == 0o644
+
+
+def test_day_role_remote_update_preserves_prior_backup_and_restores_exact_old_bytes(tmp_path):
+    authorized = tmp_path / "authorized_keys"
+    remote = tmp_path / "portable-vps-remote.py"
+    source = tmp_path / "new-remote.py"
+    old_data = b"currently installed reviewed forced command\n"
+    new_data = b"reviewed day-role forced command\n"
+    prior_backup = tmp_path / "portable-vps-remote.py.before-recovery-restore"
+    new_backup = tmp_path / "portable-vps-remote.py.before-day-role-dispatch"
+    prior_backup.write_bytes(b"older retained recovery bytes\n")
+    remote.write_bytes(old_data)
+    source.write_bytes(new_data)
+    key = "ssh-ed25519 DEDICATED github-vps-deploy"
+    with mock.patch.object(host_access, "AUTHORIZED_KEYS", authorized), mock.patch.object(
+        host_access, "REMOTE_SCRIPT", remote
+    ), mock.patch.object(host_access, "SOURCE_SCRIPT", source), mock.patch.object(
+        host_access, "DAY_ROLE_REMOTE_OLD_SHA256", hashlib.sha256(old_data).hexdigest()
+    ), mock.patch.object(
+        host_access, "DAY_ROLE_REMOTE_NEW_SHA256", hashlib.sha256(new_data).hexdigest()
+    ), mock.patch.object(
+        host_access, "day_role_script_backup_path", return_value=new_backup
+    ), mock.patch.object(host_access, "preflight", side_effect=lambda: {"baseline": True}
+    ), mock.patch.object(host_access, "checked_file", side_effect=lambda path: path.is_file()
+    ), mock.patch.object(host_access, "private_file", side_effect=lambda path: path.is_file()
+    ), mock.patch.object(host_access, "FORCED_COMMAND", f'restrict,command="/usr/bin/python3 {remote}"'):
+        authorized.write_text(host_access.key_entry(key) + "\n")
+        installed = host_access.update_day_role_script(key)
+        assert all(installed.values())
+        assert remote.read_bytes() == new_data
+        assert new_backup.read_bytes() == old_data
+        assert prior_backup.read_bytes() == b"older retained recovery bytes\n"
+        assert not all(host_access.update_day_role_script(key).values())
+        restored = host_access.restore_day_role_script(key)
+        assert all(restored.values())
+        assert remote.read_bytes() == old_data
+        assert prior_backup.read_bytes() == b"older retained recovery bytes\n"
 
 
 def test_rotate_and_restore_only_the_restricted_key(tmp_path):

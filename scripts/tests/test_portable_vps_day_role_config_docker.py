@@ -127,7 +127,8 @@ class DisposableDayRoleConfigTests(unittest.TestCase):
                       patch.object(CONFIG.PREFLIGHT, "validate", return_value={"valid": True}),
                       patch.object(CONFIG.ROTATION, "project_snapshot", side_effect=snapshot),
                       patch.object(CONFIG.ROTATION, "public_healthy", return_value=True),
-                      patch.object(CONFIG, "proof_current", return_value=True)):
+                      patch.object(CONFIG, "proof_current", return_value=True),
+                      patch.object(CONFIG, "preflight_current", return_value=True)):
                     before, baseline = snapshot(project, 0)
                     first = CONFIG.stage(project, decision, evidence)
                     self.assertEqual(CONFIG.ROTATION.read_runtime(project, 0), before)

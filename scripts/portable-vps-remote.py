@@ -8,6 +8,8 @@ import re
 import stat
 import subprocess
 import sys
+import tempfile
+import uuid
 from pathlib import Path
 
 
@@ -23,6 +25,7 @@ PROMOTION_READY_SCRIPT = REVIEWED_SOURCE / "scripts/portable-vps-release-promoti
 PROMOTE_SCRIPT = REVIEWED_SOURCE / "scripts/portable-vps-release-promote.py"
 ACCEPT_SCRIPT = REVIEWED_SOURCE / "scripts/portable-vps-release-accept.py"
 RECOVER_SCRIPT = REVIEWED_SOURCE / "scripts/portable-vps-release-recover.py"
+DAY_ROLE_SCRIPT = REVIEWED_SOURCE / "scripts/portable-vps-day-role-config.py"
 BACKUP_PROFILE = PROJECT / "runtime/release-backup-profile.json"
 ACCEPT_INPUTS = Path("/root/vps-release-acceptance")
 PILOT_CONFIG = ACCEPT_INPUTS / "pilot.json"
@@ -31,12 +34,14 @@ EXTERNAL_REPORTS = Path("/root/vps-release-reports")
 STAGE_SCRIPT_BACKUP = REVIEWED_SOURCE / "scripts/portable-vps-remote.py.before-release-stage"
 INITIAL_REMOTE_SHA256 = "f965a4edc244c7ece696bbeb30b650f67c3c21e82584c44185ca57a94db31da7"
 MAX_MANIFEST = 16 * 1024
+MAX_DAY_ROLE_DECISION = 4096
 SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 RUN = re.compile(r"[1-9][0-9]{0,19}-[1-9][0-9]{0,2}\Z")
 SOURCE_SHA = re.compile(r"[0-9a-f]{40}\Z")
 RELEASE_ID = re.compile(r"[a-z0-9][a-z0-9._-]{2,63}\Z")
 REVISION = re.compile(r"[a-zA-Z0-9_]{1,64}\Z")
 PROOF_PATH = re.compile(r"/[a-zA-Z0-9._/-]{1,254}\Z")
+WINDOW = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{3,63}\Z")
 
 
 def private_directory(path):
@@ -209,6 +214,324 @@ def write_private(path, data):
         output.write(data)
         output.flush()
         os.fsync(output.fileno())
+
+
+def canonical_uuid(value):
+    try:
+        return isinstance(value, str) and str(uuid.UUID(value)) == value
+    except (ValueError, TypeError, AttributeError):
+        return False
+
+
+def stage_day_role(source_sha, stage_id, expected, stream):
+    """Pass a bounded private decision to the reviewed stage-only host runner."""
+    checks = {"root_execution": os.geteuid() == 0,
+              "request_shape": bool(SOURCE_SHA.fullmatch(source_sha))
+                               and canonical_uuid(stage_id) and bool(SHA256.fullmatch(expected)),
+              "read_only_baseline": False}
+    if checks["root_execution"] and checks["request_shape"]:
+        checks["read_only_baseline"] = access_check()
+    if all(checks.values()):
+        try:
+            checks["reviewed_checkout"] = reviewed_checkout(source_sha)
+            checks["reviewed_script"] = reviewed_script(DAY_ROLE_SCRIPT)
+            if checks["reviewed_checkout"] and checks["reviewed_script"]:
+                parent = EVIDENCE / "day-role-stages"
+                if not parent.exists():
+                    parent.mkdir(mode=0o700)
+                checks["stage_parent_private"] = private_directory(parent)
+                checks["stage_id_unused"] = not (parent / stage_id).exists() and not (parent / stage_id).is_symlink()
+            if all(checks.values()):
+                raw = stream.read(MAX_DAY_ROLE_DECISION + 1)
+                checks["decision_bounded"] = 0 < len(raw) <= MAX_DAY_ROLE_DECISION
+                checks["decision_digest"] = checks["decision_bounded"] and hashlib.sha256(raw).hexdigest() == expected
+                if checks["decision_digest"]:
+                    with tempfile.TemporaryDirectory(prefix=".day-role-decision-", dir=EVIDENCE) as temporary:
+                        decision = Path(temporary) / "decision.json"
+                        write_private(decision, raw)
+                        result = subprocess.run(
+                            ["/usr/bin/python3", "-I", "-B", str(DAY_ROLE_SCRIPT), "stage",
+                             "--project-directory", str(PROJECT), "--decision-file", str(decision),
+                             "--evidence-directory", str(parent), "--stage-id", stage_id,
+                             "--confirm", "stage"],
+                            env={"PATH": "/usr/bin:/bin", "PYTHONNOUSERSITE": "1",
+                                 "PYTHONDONTWRITEBYTECODE": "1", "PYTHONSAFEPATH": "1"},
+                            capture_output=True, timeout=180, check=False)
+                        try:
+                            outcome = json.loads(result.stdout, object_pairs_hook=no_duplicate_keys)
+                        except (UnicodeError, ValueError, TypeError):
+                            outcome = None
+                        checks["reviewed_stage_accepted"] = (
+                            result.returncode == 0 and isinstance(outcome, dict)
+                            and outcome == {"phase": "day-role-stage", "status": "PASS", "run_id": stage_id})
+        except (OSError, ValueError, TypeError, subprocess.TimeoutExpired):
+            checks["stage_execution"] = False
+    status = "PASS" if all(checks.values()) else "STOP"
+    print(json.dumps({"phase": "day-role-stage-dispatch", "status": status, "checks": checks}, sort_keys=True))
+    return 0 if status == "PASS" else 1
+
+
+def proof_day_role(source_sha, stage_id, maintenance_kind, backup_report,
+                   recover_report, restore_report):
+    """Accept only the reviewed stage's private pause and same-copy evidence."""
+    paths = tuple(Path(item) for item in (backup_report, recover_report, restore_report))
+    checks = {"root_execution": os.geteuid() == 0,
+              "request_shape": bool(SOURCE_SHA.fullmatch(source_sha)) and canonical_uuid(stage_id)
+                               and maintenance_kind in {"pause", "drain"},
+              "evidence_selectors": all(PROOF_PATH.fullmatch(str(path)) and ".." not in path.parts
+                                        for path in paths) and len(set(paths)) == 3,
+              "read_only_baseline": False}
+    if checks["root_execution"] and checks["request_shape"] and checks["evidence_selectors"]:
+        checks["read_only_baseline"] = access_check()
+    proof_digest = None
+    if all(checks.values()):
+        try:
+            stage = EVIDENCE / "day-role-stages" / stage_id
+            checks["stage_private"] = private_directory(stage.parent) and private_directory(stage)
+            checks["reviewed_checkout"] = reviewed_checkout(source_sha)
+            checks["reviewed_script"] = reviewed_script(DAY_ROLE_SCRIPT)
+            checks["profile_bound"] = profile_bound()
+            checks["proof_not_attempted"] = not (stage / "proof-attempt.json").exists()
+            if all(checks.values()):
+                result = subprocess.run(
+                    ["/usr/bin/python3", "-I", "-B", str(DAY_ROLE_SCRIPT), "proof",
+                     "--project-directory", str(PROJECT), "--stage-directory", str(stage),
+                     "--backup-profile", str(BACKUP_PROFILE),
+                     "--maintenance-report", str(stage / f"{maintenance_kind}-report.json"),
+                     "--backup-report", str(paths[0]), "--recover-report", str(paths[1]),
+                     "--restore-report", str(paths[2]), "--confirm", "proof"],
+                    env={"PATH": "/usr/bin:/bin", "PYTHONNOUSERSITE": "1",
+                         "PYTHONDONTWRITEBYTECODE": "1", "PYTHONSAFEPATH": "1"},
+                    capture_output=True, timeout=360, check=False)
+                try:
+                    outcome = json.loads(result.stdout, object_pairs_hook=no_duplicate_keys)
+                except (UnicodeError, ValueError, TypeError):
+                    outcome = None
+                checks["reviewed_proof_accepted"] = (
+                    result.returncode == 0 and outcome == {
+                        "phase": "day-role-proof", "status": "PASS", "stage_id": stage_id})
+                record = stage / "proof-accepted.json"
+                checks["proof_record_private"] = checks["reviewed_proof_accepted"] and private_file(record)
+                if checks["proof_record_private"]:
+                    proof_digest = hashlib.sha256(record.read_bytes()).hexdigest()
+        except (OSError, ValueError, TypeError, subprocess.TimeoutExpired):
+            checks["proof_execution"] = False
+    status = "PASS" if all(checks.values()) and proof_digest else "STOP"
+    report = {"phase": "day-role-proof-dispatch", "status": status, "checks": checks}
+    if status == "PASS":
+        report["proof_sha256"] = proof_digest
+    print(json.dumps(report, sort_keys=True))
+    return 0 if status == "PASS" else 1
+
+
+def preflight_day_role(source_sha, stage_id, proof_sha256, public_config):
+    """Accept one read-only preflight for an unchanged private proof."""
+    public_path = Path(public_config)
+    checks = {"root_execution": os.geteuid() == 0,
+              "request_shape": bool(SOURCE_SHA.fullmatch(source_sha)) and canonical_uuid(stage_id)
+                               and bool(SHA256.fullmatch(proof_sha256)),
+              "public_selector": bool(PROOF_PATH.fullmatch(public_config)) and ".." not in public_path.parts,
+              "read_only_baseline": False}
+    if checks["root_execution"] and checks["request_shape"] and checks["public_selector"]:
+        checks["read_only_baseline"] = access_check()
+    preflight_digest = None
+    if all(checks.values()):
+        try:
+            stage = EVIDENCE / "day-role-stages" / stage_id
+            proof = stage / "proof-accepted.json"
+            checks["stage_private"] = private_directory(stage.parent) and private_directory(stage)
+            checks["reviewed_checkout"] = reviewed_checkout(source_sha)
+            checks["reviewed_script"] = reviewed_script(DAY_ROLE_SCRIPT)
+            checks["profile_bound"] = profile_bound()
+            checks["proof_digest"] = (private_file(proof)
+                                      and hashlib.sha256(proof.read_bytes()).hexdigest() == proof_sha256)
+            checks["preflight_unused"] = not (stage / "preflight-attempt.json").exists()
+            if all(checks.values()):
+                result = subprocess.run(
+                    ["/usr/bin/python3", "-I", "-B", str(DAY_ROLE_SCRIPT), "preflight",
+                     "--project-directory", str(PROJECT), "--stage-directory", str(stage),
+                     "--backup-profile", str(BACKUP_PROFILE),
+                     "--public-config", public_config, "--confirm", "preflight"],
+                    env={"PATH": "/usr/bin:/bin", "PYTHONNOUSERSITE": "1",
+                         "PYTHONDONTWRITEBYTECODE": "1", "PYTHONSAFEPATH": "1"},
+                    capture_output=True, timeout=360, check=False)
+                try:
+                    outcome = json.loads(result.stdout, object_pairs_hook=no_duplicate_keys)
+                except (UnicodeError, ValueError, TypeError):
+                    outcome = None
+                checks["reviewed_preflight_accepted"] = (
+                    result.returncode == 0 and outcome == {
+                        "phase": "day-role-preflight", "status": "PASS", "stage_id": stage_id})
+                record = stage / "preflight-accepted.json"
+                checks["preflight_record_private"] = checks["reviewed_preflight_accepted"] and private_file(record)
+                if checks["preflight_record_private"]:
+                    preflight_digest = hashlib.sha256(record.read_bytes()).hexdigest()
+        except (OSError, ValueError, TypeError, subprocess.TimeoutExpired):
+            checks["preflight_execution"] = False
+    status = "PASS" if all(checks.values()) and preflight_digest else "STOP"
+    report = {"phase": "day-role-preflight-dispatch", "status": status, "checks": checks}
+    if status == "PASS":
+        report["preflight_sha256"] = preflight_digest
+    print(json.dumps(report, sort_keys=True))
+    return 0 if status == "PASS" else 1
+
+
+def activate_day_role(source_sha, stage_id, proof_sha256, preflight_sha256,
+                      public_config, window_id):
+    """Dispatch one confirmed backend-only activation; never resume writers."""
+    public_path = Path(public_config)
+    checks = {"root_execution": os.geteuid() == 0,
+              "request_shape": bool(SOURCE_SHA.fullmatch(source_sha)) and canonical_uuid(stage_id)
+                               and bool(SHA256.fullmatch(proof_sha256))
+                               and bool(SHA256.fullmatch(preflight_sha256))
+                               and bool(WINDOW.fullmatch(window_id)),
+              "public_selector": bool(PROOF_PATH.fullmatch(public_config)) and ".." not in public_path.parts,
+              "read_only_baseline": False}
+    if checks["root_execution"] and checks["request_shape"] and checks["public_selector"]:
+        checks["read_only_baseline"] = access_check()
+    stage = EVIDENCE / "day-role-stages" / stage_id if canonical_uuid(stage_id) else None
+    if all(checks.values()):
+        try:
+            proof = stage / "proof-accepted.json"
+            preflight = stage / "preflight-accepted.json"
+            checks["stage_private"] = private_directory(stage.parent) and private_directory(stage)
+            checks["reviewed_checkout"] = reviewed_checkout(source_sha)
+            checks["reviewed_script"] = reviewed_script(DAY_ROLE_SCRIPT)
+            checks["profile_bound"] = profile_bound()
+            checks["proof_digest"] = (private_file(proof)
+                                      and hashlib.sha256(proof.read_bytes()).hexdigest() == proof_sha256)
+            checks["preflight_digest"] = (private_file(preflight)
+                                          and hashlib.sha256(preflight.read_bytes()).hexdigest() == preflight_sha256)
+            checks["public_config_private"] = private_file(public_path)
+            checks["activation_unused"] = not (stage / "activate-dispatch-start.json").exists()
+            if all(checks.values()):
+                write_private(stage / "activate-dispatch-start.json",
+                              (json.dumps({"phase": "day-role-activate-dispatch", "status": "INCOMPLETE",
+                                           "stage_id": stage_id, "window_id": window_id,
+                                           "proof_sha256": proof_sha256,
+                                           "preflight_sha256": preflight_sha256}, sort_keys=True) + "\n").encode())
+                checks["dispatch_reserved"] = True
+                result = subprocess.run(
+                    ["/usr/bin/python3", "-I", "-B", str(DAY_ROLE_SCRIPT), "activate",
+                     "--project-directory", str(PROJECT), "--stage-directory", str(stage),
+                     "--backup-profile", str(BACKUP_PROFILE), "--public-config", public_config,
+                     "--confirm", "activate"],
+                    env={"PATH": "/usr/bin:/bin", "PYTHONNOUSERSITE": "1",
+                         "PYTHONDONTWRITEBYTECODE": "1", "PYTHONSAFEPATH": "1"},
+                    capture_output=True, timeout=480, check=False)
+                try:
+                    outcome = json.loads(result.stdout, object_pairs_hook=no_duplicate_keys)
+                except (UnicodeError, ValueError, TypeError):
+                    outcome = None
+                checks["reviewed_activation_passed"] = (
+                    result.returncode == 0 and outcome == {"phase": "day-role-activate", "status": "PASS"})
+                record = stage / "activation-result.json"
+                checks["activation_record_private"] = checks["reviewed_activation_passed"] and private_file(record)
+                if checks["activation_record_private"]:
+                    value = json.loads(record.read_bytes(), object_pairs_hook=no_duplicate_keys)
+                    checks["exact_backend_and_health_accepted"] = (
+                        isinstance(value, dict) and value.get("phase") == "day-role-activate"
+                        and value.get("status") == "PASS"
+                        and isinstance(value.get("checks"), dict)
+                        and all(value["checks"].get(name) is True for name in (
+                            "baseline_current", "writers_paused", "backup_proof_current",
+                            "preflight_current", "public_baseline_healthy", "backend_stopped",
+                            "candidate_valid", "backend_recreated", "effective_state", "public_health")))
+        except (OSError, ValueError, TypeError, subprocess.TimeoutExpired):
+            checks["activation_execution"] = False
+    status = "PASS" if all(checks.values()) else "STOP"
+    if stage is not None and checks.get("dispatch_reserved"):
+        try:
+            write_private(stage / "activate-dispatch-report.json",
+                          (json.dumps({"phase": "day-role-activate-dispatch", "status": status,
+                                       "checks": checks}, sort_keys=True) + "\n").encode())
+        except OSError:
+            status = "STOP"
+            checks["dispatch_report_written"] = False
+    print(json.dumps({"phase": "day-role-activate-dispatch", "status": status,
+                      "checks": checks}, sort_keys=True))
+    return 0 if status == "PASS" else 1
+
+
+def recover_day_role(source_sha, stage_id, public_config, window_id):
+    """Confirm one failed activation recovery, never an unsafe re-enable."""
+    public_path = Path(public_config)
+    checks = {"root_execution": os.geteuid() == 0,
+              "request_shape": bool(SOURCE_SHA.fullmatch(source_sha)) and canonical_uuid(stage_id)
+                               and bool(WINDOW.fullmatch(window_id)),
+              "public_selector": bool(PROOF_PATH.fullmatch(public_config)) and ".." not in public_path.parts,
+              "read_only_baseline": False}
+    if checks["root_execution"] and checks["request_shape"] and checks["public_selector"]:
+        checks["read_only_baseline"] = access_check()
+    stage = EVIDENCE / "day-role-stages" / stage_id if canonical_uuid(stage_id) else None
+    if all(checks.values()):
+        try:
+            activation = stage / "activate-dispatch-start.json"
+            accepted_path = stage / "accepted.json"
+            result_path = stage / "activation-result.json"
+            checks["stage_private"] = private_directory(stage.parent) and private_directory(stage)
+            checks["reviewed_checkout"] = reviewed_checkout(source_sha)
+            checks["reviewed_script"] = reviewed_script(DAY_ROLE_SCRIPT)
+            checks["activation_attempted"] = private_file(activation)
+            checks["stage_accepted_private"] = private_file(accepted_path)
+            if checks["stage_accepted_private"]:
+                accepted = json.loads(accepted_path.read_bytes(), object_pairs_hook=no_duplicate_keys)
+                checks["restores_disabled_flag_only"] = (
+                    isinstance(accepted, dict) and accepted.get("phase") == "day-role-stage"
+                    and accepted.get("status") == "PASS" and accepted.get("run_id") == stage_id
+                    and accepted.get("old_enabled") == "false")
+            if result_path.exists() or result_path.is_symlink():
+                checks["prior_activation_result_private"] = private_file(result_path)
+                if checks["prior_activation_result_private"]:
+                    prior = json.loads(result_path.read_bytes(), object_pairs_hook=no_duplicate_keys)
+                    checks["prior_activation_failed"] = (
+                        isinstance(prior, dict) and prior.get("phase") == "day-role-activate"
+                        and prior.get("status") == "STOP")
+            checks["public_config_private"] = private_file(public_path)
+            checks["recovery_unused"] = not (stage / "recover-dispatch-start.json").exists()
+            if all(checks.values()):
+                write_private(stage / "recover-dispatch-start.json",
+                              (json.dumps({"phase": "day-role-recover-dispatch", "status": "INCOMPLETE",
+                                           "stage_id": stage_id, "window_id": window_id}, sort_keys=True) + "\n").encode())
+                checks["dispatch_reserved"] = True
+                result = subprocess.run(
+                    ["/usr/bin/python3", "-I", "-B", str(DAY_ROLE_SCRIPT), "recover",
+                     "--project-directory", str(PROJECT), "--stage-directory", str(stage),
+                     "--public-config", public_config, "--confirm", "recover"],
+                    env={"PATH": "/usr/bin:/bin", "PYTHONNOUSERSITE": "1",
+                         "PYTHONDONTWRITEBYTECODE": "1", "PYTHONSAFEPATH": "1"},
+                    capture_output=True, timeout=480, check=False)
+                try:
+                    outcome = json.loads(result.stdout, object_pairs_hook=no_duplicate_keys)
+                except (UnicodeError, ValueError, TypeError):
+                    outcome = None
+                checks["reviewed_recovery_passed"] = (
+                    result.returncode == 0 and outcome == {"phase": "day-role-recover", "status": "PASS"})
+                record = stage / "recovery-result.json"
+                checks["recovery_record_private"] = checks["reviewed_recovery_passed"] and private_file(record)
+                if checks["recovery_record_private"]:
+                    value = json.loads(record.read_bytes(), object_pairs_hook=no_duplicate_keys)
+                    checks["targeted_recovery_accepted"] = (
+                        isinstance(value, dict) and value.get("phase") == "day-role-recover"
+                        and value.get("status") == "PASS"
+                        and isinstance(value.get("checks"), dict)
+                        and all(value["checks"].get(name) is True for name in (
+                            "pause_unchanged", "known_files", "writers_drained", "backend_stopped",
+                            "rollback_installed", "effective_state", "public_health")))
+        except (OSError, ValueError, TypeError, subprocess.TimeoutExpired):
+            checks["recovery_execution"] = False
+    status = "PASS" if all(checks.values()) else "STOP"
+    if stage is not None and checks.get("dispatch_reserved"):
+        try:
+            write_private(stage / "recover-dispatch-report.json",
+                          (json.dumps({"phase": "day-role-recover-dispatch", "status": status,
+                                       "checks": checks}, sort_keys=True) + "\n").encode())
+        except OSError:
+            status = "STOP"
+            checks["dispatch_report_written"] = False
+    print(json.dumps({"phase": "day-role-recover-dispatch", "status": status,
+                      "checks": checks}, sort_keys=True))
+    return 0 if status == "PASS" else 1
 
 
 def stage_release(expected, run_id, stream):
@@ -1307,6 +1630,16 @@ def main():
     parts = command.split(" ")
     if len(parts) == 4 and parts[0] == "stage-release" and parts[3] == "confirm-stage":
         return stage_release(parts[1], parts[2], sys.stdin.buffer)
+    if len(parts) == 5 and parts[0] == "stage-day-role" and parts[4] == "confirm-stage-day-role":
+        return stage_day_role(parts[1], parts[2], parts[3], sys.stdin.buffer)
+    if len(parts) == 8 and parts[0] == "proof-day-role" and parts[7] == "confirm-readonly-proof-day-role":
+        return proof_day_role(parts[1], parts[2], parts[3], parts[4], parts[5], parts[6])
+    if len(parts) == 6 and parts[0] == "preflight-day-role" and parts[5] == "confirm-readonly-preflight-day-role":
+        return preflight_day_role(parts[1], parts[2], parts[3], parts[4])
+    if len(parts) == 8 and parts[0] == "activate-day-role" and parts[7] == "confirm-activate-day-role":
+        return activate_day_role(parts[1], parts[2], parts[3], parts[4], parts[5], parts[6])
+    if len(parts) == 6 and parts[0] == "recover-day-role" and parts[5] == "confirm-recover-day-role":
+        return recover_day_role(parts[1], parts[2], parts[3], parts[4])
     if len(parts) == 4 and parts[0] == "preflight-release" and parts[3] == "confirm-readonly-preflight":
         return preflight_release(parts[1], parts[2])
     if len(parts) == 4 and parts[0] == "plan-release" and parts[3] == "confirm-readonly-plan":

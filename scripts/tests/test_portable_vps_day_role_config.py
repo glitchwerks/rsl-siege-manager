@@ -83,6 +83,31 @@ def test_cli_rejects_missing_phase_confirmation_before_stage(monkeypatch, tmp_pa
     assert '"status": "STOP"' in capsys.readouterr().out
 
 
+def test_cli_passes_exact_stage_id_and_rejects_it_for_other_phases(monkeypatch, tmp_path, capsys):
+    stage_id = "11111111-1111-4111-8111-111111111111"
+    captured = []
+    monkeypatch.setattr(RUNNER.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(RUNNER, "stage", lambda *args, **kwargs: (
+        captured.append(kwargs["stage_id"]) or tmp_path / stage_id))
+    assert RUNNER.main(["stage", "--project-directory", str(tmp_path),
+                        "--decision-file", str(tmp_path / "decision.json"),
+                        "--evidence-directory", str(tmp_path),
+                        "--stage-id", stage_id, "--confirm", "stage"]) == 0
+    assert captured == [stage_id]
+    assert RUNNER.main(["recover", "--project-directory", str(tmp_path),
+                        "--stage-directory", str(tmp_path / stage_id),
+                        "--stage-id", stage_id, "--confirm", "recover"]) == 1
+    assert '"status": "STOP"' in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("stage_id", ["../other", "not-a-uuid",
+                                      "11111111-1111-4111-8111-111111111111/extra",
+                                      "11111111-1111-4111-8111-111111111111 "])
+def test_stage_selector_rejects_noncanonical_or_unsafe_id(stage_id):
+    with pytest.raises(ValueError, match="invalid stage ID"):
+        RUNNER.stage_selector(stage_id)
+
+
 def test_input_drift_guard_excludes_only_the_changed_backend_file(monkeypatch, tmp_path):
     expected = {"runtime": {"backend.env": "old", "mom.env": "same", "database.env": "db"},
                 "config": {"compose.yml": "same"}}
@@ -154,6 +179,7 @@ def test_activation_recreates_only_backend_and_isolates_failed_path(monkeypatch,
     monkeypatch.setattr(RUNNER, "verify", lambda *args: True)
     monkeypatch.setattr(RUNNER.ROTATION, "public_healthy", lambda *args: True)
     monkeypatch.setattr(RUNNER, "proof_current", lambda *args: True)
+    monkeypatch.setattr(RUNNER, "preflight_current", lambda *args: True)
 
     result = RUNNER.activate(project, stage, tmp_path / "public.json", tmp_path / "backup-profile.json")
     assert calls[:4] == ["marker", "stop", "replace", "compose"]
@@ -161,7 +187,8 @@ def test_activation_recreates_only_backend_and_isolates_failed_path(monkeypatch,
     assert calls.count("stop") == (1 if compose_ok else 2)
 
 
-def test_activation_refuses_changed_backup_proof_before_stopping_backend(monkeypatch, tmp_path):
+@pytest.mark.parametrize("gate", ["backup", "preflight"])
+def test_activation_refuses_changed_proof_or_preflight_before_stopping_backend(monkeypatch, tmp_path, gate):
     project, stage = tmp_path / "project", tmp_path / "stage"
     baseline = {"project": "test", "installed": {"backend": {"id": "old-id"}}}
     current = {"services": {"backend": {"environment": {"DAY_ROLE_SYNC_ENABLED": "false"}}}}
@@ -177,9 +204,11 @@ def test_activation_refuses_changed_backup_proof_before_stopping_backend(monkeyp
     monkeypatch.setattr(RUNNER, "inputs_current", lambda *_, **__: True)
     monkeypatch.setattr(RUNNER.EFFECTIVE, "inspect", lambda *_: {"valid": True})
     monkeypatch.setattr(RUNNER.ROTATION, "require_pause", lambda *_, **__: None)
-    monkeypatch.setattr(RUNNER, "proof_current", lambda *_: False)
+    monkeypatch.setattr(RUNNER, "proof_current", lambda *_: gate != "backup")
+    monkeypatch.setattr(RUNNER, "preflight_current", lambda *_: gate != "preflight")
+    monkeypatch.setattr(RUNNER.ROTATION, "public_healthy", lambda *_: True)
     monkeypatch.setattr(RUNNER, "stop_backend", lambda *_: pytest.fail("backend was stopped"))
-    with pytest.raises(ValueError, match="backup proof changed"):
+    with pytest.raises(ValueError, match="backup proof changed" if gate == "backup" else "preflight changed"):
         RUNNER.activate(project, stage, tmp_path / "public.json", tmp_path / "profile.json")
 
 
@@ -291,6 +320,26 @@ def test_accepted_proof_rejects_changed_record(monkeypatch, tmp_path):
     record["proof"]["reports"]["backup"]["sha256"] = "invalid"
     with pytest.raises(ValueError, match="invalid proof selector"):
         RUNNER.proof_current(tmp_path, stage, tmp_path / "profile.json", b"candidate-role-1")
+
+
+def test_preflight_acceptance_is_bound_to_exact_proof_and_public_config(monkeypatch, tmp_path):
+    stage = tmp_path / "11111111-1111-4111-8111-111111111111"
+    accepted = {"schema": 1, "stage_id": stage.name, "source_sha": "a" * 40,
+                "candidate_sha256": "b" * 64, "proof_sha256": "c" * 64,
+                "public_config_sha256": "d" * 64, "pause_history": {"schema": 1}}
+    value = {"phase": "day-role-preflight", "status": "PASS", "record": accepted}
+    monkeypatch.setattr(RUNNER.GATE, "read_private", lambda *args: json.dumps(value).encode())
+    monkeypatch.setattr(RUNNER, "preflight_record", lambda *args: accepted)
+    assert RUNNER.preflight_current(tmp_path, stage, tmp_path / "public.json",
+                                    tmp_path / "profile.json")
+    monkeypatch.setattr(RUNNER, "preflight_record", lambda *args: {
+        **accepted, "proof_sha256": "e" * 64})
+    assert not RUNNER.preflight_current(tmp_path, stage, tmp_path / "public.json",
+                                        tmp_path / "profile.json")
+    value["record"]["stage_id"] = "22222222-2222-4222-8222-222222222222"
+    with pytest.raises(ValueError, match="invalid preflight acceptance"):
+        RUNNER.preflight_current(tmp_path, stage, tmp_path / "public.json",
+                                 tmp_path / "profile.json")
 
 
 def test_stage_load_refuses_symlinked_evidence_parent(tmp_path):
