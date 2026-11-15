@@ -80,11 +80,12 @@ failure does not turn a successful public observation into a monitoring PASS.
 ## Receiver policy and activation boundary
 
 For sustained off-host operation, request each public signal at five-minute
-intervals, open an incident after two consecutive failures, and resolve it
-after a successful check. A 14-day certificate threshold is an incident even
-when HTTPS still works. A missing signal after 15 minutes requires an
-independent missed-signal alert. These are proposed initial thresholds to
-validate with the selected receiver before activation. The receiver must
+intervals, open an incident on the first completed failed observation, and
+resolve it after a successful check. The sender's `/fail` is immediate;
+receiver grace applies to missing signals. A 14-day certificate threshold is
+an incident even when HTTPS still works. A missing signal after 15 minutes
+requires an independent missed-signal alert. These are proposed initial
+thresholds to validate with the selected receiver before activation. The receiver must
 preserve the distinct labels and provide both Slack and fallback email.
 
 Use disposable monitor-side responses to exercise PASS, site-only failure,

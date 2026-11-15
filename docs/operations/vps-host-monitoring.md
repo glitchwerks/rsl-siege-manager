@@ -63,8 +63,9 @@ python3 scripts/portable-vps-host-monitor.py \
 The two reports must use fresh private paths. The delivery report contains only
 fixed booleans, status and time; receiver acknowledgement does not prove Slack
 or email delivery. A provisional policy is one observation every five minutes,
-two consecutive failures before an incident, and a 20-minute missed-signal
-deadline. Review actual durations and acceptable detection delay before
+an incident on the first completed failed observation, and a 20-minute
+missed-signal deadline. The sender posts `/fail` for a completed failure;
+receiver grace applies only to missing signals. Review actual durations before
 activation. Keep the existing hourly backup completion check
 separate: it provides backup-age/failure coverage and must not be reset by a
 healthy host signal. Verify both checks' Slack and fallback email delivery with

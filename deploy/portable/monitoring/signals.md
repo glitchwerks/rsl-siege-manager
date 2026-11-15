@@ -37,6 +37,29 @@ backup age. External HTTPS health/identity and certificate-expiry monitoring
 remain separately configured requirements in `monitor-policy.json.example`.
 A runtime heartbeat passing is not a certificate-expiry check.
 
+If Healthchecks.io is selected, configure five distinct UUID checks using its
+[period/grace settings](https://healthchecks.io/docs/configuring_checks/) and
+[active failure endpoint](https://healthchecks.io/docs/http_api/). The public
+sender runs **outside** the VPS; the other four are host/job signals. Each
+check has its own private success URL and both the infrastructure Slack and
+fallback email integrations. These values are a reviewable starting policy,
+not an activated schedule:
+
+| Check | Period | Grace | Missing-signal alert after last accepted ping |
+| --- | ---: | ---: | ---: |
+| Public web/API/TLS | 5 min | 10 min | 15 min |
+| Runtime, gateway and scheduler | 15 min | 10 min | 25 min |
+| Database readiness/pressure | 5 min | 15 min | 20 min |
+| Host pressure | 5 min | 15 min | 20 min |
+| Managed encrypted backup | 60 min | 40 min | 100 min |
+
+Set each check's schedule type to interval, not cron. Confirm its actual
+notification delay with a disposable check before relying on these figures.
+An explicit `/fail` should alert on the first completed failure regardless of
+the period/grace. A sender that cannot complete or deliver a signal is detected
+by the missed-signal deadline. Keep each check's URL out of Git, reports and
+workflow logs. Do not reuse one URL for unrelated signals.
+
 ## One consolidated, separately approved runtime observation
 
 Before running, approve the isolated pilot target and **notification to the
@@ -78,6 +101,13 @@ sanitized signal report exposes fixed booleans/status/time only. PASS requires
 both observation success and receiver acknowledgement, and is never full pilot
 acceptance. No restart, deployment, database query, Discord write, remote account
 mutation or direct Slack message is performed by this command.
+
+The sender posts `/fail` for the first completed failed observation. On
+Healthchecks.io this is an active failure signal, not a request to count two
+failures. The receiver's period and grace settings govern **missing** signals;
+they do not delay an explicit `/fail`. A consecutive-failure policy would
+require a separately reviewed stateful sender or receiver feature and
+disposable alert-delivery proof before activation.
 
 ## Activation and delivery evidence
 
