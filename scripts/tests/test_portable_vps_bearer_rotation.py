@@ -131,7 +131,7 @@ def test_activate_recreates_both_under_project_lock(project):
     with (patch.object(ROTATE, "staged", return_value=("sidecar", rollback, candidate, baseline)),
           patch.object(ROTATE.PAUSE, "project_lock", side_effect=_lock),
           patch.object(ROTATE, "project_snapshot", return_value=(rollback, baseline)),
-          patch.object(ROTATE, "stop_pair", side_effect=lambda _name: actions.append("stop") or True),
+          patch.object(ROTATE, "stop_pair", side_effect=lambda _name, *_args: actions.append("stop") or True),
           patch.object(ROTATE, "stopped", return_value=True),
           patch.object(ROTATE, "replace_runtime", side_effect=replace),
           patch.object(ROTATE, "read_runtime", side_effect=lambda *_args: dict(current)),

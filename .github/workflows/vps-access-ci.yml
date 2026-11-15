@@ -22,6 +22,8 @@ on:
       - "scripts/tests/test_portable_vps_release_promote_docker.py"
       - "scripts/tests/test_portable_vps_release_accept.py"
       - "scripts/tests/test_portable_vps_release_recover.py"
+      - "scripts/tests/test_portable_vps_bearer_rotation.py"
+      - "scripts/tests/test_portable_vps_bearer_rotation_docker.py"
       - "scripts/tests/test_portable_vps_public_signal.py"
       - "scripts/tests/test_portable_vps_public_monitor.py"
       - "scripts/tests/test_portable_vps_database_signal.py"
@@ -31,6 +33,7 @@ on:
       - "docs/operations/vps-release-workflow.md"
       - "docs/operations/vps-public-monitoring.md"
       - "docs/operations/vps-database-monitoring.md"
+      - "docs/operations/vps-bearer-rotation.md"
       - "deploy/portable/monitoring/public-signal.json.example"
       - "deploy/portable/monitoring/database-signal.json.example"
       - "deploy/portable/monitoring/README.md"
@@ -57,6 +60,8 @@ on:
       - "scripts/tests/test_portable_vps_release_promote_docker.py"
       - "scripts/tests/test_portable_vps_release_accept.py"
       - "scripts/tests/test_portable_vps_release_recover.py"
+      - "scripts/tests/test_portable_vps_bearer_rotation.py"
+      - "scripts/tests/test_portable_vps_bearer_rotation_docker.py"
       - "scripts/tests/test_portable_vps_public_signal.py"
       - "scripts/tests/test_portable_vps_public_monitor.py"
       - "scripts/tests/test_portable_vps_database_signal.py"
@@ -66,6 +71,7 @@ on:
       - "docs/operations/vps-release-workflow.md"
       - "docs/operations/vps-public-monitoring.md"
       - "docs/operations/vps-database-monitoring.md"
+      - "docs/operations/vps-bearer-rotation.md"
       - "deploy/portable/monitoring/public-signal.json.example"
       - "deploy/portable/monitoring/database-signal.json.example"
       - "deploy/portable/monitoring/README.md"
@@ -127,5 +133,7 @@ jobs:
         run: sudo env VPS_WRITER_DOCKER_TEST=1 python3 -m unittest discover -s scripts/tests -p test_portable_vps_release_migrate_docker.py -v
       - name: Rehearse targeted application activation without recreating foundation
         run: sudo env VPS_WRITER_DOCKER_TEST=1 python3 -m unittest discover -s scripts/tests -p test_portable_vps_release_promote_docker.py -v
+      - name: Rehearse paired bearer rotation against disposable HTTP services
+        run: sudo env VPS_WRITER_DOCKER_TEST=1 python3 -m unittest discover -s scripts/tests -p test_portable_vps_bearer_rotation_docker.py -v
       - name: Rehearse least-privilege database signal against disposable PostgreSQL
         run: sudo env VPS_WRITER_DOCKER_TEST=1 python3 -m unittest discover -s scripts/tests -p test_portable_vps_database_signal_docker.py -v

@@ -150,9 +150,22 @@ def configuration_current(project, baseline):
     try:
         rendered = PREFLIGHT.PREFLIGHT.render("mom", project / "stack.env", project, {})
         installed = baseline["installed"]
-        return (GATE.project_name(project / "stack.env") == baseline["project"]
+        if not (GATE.project_name(project / "stack.env") == baseline["project"]
                 and all(rendered["services"][name]["image"] == item["image"]
-                        for name, item in installed.items()))
+                        for name, item in installed.items())):
+            return False
+        for service in ("frontend", "postgres", "proxy"):
+            expected = installed[service]
+            if PAUSE.identifiers(baseline["project"], service) != expected["id"]:
+                return False
+            image = PAUSE.command(["docker", "inspect", "--format", "{{json .Config.Image}}",
+                                   expected["id"]])
+            state = PAUSE.container(baseline["project"], service)
+            if (image is None or json.loads(image) != expected["image"] or state is None
+                    or state["running"] is not True
+                    or (service != "proxy" and state["healthy"] is not True)):
+                return False
+        return True
     except (OSError, ValueError, TypeError, KeyError):
         return False
 
@@ -284,12 +297,15 @@ def isolated(project_name):
                for service in ("backend", "mom"))
 
 
-def stop_pair(project_name):
+def stop_pair(project_name, expected=None):
     """Stop only selected project writers, without broad Compose operations."""
     success = True
     for service in ("mom", "backend"):
         identifier = PAUSE.identifiers(project_name, service)
         if identifier is None:
+            success = False
+            continue
+        if expected is not None and identifier != expected[service]["id"]:
             success = False
             continue
         state = PAUSE.container(project_name, service)
@@ -401,7 +417,8 @@ def activate(project, directory, owner=0):
         write_private(directory / "activation-incomplete.json",
                       (json.dumps(result, sort_keys=True) + "\n").encode(), owner)
         try:
-            if not stop_pair(baseline["project"]) or not stopped(baseline["project"], baseline):
+            if not stop_pair(baseline["project"], baseline["installed"]) or not stopped(
+                    baseline["project"], baseline):
                 raise ValueError("writer stop failed")
             result["checks"]["writers_stopped"] = True
             replace_runtime(project, candidate, owner)
