@@ -2,7 +2,10 @@
 
 This is the read-only signal producer for #584. Its optional sender uses the
 private missed-signal receiver contract in #579. As of 2026-11-15, the
-Healthchecks.io project has a paused `RSL public web/API/TLS` check. A separate
+Healthchecks.io project has three separate paused checks: `RSL public
+website/TLS`, `RSL public API health`, and `RSL public release identity`.
+The original combined check was renamed for website/TLS; the two additional
+checks have never been pinged. A separate
 disposable check proved failure, recovery and missed-signal delivery to Slack
 `#alerts` and fallback email. There is no scheduled public-signal job, live
 production probe or production-check activation.
@@ -52,15 +55,23 @@ completed failed check, and must not send a failure heartbeat.
 
 ## Optional independent receiver delivery
 
-After the receiver and notification test check are separately approved, place
-its private success URL alone in a mode 0600 file under a mode 0700 directory
-on the independent runner. Keep the public signal configuration in a separate
-private directory and use fresh, distinct observation and delivery reports.
-The URL follows the same [empty POST/`OK` contract](../../deploy/portable/monitoring/signals.md)
-as the runtime sender. No Slack credential is stored on the runner. A successful
-observation sends the receiver's success signal; a completed failed observation
-sends its `/fail` signal. Invalid inputs, overlap or an incomplete observation
-send nothing, so the independent receiver can detect a missed signal.
+Place three distinct private success URLs in mode 0600 files named
+`website-url`, `api-url` and `identity-url` under one mode 0700 directory on
+the independent runner. Map them to separate paused receiver checks with the
+same approved Slack and email integrations. Keep the public signal
+configuration in a separate private directory and use fresh, distinct
+observation and delivery reports. Each URL follows the same
+[empty POST/`OK` contract](../../deploy/portable/monitoring/signals.md) as
+the runtime sender. No Slack credential is stored on the runner.
+
+One observation produces seven fixed checks. The website receiver gets apex
+home, `www` redirect and both TLS-expiry results; the API receiver gets
+`/api/health`; the identity receiver gets both frontend and API version
+markers. Each receives success or `/fail` independently, so an API failure
+does not mark the website or identity check down. An invalid, interrupted or
+incomplete observation sends nothing to all three, allowing each independent
+missed-signal deadline to expire. A failed delivery to one receiver does not
+suppress delivery to the others.
 
 With separate approval of the target and receiver notification, run one bounded
 invocation from outside the VPS:
@@ -68,14 +79,14 @@ invocation from outside the VPS:
 ```sh
 python3 scripts/portable-vps-public-monitor.py \
   --config /protected/public/public-signal.json \
-  --endpoint-file /protected/receiver/public-url \
+  --endpoint-directory /protected/receiver/public \
   --observation-report /protected/evidence/public-observation-001.json \
   --report /protected/evidence/public-delivery-001.json \
   --confirm-external-readonly --confirm-notification
 ```
 
-The delivery report contains only a UTC timestamp, status and booleans for
-observation and receiver acknowledgement. It never records the URL, versions,
+The delivery report contains only a UTC timestamp, status and fixed per-signal
+booleans for observation and receiver acknowledgement. It never records URLs, versions,
 response bodies or raw errors. An acknowledged signal proves receiver receipt,
 not Slack/email delivery. Preserve failed or incomplete reports. A receiver
 failure does not turn a successful public observation into a monitoring PASS.
@@ -88,20 +99,18 @@ resolve it after a successful check. The sender's `/fail` is immediate;
 receiver grace applies to missing signals. A 14-day certificate threshold is
 an incident even when HTTPS still works. A missing signal after 15 minutes
 requires an independent missed-signal alert. These are proposed initial
-thresholds to validate before activation. The current paused Healthchecks
-check represents the combined public signal: its up/down notification does
-not identify which route failed. The private fixed-label observation report
-distinguishes site, API, identity, redirect and certificate failures during
-triage. Separately accepted off-host checks for these surfaces remain open
-under #584. Slack and email delivery of the disposable check does not
-establish live public-signal delivery.
+thresholds to validate before activation. The three paused receiver checks
+are configured separately; their distinct down/recovery alerts identify the
+affected surface. The private fixed-label observation report gives the exact
+failed route or certificate check during triage. Slack and email delivery of
+the disposable check does not establish live public-signal delivery.
 
 Use disposable monitor-side responses to exercise PASS, site-only failure,
 API-only failure, wrong redirect, version drift and near-expiry TLS. Test down,
 recovery and missed-signal delivery at the receiver without changing DNS,
 certificate or services on the production VPS. Document the alert owner and
 record sanitized delivery evidence. If false positives occur, pause only the
-public receiver check, preserve the other signal checks, and inspect the
+affected public receiver check, preserve the other signal checks, and inspect the
 fixed-label report; do not restart the VPS stack as an alert response.
 
 Scheduling, receiver assignment for this producer and live production probes

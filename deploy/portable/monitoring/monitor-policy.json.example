@@ -9,12 +9,24 @@
     "incomplete_or_absent_observation": "missed-signal-deadline"
   },
   "signals": {
-    "public_web_api_tls": {
+    "public_website_tls": {
       "sender": "scripts/portable-vps-public-monitor.py",
       "location": "outside-production-vps",
       "period_seconds": 300,
       "grace_seconds": 600,
       "certificate_minimum_remaining_days": 14
+    },
+    "public_api_health": {
+      "sender": "scripts/portable-vps-public-monitor.py",
+      "location": "outside-production-vps",
+      "period_seconds": 300,
+      "grace_seconds": 600
+    },
+    "public_release_identity": {
+      "sender": "scripts/portable-vps-public-monitor.py",
+      "location": "outside-production-vps",
+      "period_seconds": 300,
+      "grace_seconds": 600
     },
     "runtime_gateway_scheduler": {
       "sender": "scripts/portable-monitor.py",
