@@ -153,7 +153,7 @@ def validate(model, topology, mom_approval=None, project_directory=None):
           or (topology == "mom"
               and all(snowflake(env.get(k)) for k in
                       ("DISCORD_DAY_1_ROLE_ID", "DISCORD_DAY_2_ROLE_ID"))
-              and env["DISCORD_DAY_1_ROLE_ID"] != env["DISCORD_DAY_2_ROLE_ID"]))
+              and int(env["DISCORD_DAY_1_ROLE_ID"]) != int(env["DISCORD_DAY_2_ROLE_ID"])))
     check("role_sync_receiver_route", lambda:
           proxy_env["ROLE_SYNC_UPSTREAM"] ==
               ("mom:8001" if topology == "mom" else "api-proxy:8000")

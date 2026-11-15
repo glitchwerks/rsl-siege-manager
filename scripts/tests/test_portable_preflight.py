@@ -415,6 +415,7 @@ class SafetyTests(unittest.TestCase):
                     (None, None, False),
                     ("123456789012345678", None, False),
                     ("123456789012345678", "123456789012345678", False),
+                    ("123456789012345678", "0123456789012345678", False),
                     ("123456789012345678", "123456789012345679", True)):
                 with self.subTest(topology=topology, first=first, second=second):
                     data = factory()
