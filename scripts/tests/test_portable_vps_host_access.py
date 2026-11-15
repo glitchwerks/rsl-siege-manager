@@ -20,6 +20,7 @@ def test_host_update_pin_matches_reviewed_remote_script():
 def test_day_role_update_pin_and_backup_are_distinct():
     assert hashlib.sha256(host_access.SOURCE_SCRIPT.read_bytes()).hexdigest() == host_access.DAY_ROLE_REMOTE_NEW_SHA256
     assert host_access.DAY_ROLE_REMOTE_OLD_SHA256 == host_access.NEW_REMOTE_SHA256
+    assert hashlib.sha256(host_access.release_script_bytes()).hexdigest() == host_access.NEW_REMOTE_SHA256
     assert host_access.day_role_script_backup_path() != host_access.script_backup_path()
     assert not host_access.day_role_script_backup_path().is_relative_to(host_access.REMOTE_SCRIPT.parents[1])
 

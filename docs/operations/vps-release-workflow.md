@@ -88,6 +88,11 @@ commit. Its current `update-script` phase accepts only the fourteen reviewed pri
 script hashes, preserves a root-private copy at
 `/root/portable-vps-remote.py.before-recovery-restore`,
 and atomically changes only that script with its committed `0644` mode. An
+installer checkout for this older phase must retain the pinned `67d61df`
+commit in local Git history; the installer verifies its script bytes against
+the exact reviewed SHA-256. The later day-role script update has a separate
+backup and rollback phase documented in [the day-role runbook](vps-day-role-config.md).
+An
 earlier stage-only installation may also have left the separate reviewed
 `scripts/portable-vps-remote.py.before-release-stage` backup in the checkout;
 a prior preflight installation may have left the preserved
