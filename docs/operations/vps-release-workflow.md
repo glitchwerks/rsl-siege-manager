@@ -445,7 +445,9 @@ the dedicated test identity. Its private configuration must name the exact
 candidate versions and isolated HTTPS origins. A mismatch or unavailable
 sidecar fails the release acceptance workflow; it does not trigger a retry,
 Discord write, or automatic rollback. This job is skipped for
-`target=production`.
+`target=production`. The host acceptance job releases the shared release-phase
+lock before this separately approved smoke job waits, so its approval cannot
+hold a production acceptance dispatch.
 
 Before dispatch, the operator must prepare root-owned `0700`
 `/root/vps-release-acceptance/` with root-owned `0600` files `pilot.json` and

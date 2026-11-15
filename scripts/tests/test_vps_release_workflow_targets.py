@@ -67,6 +67,9 @@ class ReleaseTargetContract(unittest.TestCase):
     def test_rehearsal_acceptance_runs_only_readonly_isolated_smoke(self):
         raw = (WORKFLOWS / "vps-release-accept.yml").read_text()
         self.assertEqual(raw.count("  isolated_readonly_smoke:\n"), 1)
+        self.assertNotIn("\nconcurrency:\n", raw.split("jobs:\n", 1)[0])
+        accept = raw.split("  accept:\n", 1)[1].split("  isolated_readonly_smoke:\n", 1)[0]
+        self.assertIn("    concurrency:\n      group: vps-production-promotion\n", accept)
         smoke = raw.split("  isolated_readonly_smoke:\n", 1)[1]
         self.assertIn("    needs: accept\n", smoke)
         self.assertIn("inputs.target == 'rehearsal'", smoke)
