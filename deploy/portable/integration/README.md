@@ -146,9 +146,27 @@ Discord gateway token in either secret. The runner writes both inputs to
 private temporary files, removes them after execution, and uploads only its
 sanitized JSON report. The workflow's own job fails if either secret is absent.
 
+For the local VMware rehearsal VM, give this job a **separate** Tailscale OAuth
+client with only Auth Keys Write scope and permission to issue
+`tag:integration-smoke`. Store its client ID and secret as
+`INTEGRATION_TAILSCALE_OAUTH_CLIENT_ID` and
+`INTEGRATION_TAILSCALE_OAUTH_SECRET` in the protected `integration-smoke`
+environment. Do not reuse the production `tag:github-deploy` identity or VPS
+SSH secrets. Grant `tag:integration-smoke` access only to the reviewed test VM's
+HTTPS listener; it needs no route to the production VPS or its admin ports.
+The [Tailscale GitHub Action](https://tailscale.com/docs/integrations/github/github-action)
+joins the tailnet only after environment approval and creates an ephemeral
+runner. Review the effective tailnet grants before dispatch; a tag does not
+narrow broader existing grants. Keep the two target origins in `pilot.json`
+as trusted HTTPS DNS names reachable from the runner, with no custom port or
+URL credentials. The current runner permits loopback HTTP only for a separately
+approved local forwarding path, which this GitHub workflow does not create.
+If either private origin cannot be reached, the run stops before any Discord
+write path; no public ingress should be opened as a workaround.
+
 Dispatch `readonly` after the reviewed isolated endpoint is reachable from a
-GitHub-hosted runner. Use `full` only after separate approval of the exact test
-recipient and channel, with `confirm_discord_writes` set to
+GitHub-hosted runner over this private route. Use `full` only after separate
+approval of the exact test recipient and channel, with `confirm_discord_writes` set to
 `send-test-discord-messages`. The protected environment approval and this
 literal confirmation are separate gates. Do not dispatch against production
 recipients or channels. A PASS report still requires a separate delivery and
