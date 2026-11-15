@@ -118,6 +118,17 @@ def pairs_match(files):
     return all(hmac.compare_digest(left, right) for left, right in pair_values(files).values())
 
 
+def reviewed_checkout():
+    root = PREFLIGHT.PREFLIGHT.ROOT
+    head = PAUSE.command(["git", "-C", str(root), "rev-parse", "HEAD"])
+    changed = PAUSE.command(["git", "-C", str(root), "status", "--porcelain",
+                             "--untracked-files=no"])
+    if (head is None or not PREFLIGHT.REMOTE.SOURCE_SHA.fullmatch(head)
+            or changed != ""):
+        raise ValueError("unreviewed checkout")
+    return head
+
+
 def project_snapshot(project, owner):
     """Capture protected inputs and exact healthy container identities."""
     files = read_runtime(project, owner)
@@ -136,7 +147,8 @@ def project_snapshot(project, owner):
     installed = PREFLIGHT.running_services(name, rendered)
     if installed is None or not PAUSE.no_extra_writers(name):
         raise ValueError("service topology or image mismatch")
-    return files, {"project": name, "installed": installed}
+    return files, {"project": name, "installed": installed,
+                   "source_sha": reviewed_checkout()}
 
 
 def configuration_current(project, baseline):
@@ -148,6 +160,8 @@ def configuration_current(project, baseline):
     if not PREFLIGHT.PREFLIGHT.deployment_bind_sources_current(project):
         return False
     try:
+        if reviewed_checkout() != baseline["source_sha"]:
+            return False
         rendered = PREFLIGHT.PREFLIGHT.render("mom", project / "stack.env", project, {})
         installed = baseline["installed"]
         if not (GATE.project_name(project / "stack.env") == baseline["project"]
@@ -223,7 +237,9 @@ def stage(project, pair, evidence, owner=0):
                     "mom.env": replace_assignment(before["mom.env"], selected[1], candidate)}
         proposed_pairs = pair_values(proposed)
         original_pairs = pair_values(before)
-        checks["staged_pair_equal"] = hmac.compare_digest(*proposed_pairs[pair])
+        checks["staged_pair_equal"] = (hmac.compare_digest(*proposed_pairs[pair])
+                                        and not hmac.compare_digest(proposed_pairs[pair][0],
+                                                                    original_pairs[pair][0]))
         other = next(name for name in PAIRS if name != pair)
         checks["unselected_pair_unchanged"] = proposed_pairs[other] == original_pairs[other]
         current, current_baseline = project_snapshot(project, owner)
@@ -260,7 +276,9 @@ def staged(project, directory, owner):
             and accepted.get("phase") == "bearer-stage" and accepted.get("status") == "PASS"
             and accepted.get("run_id") == directory.name and pair in PAIRS
             and isinstance(baseline, dict) and isinstance(baseline.get("project"), str)
-            and isinstance(baseline.get("installed"), dict)):
+            and isinstance(baseline.get("installed"), dict)
+            and isinstance(baseline.get("source_sha"), str)
+            and PREFLIGHT.REMOTE.SOURCE_SHA.fullmatch(baseline["source_sha"])):
         raise ValueError("invalid accepted stage")
     rollback = {name: GATE.read_private(directory / f"rollback-{name}", owner, MAX_FILE)
                 for name in FILES}
@@ -375,15 +393,25 @@ def probe(container, url, token):
     return int(result.stdout)
 
 
-def verified(project, pair, active, stale, baseline, owner):
-    files, current = project_snapshot(project, owner)
-    if files != active or current["project"] != baseline["project"]:
+def verified(project, pair, active, stale, baseline, owner, details=None):
+    """Check exact images and both HTTP directions, recording fixed booleans only."""
+    if details is None:
+        details = {}
+    try:
+        files, current = project_snapshot(project, owner)
+    except (OSError, ValueError, TypeError, KeyError, AssertionError):
+        details["snapshot"] = False
+        return False
+    details["snapshot"] = files == active and current["project"] == baseline["project"]
+    if not details["snapshot"]:
         return False
     old = baseline["installed"]
     new = current["installed"]
-    if (set(new) != set(old) or any(new[name]["image"] != old[name]["image"] for name in old)
-            or any(new[name]["id"] != old[name]["id"] for name in old if name not in ("backend", "mom"))
-            or any(new[name]["id"] == old[name]["id"] for name in ("backend", "mom"))):
+    details["exact_images_and_targeted_recreation"] = not (
+        set(new) != set(old) or any(new[name]["image"] != old[name]["image"] for name in old)
+        or any(new[name]["id"] != old[name]["id"] for name in old if name not in ("backend", "mom"))
+        or any(new[name]["id"] == old[name]["id"] for name in ("backend", "mom")))
+    if not details["exact_images_and_targeted_recreation"]:
         return False
     active_pairs, stale_pairs = pair_values(active), pair_values(stale)
     backend = new["backend"]["id"]
@@ -393,10 +421,14 @@ def verified(project, pair, active, stale, baseline, owner):
             container, url, expected = backend, "http://mom:8001/api/members", 200
         else:
             container, url, expected = mom, "http://backend:8000/api/members/me/preferences", 400
-        if probe(container, url, active_pairs[direction][0]) != expected:
+        details[f"{direction}_accepted"] = probe(container, url, active_pairs[direction][0]) == expected
+        if not details[f"{direction}_accepted"]:
             return False
-        if direction == pair and probe(container, url, stale_pairs[direction][0]) != 401:
-            return False
+        if direction == pair:
+            details[f"{direction}_stale_rejected"] = probe(
+                container, url, stale_pairs[direction][0]) == 401
+            if not details[f"{direction}_stale_rejected"]:
+                return False
     return True
 
 
@@ -425,8 +457,10 @@ def activate(project, directory, owner=0):
             result["checks"]["candidate_installed"] = read_runtime(project, owner) == candidate
             if not result["checks"]["candidate_installed"] or not compose_up(project):
                 raise ValueError("candidate activation failed")
+            detail = {}
             result["checks"]["paired_verification"] = verified(
-                project, pair, candidate, rollback, baseline, owner)
+                project, pair, candidate, rollback, baseline, owner, detail)
+            result["verification"] = detail
             if not result["checks"]["paired_verification"]:
                 raise ValueError("paired verification failed")
             result["status"] = "PASS"
@@ -486,8 +520,10 @@ def recover_routine(project, directory, old_bearer_safe=False, owner=0):
             result["checks"]["rollback_installed"] = read_runtime(project, owner) == rollback
             if not result["checks"]["rollback_installed"] or not compose_up(project):
                 raise ValueError("routine rollback failed")
+            detail = {}
             result["checks"]["paired_verification"] = verified(
-                project, pair, rollback, candidate, baseline, owner)
+                project, pair, rollback, candidate, baseline, owner, detail)
+            result["verification"] = detail
             if not result["checks"]["paired_verification"]:
                 raise ValueError("routine rollback verification failed")
             result["status"] = "PASS"
@@ -600,8 +636,10 @@ def activate_fresh(project, directory, owner=0):
             result["checks"]["fresh_installed"] = read_runtime(project, owner) == fresh
             if not result["checks"]["fresh_installed"] or not compose_up(project):
                 raise ValueError("fresh activation failed")
+            detail = {}
             result["checks"]["paired_verification"] = verified(
-                project, pair, fresh, rollback, baseline, owner)
+                project, pair, fresh, rollback, baseline, owner, detail)
+            result["verification"] = detail
             if not result["checks"]["paired_verification"]:
                 raise ValueError("fresh pair verification failed")
             active, installed = project_snapshot(project, owner)

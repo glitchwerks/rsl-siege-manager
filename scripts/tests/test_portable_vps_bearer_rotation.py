@@ -99,6 +99,12 @@ def test_ambiguous_bearer_assignment_stops(invalid):
         ROTATE.parse_env(invalid, {"DISCORD_BOT_API_KEY", "BOT_SERVICE_TOKEN"})
 
 
+def test_dirty_source_checkout_is_rejected():
+    with patch.object(ROTATE.PAUSE, "command", side_effect=["a" * 40, " M scripts/runner.py"]):
+        with pytest.raises(ValueError, match="unreviewed checkout"):
+            ROTATE.reviewed_checkout()
+
+
 @contextmanager
 def _lock(_project):
     yield
@@ -114,8 +120,9 @@ def _activation_fixture(project):
         "mom.env": ROTATE.replace_assignment(
             rollback["mom.env"], "MOM_BOT_SECRET_DISCORD_BOT_API_KEY", b"sidecar-new"),
     }
-    baseline = {"project": "isolated", "installed": {"backend": {"id": "old-backend", "image": "exact"},
-                                                     "mom": {"id": "old-mom", "image": "exact"}}}
+    baseline = {"project": "isolated", "source_sha": "a" * 40,
+                "installed": {"backend": {"id": "old-backend", "image": "exact"},
+                              "mom": {"id": "old-mom", "image": "exact"}}}
     return root, directory, rollback, candidate, baseline
 
 

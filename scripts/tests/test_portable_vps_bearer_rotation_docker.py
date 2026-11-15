@@ -97,7 +97,8 @@ class DisposableBearerRotationTests(unittest.TestCase):
                     image = ROTATE.PAUSE.command(
                         ["docker", "inspect", "--format", "{{json .Config.Image}}", identifier])
                     installed[service] = {"id": identifier, "image": json.loads(image)}
-                return files, {"project": name, "installed": installed}
+                return files, {"project": name, "installed": installed,
+                               "source_sha": ROTATE.reviewed_checkout()}
 
             try:
                 subprocess.run(["docker", "build", "--tag", tag, str(project)],
@@ -106,6 +107,7 @@ class DisposableBearerRotationTests(unittest.TestCase):
                                check=True, capture_output=True, timeout=90)
                 with patch.object(ROTATE, "project_snapshot", side_effect=snapshot):
                     for pair in ("sidecar", "reverse-api"):
+                        print(f"rehearsal normal {pair}", flush=True)
                         before, baseline = snapshot(project, 0)
                         stage = ROTATE.stage(project, pair, evidence)
                         self.assertEqual(ROTATE.read_runtime(project, 0), before)
@@ -118,6 +120,7 @@ class DisposableBearerRotationTests(unittest.TestCase):
                             self.assertEqual(installed["installed"][service], baseline["installed"][service])
 
                     old, _ = snapshot(project, 0)
+                    print("rehearsal routine rollback", flush=True)
                     stage = ROTATE.stage(project, "sidecar", evidence)
                     with patch.object(ROTATE, "verified", return_value=False):
                         failed = ROTATE.activate(project, evidence / stage["run_id"])
@@ -130,6 +133,7 @@ class DisposableBearerRotationTests(unittest.TestCase):
                     self.assertEqual(ROTATE.read_runtime(project, 0), old)
 
                     stage = ROTATE.stage(project, "reverse-api", evidence)
+                    print("rehearsal fresh recovery", flush=True)
                     with patch.object(ROTATE, "verified", return_value=False):
                         failed = ROTATE.activate(project, evidence / stage["run_id"])
                     self.assertEqual(failed["status"], "STOP")
