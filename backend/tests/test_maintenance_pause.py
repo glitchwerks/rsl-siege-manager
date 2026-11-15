@@ -3,9 +3,9 @@
 import asyncio
 import os
 
+import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
-import pytest
 
 from app.maintenance import MaintenanceGate, MaintenancePauseMiddleware
 

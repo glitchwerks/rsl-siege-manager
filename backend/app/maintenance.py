@@ -8,8 +8,8 @@ recreation. Missing or invalid state fails closed when enforcement is enabled.
 from __future__ import annotations
 
 import os
-from pathlib import Path
 import stat
+from pathlib import Path
 from threading import Lock
 from typing import Any
 
