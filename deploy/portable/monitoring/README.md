@@ -136,9 +136,10 @@ missed-signal receiver. The observer itself does **not** send notifications.
 Receiver/Slack setup, scheduling and delivered-alert evidence remain unactivated.
 An observer that stops with the VM cannot notify about its own disappearance.
 Scheduler progress is available in the mom-bot 1.6.0 candidate; the bundled bot
-needs separate progress acceptance. A service-specific watchdog with cooldown/
-escalation and independent runtime signal delivery remain implementation and
-activation gates. No broad host/database restart is approved by this template.
+needs separate progress acceptance. The [service-specific watchdog](../../../docs/operations/vps-service-watchdog.md)
+has a bounded, inert host-side implementation; its reviewed configuration,
+schedule, independent escalation delivery and production activation remain
+separate gates. No broad host/database restart is approved by this template.
 Do not expose unauthenticated sidecar endpoints or mount a Docker socket into an
 application/monitor container to fill those gaps.
 

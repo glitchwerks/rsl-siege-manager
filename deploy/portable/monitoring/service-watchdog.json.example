@@ -1,0 +1,6 @@
+{
+  "project": "REPLACE-reviewed-compose-project",
+  "service": "backend",
+  "image": "REPLACE-reviewed-registry/image@sha256:REPLACE-64-hex-digest",
+  "enabled": true
+}
