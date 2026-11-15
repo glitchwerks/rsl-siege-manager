@@ -376,7 +376,8 @@ def run(args: argparse.Namespace) -> dict:
                         args.project_directory,
                         {
                             "schema": 1,
-                            "pause_started_at": datetime.now(timezone.utc).isoformat(),
+                            "pause_started_at": prior["pause_started_at"]
+                            or datetime.now(timezone.utc).isoformat(),
                             "last_resumed_at": prior["last_resumed_at"],
                         },
                     )

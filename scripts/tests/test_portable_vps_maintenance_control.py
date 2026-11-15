@@ -57,6 +57,46 @@ class MaintenanceControlTests(unittest.TestCase):
         self.assertEqual(result["status"], "STOP")
         self.assertEqual(current["state"], "paused")
 
+    def test_second_pause_preserves_first_boundary_for_join_reconciliation(self):
+        current = {"state": "active"}
+        first = "2026-11-15T00:00:00+00:00"
+        written = []
+        args = Namespace(
+            phase="pause",
+            confirm="pause",
+            project_directory=Path("/synthetic"),
+            bearer_report=[],
+            monitor_report=None,
+        )
+        with patch.object(CONTROL.os, "geteuid", return_value=0), patch.object(
+            CONTROL.PAUSE.GATE, "protected", return_value=True
+        ), patch.object(
+            CONTROL.PAUSE, "project_lock", return_value=nullcontext()
+        ), patch.object(
+            CONTROL, "state", side_effect=lambda _p: current["state"]
+        ), patch.object(
+            CONTROL,
+            "replace_state",
+            side_effect=lambda _p, value: current.update(state=value) or True,
+        ), patch.object(
+            CONTROL,
+            "history",
+            return_value={
+                "schema": 1,
+                "pause_started_at": first,
+                "last_resumed_at": "2026-11-15T01:00:00+00:00",
+            },
+        ), patch.object(
+            CONTROL,
+            "replace_history",
+            side_effect=lambda _p, value: written.append(value) or True,
+        ), patch.object(
+            CONTROL, "drain", return_value=True
+        ):
+            result = CONTROL.run(args)
+        self.assertEqual(result["status"], "PASS")
+        self.assertEqual(written[0]["pause_started_at"], first)
+
     def test_resume_without_evidence_never_reactivates(self):
         args = Namespace(
             phase="resume",

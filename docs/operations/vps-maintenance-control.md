@@ -23,7 +23,7 @@ release lock serializes it with promotion operations.
 2. `pause --confirm pause` changes `active` to `paused`, then waits for three
    successive zero in-flight observations from **both** running peers. It
    reports STOP if either peer lacks the status contract or the 20-second
-   bounded drain expires. It records the pause boundary after closing
+   bounded drain expires. It records the earliest pause boundary after closing
    admission. The state remains paused on failure or interruption.
 3. `drain` retries only the read-only two-peer drain after a STOP. It does not
    change the control state.
