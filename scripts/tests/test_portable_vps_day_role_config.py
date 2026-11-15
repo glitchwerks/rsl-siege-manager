@@ -207,7 +207,7 @@ def test_proof_requires_backup_after_current_completed_drain(monkeypatch, tmp_pa
                             "run_id": backup_id},
                "recover.json": {}, "restore.json": {}}
     baseline = {"project": "test", "installed": {}}
-    candidate_bytes = {"value": b"candidate-role-1"}
+    candidate_bytes = {"value": RUNNER.changed(DISABLED, VALUES)}
     monkeypatch.setattr(RUNNER, "load", lambda *_: (
         {"old_enabled": "false"}, baseline, DISABLED, candidate_bytes["value"], b"mom", {}))
     monkeypatch.setattr(RUNNER.ROTATION, "require_pause", lambda *_, **__: None)
@@ -236,11 +236,12 @@ def test_proof_requires_backup_after_current_completed_drain(monkeypatch, tmp_pa
     assert accepted["stage_id"] == stage.name
     assert accepted["pause_history"] == history
     assert set(accepted["reports"]) == {"backup", "recover", "restore"}
-    candidate_bytes["value"] = b"candidate-role-2"
+    candidate_bytes["value"] = RUNNER.changed(DISABLED, {
+        **VALUES, "DISCORD_DAY_2_ROLE_ID": "12345678901234569"})
     changed_candidate = RUNNER.proof_snapshot(project, stage, tmp_path / "profile.json",
                                               maintenance_report, backup, recover, restore)
     assert changed_candidate["candidate_sha256"] != accepted["candidate_sha256"]
-    candidate_bytes["value"] = b"candidate-role-1"
+    candidate_bytes["value"] = RUNNER.changed(DISABLED, VALUES)
     later = drained_at + timedelta(minutes=1)
     os.utime(state_file, (later.timestamp(), later.timestamp()))
     with pytest.raises(ValueError, match="predates current pause"):
