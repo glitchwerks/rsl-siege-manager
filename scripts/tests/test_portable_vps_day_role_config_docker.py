@@ -126,11 +126,13 @@ class DisposableDayRoleConfigTests(unittest.TestCase):
                       patch.object(CONFIG.PREFLIGHT, "render", side_effect=rendered),
                       patch.object(CONFIG.PREFLIGHT, "validate", return_value={"valid": True}),
                       patch.object(CONFIG.ROTATION, "project_snapshot", side_effect=snapshot),
-                      patch.object(CONFIG.ROTATION, "public_healthy", return_value=True)):
+                      patch.object(CONFIG.ROTATION, "public_healthy", return_value=True),
+                      patch.object(CONFIG, "proof_current", return_value=True)):
                     before, baseline = snapshot(project, 0)
                     first = CONFIG.stage(project, decision, evidence)
                     self.assertEqual(CONFIG.ROTATION.read_runtime(project, 0), before)
-                    activated = CONFIG.activate(project, first, evidence / "public.json")
+                    activated = CONFIG.activate(project, first, evidence / "public.json",
+                                                evidence / "backup-profile.json")
                     self.assertEqual(activated["status"], "PASS", activated["checks"])
                     _, after = snapshot(project, 0)
                     self.assertNotEqual(after["installed"]["backend"]["id"], baseline["installed"]["backend"]["id"])
@@ -141,7 +143,8 @@ class DisposableDayRoleConfigTests(unittest.TestCase):
                     decision.write_text('{"schema":1,"enabled":false}')
                     second = CONFIG.stage(project, decision, evidence)
                     with patch.object(CONFIG, "verify", return_value=False):
-                        failed = CONFIG.activate(project, second, evidence / "public.json")
+                        failed = CONFIG.activate(project, second, evidence / "public.json",
+                                                 evidence / "backup-profile.json")
                     self.assertEqual(failed["status"], "STOP")
                     self.assertFalse(CONFIG.PAUSE.container(name, "backend")["running"])
                     with patch.object(CONFIG.ROTATION, "configuration_current", return_value=True):

@@ -8,10 +8,12 @@ checks only; candidate and rollback environment files remain private on host.
 import argparse
 import copy
 from datetime import datetime, timezone
+import hashlib
 import importlib.util
 import json
 import os
 from pathlib import Path
+import pwd
 import re
 import subprocess
 import tempfile
@@ -34,6 +36,8 @@ EFFECTIVE = sibling("day_role_effective_guard", "portable-vps-day-role-effective
 PREFLIGHT = ROTATION.PREFLIGHT.PREFLIGHT
 PAUSE = ROTATION.PAUSE
 GATE = ROTATION.GATE
+BACKUP_EVIDENCE = sibling("day_role_backup_evidence", "portable-vps-backup-evidence.py")
+BACKUP_PROFILE = sibling("day_role_backup_profile", "portable-vps-release-pause-backup.py")
 KEYS = ("DAY_ROLE_SYNC_ENABLED", "DAY_ROLE_SYNC_URL",
         "DISCORD_DAY_1_ROLE_ID", "DISCORD_DAY_2_ROLE_ID")
 SNOWFLAKE = re.compile(r"[0-9]{17,20}\Z")
@@ -42,6 +46,10 @@ MAX_FILE = ROTATION.MAX_FILE
 
 def now():
     return datetime.now(timezone.utc).isoformat()
+
+
+def digest(raw):
+    return hashlib.sha256(raw).hexdigest()
 
 
 def assignments(raw):
@@ -222,7 +230,9 @@ def stage(project, decision_path, evidence, owner=0):
 
 
 def load(project, directory, owner):
-    if (not ROTATION.private(directory, owner, directory=True)
+    if (not directory.is_absolute() or ".." in directory.parts
+            or not ROTATION.private(directory.parent, owner, directory=True)
+            or not ROTATION.private(directory, owner, directory=True)
             or str(uuid.UUID(directory.name)) != directory.name):
         raise ValueError("unsafe stage")
     accepted = json.loads(GATE.read_private(directory / "accepted.json", owner),
@@ -248,6 +258,142 @@ def load(project, directory, owner):
         raise ValueError("stage binding changed")
     values = role_delta(old, candidate, accepted["new_enabled"])
     return accepted, baseline, old, candidate, mom, values
+
+
+def proof_snapshot(project, directory, profile_path, maintenance_report,
+                   backup_path, recover_path, restore_path, owner=0):
+    """Bind same-copy evidence to this unchanged stage and maintenance pause."""
+    accepted, baseline, old, candidate, mom, _ = load(project, directory, owner)
+    ROTATION.require_pause(project, drain=True)
+    pause_history = ROTATION.MAINT.history(project)
+    if pause_history is None:
+        raise ValueError("missing pause history")
+    resumed_at = BACKUP_EVIDENCE.moment(pause_history["last_resumed_at"])
+    if pause_history["pause_started_at"] is None:
+        raise ValueError("missing maintenance pause boundary")
+    expected_phase = {"pause-report.json": "maintenance-pause",
+                      "drain-report.json": "maintenance-drain"}.get(maintenance_report.name)
+    if (maintenance_report.parent != directory or expected_phase is None
+            or not maintenance_report.is_absolute() or ".." in maintenance_report.parts):
+        raise ValueError("invalid maintenance report selector")
+    maintenance_raw = GATE.read_private(maintenance_report, owner)
+    maintenance = json.loads(maintenance_raw,
+                             object_pairs_hook=ROTATION.PREFLIGHT.REMOTE.no_duplicate_keys)
+    if (not isinstance(maintenance, dict) or maintenance.get("phase") != expected_phase
+            or maintenance.get("status") != "PASS"
+            or not isinstance(maintenance.get("checks"), dict)
+            or maintenance["checks"].get("drained") is not True
+            or maintenance["checks"].get("paused") is not True
+            or not all(value is True for value in maintenance["checks"].values())):
+        raise ValueError("maintenance drain was not accepted")
+    state_path = project / "control" / "state"
+    state_mtime_ns = state_path.lstat().st_mtime_ns
+    drain_mtime_ns = maintenance_report.lstat().st_mtime_ns
+    drain_mtime = datetime.fromtimestamp(drain_mtime_ns / 1e9, timezone.utc)
+    if (drain_mtime_ns < state_mtime_ns
+            or (resumed_at is not None and drain_mtime <= resumed_at)):
+        raise ValueError("maintenance report predates current pause")
+    profile, profile_sha = BACKUP_PROFILE.profile(profile_path)
+    if profile["project_directory"] != project:
+        raise ValueError("backup profile project mismatch")
+    backup_owner = pwd.getpwnam(profile["backup_owner"]).pw_uid
+    if any(not path.is_absolute() or ".." in path.parts
+           for path in (backup_path, recover_path, restore_path)):
+        raise ValueError("invalid evidence selector")
+    if len({backup_path, recover_path, restore_path}) != 3:
+        raise ValueError("duplicate evidence selector")
+    run_id = backup_path.parent.name
+    if (not BACKUP_EVIDENCE.valid_uuid(run_id)
+            or backup_path != profile["backup_root"] / "runs" / run_id / "job.json"):
+        raise ValueError("backup outside managed run")
+    before, current_baseline = ROTATION.project_snapshot(project, owner)
+    current, _ = model(project)
+    if (before["backend.env"] != old or before["mom.env"] != mom
+            or current_baseline != baseline
+            or not ROTATION.stack_current(project, directory, owner)
+            or not inputs_current(project, directory, owner, include_backend=True)
+            or not all(EFFECTIVE.inspect(current, accepted["old_enabled"]).values())):
+        raise ValueError("stage baseline drift")
+    paths = {"backup": backup_path, "recover": recover_path, "restore": restore_path}
+    raw = {name: GATE.read_private(path, backup_owner) for name, path in paths.items()}
+    parsed = {name: json.loads(value, object_pairs_hook=ROTATION.PREFLIGHT.REMOTE.no_duplicate_keys)
+              for name, value in raw.items()}
+    if not all(isinstance(value, dict) for value in parsed.values()):
+        raise ValueError("invalid backup report shape")
+    checks = BACKUP_EVIDENCE.inspect(backup_path, recover_path, restore_path,
+        owner_uid=backup_owner,
+        reader=lambda path: parsed[next(name for name, item in paths.items() if item == path)])
+    backup_started = BACKUP_EVIDENCE.moment(parsed["backup"].get("timestamp"))
+    if (not checks or not all(value is True for value in checks.values())
+            or backup_started is None or backup_started < drain_mtime
+            or parsed["backup"].get("run_id") != run_id
+            or any(digest(GATE.read_private(path, backup_owner)) != digest(raw[name])
+                   for name, path in paths.items())
+            or GATE.read_private(maintenance_report, owner) != maintenance_raw
+            or maintenance_report.lstat().st_mtime_ns != drain_mtime_ns
+            or state_path.lstat().st_mtime_ns != state_mtime_ns
+            or ROTATION.MAINT.history(project) != pause_history
+            or ROTATION.MAINT.state(project) != "paused"):
+        raise ValueError("backup proof or pause changed")
+    return {"schema": 1, "stage_id": directory.name,
+            "candidate_sha256": digest(candidate),
+            "pause_history": pause_history, "profile_sha256": profile_sha,
+            "maintenance": {"path": str(maintenance_report),
+                            "sha256": digest(maintenance_raw)},
+            "reports": {name: {"path": str(path), "sha256": digest(raw[name])}
+                        for name, path in paths.items()}}
+
+
+def accept_proof(project, directory, profile_path, maintenance_report,
+                 backup_path, recover_path, restore_path, owner=0):
+    with PAUSE.project_lock(project):
+        load(project, directory, owner)
+        if (directory / "proof-attempt.json").exists() or (directory / "proof-accepted.json").exists():
+            raise ValueError("proof already attempted")
+        private_json(directory / "proof-attempt.json",
+                     {"phase": "day-role-proof", "status": "INCOMPLETE"}, owner)
+        proof = proof_snapshot(project, directory, profile_path, maintenance_report, backup_path,
+                               recover_path, restore_path, owner)
+        private_json(directory / "proof-accepted.json",
+                     {"phase": "day-role-proof", "status": "PASS", "proof": proof}, owner)
+    return {"phase": "day-role-proof", "status": "PASS", "stage_id": directory.name}
+
+
+def proof_current(project, directory, profile_path, held_candidate, owner=0):
+    record = json.loads(GATE.read_private(directory / "proof-accepted.json", owner),
+                        object_pairs_hook=ROTATION.PREFLIGHT.REMOTE.no_duplicate_keys)
+    if (not isinstance(record, dict) or set(record) != {"phase", "status", "proof"}
+            or record["phase"] != "day-role-proof" or record["status"] != "PASS"
+            or not isinstance(record["proof"], dict)
+            or set(record["proof"]) != {"schema", "stage_id", "candidate_sha256",
+                                         "pause_history", "profile_sha256", "maintenance", "reports"}
+            or record["proof"]["schema"] != 1
+            or record["proof"]["stage_id"] != directory.name
+            or not isinstance(record["proof"]["candidate_sha256"], str)
+            or not re.fullmatch(r"[0-9a-f]{64}", record["proof"]["candidate_sha256"])):
+        raise ValueError("invalid accepted proof")
+    if not isinstance(held_candidate, bytes) or digest(held_candidate) != record["proof"]["candidate_sha256"]:
+        return False
+    maintenance = record["proof"]["maintenance"]
+    if (not isinstance(maintenance, dict) or set(maintenance) != {"path", "sha256"}
+            or not isinstance(maintenance["path"], str)
+            or not isinstance(maintenance["sha256"], str)
+            or not re.fullmatch(r"[0-9a-f]{64}", maintenance["sha256"])):
+        raise ValueError("invalid maintenance selector")
+    reports = record["proof"]["reports"]
+    if not isinstance(reports, dict) or set(reports) != {"backup", "recover", "restore"}:
+        raise ValueError("invalid proof selectors")
+    paths = []
+    for name in ("backup", "recover", "restore"):
+        item = reports[name]
+        if (not isinstance(item, dict) or set(item) != {"path", "sha256"}
+                or not isinstance(item["path"], str)
+                or not isinstance(item["sha256"], str)
+                or not re.fullmatch(r"[0-9a-f]{64}", item["sha256"])):
+            raise ValueError("invalid proof selector")
+        paths.append(Path(item["path"]))
+    return record["proof"] == proof_snapshot(project, directory, profile_path,
+                                             Path(maintenance["path"]), *paths, owner)
 
 
 def replace_backend(project, raw, owner):
@@ -339,12 +485,13 @@ def verify(project, baseline, expected_enabled, old_backend_id):
     return unchanged and all(EFFECTIVE.inspect(current, expected_enabled).values())
 
 
-def activate(project, directory, public_config, owner=0):
+def activate(project, directory, public_config, backup_profile, owner=0):
     accepted, baseline, old, candidate, mom, values = load(project, directory, owner)
     if (directory / "activation-incomplete.json").exists():
         raise ValueError("activation already attempted")
     result = {"phase": "day-role-activate", "status": "STOP", "timestamp": now(),
               "checks": {"baseline_current": False, "writers_paused": False,
+                         "backup_proof_current": False,
                          "public_baseline_healthy": False,
                          "backend_stopped": False, "candidate_valid": False,
                          "backend_recreated": False, "effective_state": False,
@@ -362,6 +509,10 @@ def activate(project, directory, public_config, owner=0):
         proposed = proposed_model(current, values, approval, project)
         ROTATION.require_pause(project, drain=True)
         result["checks"]["writers_paused"] = True
+        result["checks"]["backup_proof_current"] = proof_current(
+            project, directory, backup_profile, candidate, owner)
+        if not result["checks"]["backup_proof_current"]:
+            raise ValueError("backup proof changed")
         result["checks"]["public_baseline_healthy"] = ROTATION.public_healthy(
             project, public_config, owner)
         if not result["checks"]["public_baseline_healthy"]:
@@ -465,13 +616,18 @@ def recover(project, directory, public_config, restore_enabled_safe=False, owner
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("phase", choices=("stage", "activate", "recover"))
+    parser.add_argument("phase", choices=("stage", "proof", "activate", "recover"))
     parser.add_argument("--project-directory", type=Path, required=True)
     parser.add_argument("--decision-file", type=Path)
     parser.add_argument("--evidence-directory", type=Path)
     parser.add_argument("--stage-directory", type=Path)
     parser.add_argument("--public-config", type=Path)
-    parser.add_argument("--confirm", choices=("stage", "activate", "recover"))
+    parser.add_argument("--backup-profile", type=Path)
+    parser.add_argument("--maintenance-report", type=Path)
+    parser.add_argument("--backup-report", type=Path)
+    parser.add_argument("--recover-report", type=Path)
+    parser.add_argument("--restore-report", type=Path)
+    parser.add_argument("--confirm", choices=("stage", "proof", "activate", "recover"))
     parser.add_argument("--confirm-restore-enabled-safe", action="store_true")
     args = parser.parse_args(argv)
     try:
@@ -488,10 +644,25 @@ def main(argv=None):
                               args.evidence_directory)
             print(json.dumps({"phase": "day-role-stage", "status": "PASS", "run_id": directory.name}))
             return 0
-        if args.stage_directory is None or args.public_config is None:
-            raise ValueError("missing activation inputs")
+        if args.stage_directory is None:
+            raise ValueError("missing stage selector")
+        if args.phase == "proof":
+            if any(value is None for value in (args.backup_profile, args.maintenance_report,
+                                               args.backup_report, args.recover_report,
+                                               args.restore_report)):
+                raise ValueError("missing proof inputs")
+            result = accept_proof(args.project_directory, args.stage_directory,
+                                  args.backup_profile, args.maintenance_report, args.backup_report,
+                                  args.recover_report, args.restore_report)
+            print(json.dumps(result, sort_keys=True))
+            return 0
+        if args.public_config is None:
+            raise ValueError("missing public config")
         if args.phase == "activate":
-            result = activate(args.project_directory, args.stage_directory, args.public_config)
+            if args.backup_profile is None:
+                raise ValueError("missing backup profile")
+            result = activate(args.project_directory, args.stage_directory,
+                              args.public_config, args.backup_profile)
         else:
             result = recover(args.project_directory, args.stage_directory, args.public_config,
                              restore_enabled_safe=args.confirm_restore_enabled_safe)

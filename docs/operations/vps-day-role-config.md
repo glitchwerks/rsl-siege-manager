@@ -48,7 +48,32 @@ A stage never edits the running project or sends a webhook. Re-stage after any
 STOP or baseline drift; never edit an accepted stage in place.
 
 Before activation, complete the separately confirmed maintenance pause and
-two-peer drain, verified production backup, and current portable preflight. Record the
+two-peer drain, managed encrypted backup, off-host recovery and isolated
+same-copy restore. Write the successful maintenance `pause` report to the exact
+stage directory as `pause-report.json`. If pause reported STOP because its drain
+timed out, run the separate read-only `drain` phase and write its successful
+report there as `drain-report.json`. The backup must start after the successful
+drain report was written. The proof phase checks that report against the
+current paused state file, the private backup reports, the protected backup profile,
+current installed images and configuration, exact staged candidate digest, and unchanged pause history. It
+records one immutable acceptance under the exact stage. A failed proof attempt
+requires a new stage; do not edit evidence in place. Select the exact reports
+without putting their contents in command arguments or logs:
+
+```sh
+python3 scripts/portable-vps-day-role-config.py proof \
+  --project-directory /srv/rsl-siege \
+  --stage-directory /protected/day-role/evidence/REPLACE-RUN-ID \
+  --backup-profile /srv/rsl-siege/runtime/release-backup-profile.json \
+  --maintenance-report /protected/day-role/evidence/REPLACE-RUN-ID/pause-report.json \
+  --backup-report /protected/backups/runs/REPLACE-BACKUP-UUID/job.json \
+  --recover-report /protected/recovery/recover.json \
+  --restore-report /protected/recovery/restore.json \
+  --confirm proof
+```
+
+The example paths must be replaced with the protected paths on the selected
+host. The backup path must match the `backup_root` in the profile. Record the
 installed digest and public signal configuration. In the full approved window,
 activate the accepted stage using its exact private directory:
 
@@ -57,10 +82,11 @@ python3 scripts/portable-vps-day-role-config.py activate \
   --project-directory /srv/rsl-siege \
   --stage-directory /protected/day-role/evidence/REPLACE-RUN-ID \
   --public-config /protected/public/public-signal.json \
+  --backup-profile /srv/rsl-siege/runtime/release-backup-profile.json \
   --confirm activate
 ```
 
-The runner locks the project, repeats installed-state and pause checks, writes
+The runner locks the project, repeats installed-state, pause and proof checks, writes
 an INCOMPLETE marker, stops only backend, atomically replaces its environment
 file, validates the exact Compose render, then recreates only backend with the
 installed immutable image. It checks the effective running flag and IDs, all
