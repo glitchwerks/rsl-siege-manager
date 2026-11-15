@@ -28,6 +28,7 @@ on:
       - "scripts/tests/test_portable_vps_database_monitor.py"
       - "scripts/tests/test_portable_vps_database_signal_docker.py"
       - "scripts/tests/test_portable_vps_maintenance_control.py"
+      - "scripts/tests/test_portable_vps_maintenance_control_docker.py"
       - "docs/operations/vps-github-access.md"
       - "docs/operations/vps-release-workflow.md"
       - "docs/operations/vps-public-monitoring.md"
@@ -65,6 +66,7 @@ on:
       - "scripts/tests/test_portable_vps_database_monitor.py"
       - "scripts/tests/test_portable_vps_database_signal_docker.py"
       - "scripts/tests/test_portable_vps_maintenance_control.py"
+      - "scripts/tests/test_portable_vps_maintenance_control_docker.py"
       - "docs/operations/vps-github-access.md"
       - "docs/operations/vps-release-workflow.md"
       - "docs/operations/vps-public-monitoring.md"
@@ -135,3 +137,5 @@ jobs:
         run: sudo env VPS_WRITER_DOCKER_TEST=1 python3 -m unittest discover -s scripts/tests -p test_portable_vps_release_promote_docker.py -v
       - name: Rehearse least-privilege database signal against disposable PostgreSQL
         run: sudo env VPS_WRITER_DOCKER_TEST=1 python3 -m unittest discover -s scripts/tests -p test_portable_vps_database_signal_docker.py -v
+      - name: Rehearse two-peer maintenance pause and restart
+        run: sudo env VPS_WRITER_DOCKER_TEST=1 python3 -m unittest discover -s scripts/tests -p test_portable_vps_maintenance_control_docker.py -v
