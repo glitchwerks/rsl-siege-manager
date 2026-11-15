@@ -92,6 +92,7 @@ def test_stage_refuses_drift_without_accepted_candidate(project):
     b"DISCORD_BOT_API_KEY=one\nDISCORD_BOT_API_KEY=two\nBOT_SERVICE_TOKEN=reverse-old\n",
     b"DISCORD_BOT_API_KEY=\nBOT_SERVICE_TOKEN=reverse-old\n",
     b"export DISCORD_BOT_API_KEY=one\nBOT_SERVICE_TOKEN=reverse-old\n",
+    b"DISCORD_BOT_API_KEY=one\nexport DISCORD_BOT_API_KEY=two\nBOT_SERVICE_TOKEN=reverse-old\n",
 ])
 def test_ambiguous_bearer_assignment_stops(invalid):
     with pytest.raises(ValueError):
@@ -194,7 +195,7 @@ def test_routine_recovery_restores_both_files_after_failed_activation(project):
 
     with (patch.object(ROTATE, "staged", return_value=("sidecar", rollback, candidate, baseline)),
           patch.object(ROTATE.PAUSE, "project_lock", side_effect=_lock),
-          patch.object(ROTATE.GATE, "project_name", return_value="isolated"),
+          patch.object(ROTATE, "configuration_current", return_value=True),
           patch.object(ROTATE.PAUSE, "no_extra_writers", return_value=True),
           patch.object(ROTATE, "read_runtime", side_effect=lambda *_args: dict(current)),
           patch.object(ROTATE, "stop_pair", return_value=True),
@@ -216,3 +217,38 @@ def test_exposed_old_bearer_cannot_enter_routine_recovery(project):
             ROTATE.recover_routine(root, directory, old_bearer_safe=False,
                                    owner=os.geteuid())
     staged.assert_not_called()
+
+
+@pytest.mark.parametrize("pair", sorted(ROTATE.PAIRS))
+def test_verified_probes_both_directions_and_rejects_selected_old_token(project, pair):
+    root, _evidence, rollback = project
+    selected = ROTATE.PAIRS[pair]
+    candidate = {
+        "backend.env": ROTATE.replace_assignment(rollback["backend.env"], selected[0], b"fresh"),
+        "mom.env": ROTATE.replace_assignment(rollback["mom.env"], selected[1], b"fresh"),
+    }
+    baseline = {"project": "isolated", "installed": {
+        "backend": {"id": "old-backend", "image": "backend-image"},
+        "mom": {"id": "old-mom", "image": "mom-image"},
+        "postgres": {"id": "same-postgres", "image": "postgres-image"},
+    }}
+    current = {"project": "isolated", "installed": {
+        "backend": {"id": "new-backend", "image": "backend-image"},
+        "mom": {"id": "new-mom", "image": "mom-image"},
+        "postgres": {"id": "same-postgres", "image": "postgres-image"},
+    }}
+    calls = []
+
+    def probe(container, url, token):
+        calls.append((container, url, token))
+        expected_token = ROTATE.pair_values(candidate)["sidecar" if "mom:8001" in url else "reverse-api"][0]
+        if token != expected_token:
+            return 401
+        return 200 if "mom:8001" in url else 400
+
+    with (patch.object(ROTATE, "project_snapshot", return_value=(candidate, current)),
+          patch.object(ROTATE, "probe", side_effect=probe)):
+        assert ROTATE.verified(root, pair, candidate, rollback, baseline, os.geteuid())
+    assert any("mom:8001" in url for _, url, _ in calls)
+    assert any("backend:8000" in url for _, url, _ in calls)
+    assert len(calls) == 3

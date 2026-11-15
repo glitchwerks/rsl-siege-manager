@@ -67,8 +67,9 @@ def parse_env(raw, required):
         if body.lstrip().startswith(b"#") or b"=" not in body:
             continue
         key, value = body.split(b"=", 1)
+        canonical = key.strip().removeprefix(b"export ").strip()
         try:
-            name = key.decode("ascii")
+            name = canonical.decode("ascii")
         except UnicodeDecodeError:
             continue
         if name not in required:
@@ -136,6 +137,24 @@ def project_snapshot(project, owner):
     if installed is None or not PAUSE.no_extra_writers(name):
         raise ValueError("service topology or image mismatch")
     return files, {"project": name, "installed": installed}
+
+
+def configuration_current(project, baseline):
+    """Check reviewed Compose inputs and exact image references before recovery."""
+    if not all(PREFLIGHT.reviewed_config(
+            project / file, (PREFLIGHT.PREFLIGHT.PORTABLE / file).read_bytes())
+            for file in ("compose.yml", "compose.mom.yml")):
+        return False
+    if not PREFLIGHT.PREFLIGHT.deployment_bind_sources_current(project):
+        return False
+    try:
+        rendered = PREFLIGHT.PREFLIGHT.render("mom", project / "stack.env", project, {})
+        installed = baseline["installed"]
+        return (GATE.project_name(project / "stack.env") == baseline["project"]
+                and all(rendered["services"][name]["image"] == item["image"]
+                        for name, item in installed.items()))
+    except (OSError, ValueError, TypeError, KeyError):
+        return False
 
 
 def write_private(path, raw, owner):
@@ -425,7 +444,7 @@ def recover_routine(project, directory, old_bearer_safe=False, owner=0):
                                       "paired_verification": False}}
     with PAUSE.project_lock(project):
         result["checks"]["expected_project"] = (
-            GATE.project_name(project / "stack.env") == baseline["project"]
+            configuration_current(project, baseline)
             and PAUSE.no_extra_writers(baseline["project"]))
         if not result["checks"]["expected_project"]:
             raise ValueError("project drift")
