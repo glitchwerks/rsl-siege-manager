@@ -13,6 +13,10 @@ on:
         options:
           - rehearsal
           - production
+      source_sha:
+        description: Exact reviewed source SHA used for the stage
+        required: true
+        type: string
       stage_id:
         description: Exact UUID returned by the reviewed stage
         required: true
@@ -55,6 +59,15 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
+
+      - name: Require the staged source to be reviewed main history
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          git merge-base --is-ancestor "$SOURCE_SHA" HEAD
 
       - name: Join tailnet as ephemeral deployment runner
         uses: tailscale/github-action@064b10558093f38325e838ddea35486bdc6b1d5c # v4.4.0
@@ -65,7 +78,7 @@ jobs:
 
       - name: Verify exact stage and same-copy evidence through restricted SSH command
         env:
-          SOURCE_SHA: ${{ github.sha }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
           STAGE_ID: ${{ inputs.stage_id }}
           MAINTENANCE_KIND: ${{ inputs.maintenance_kind }}
           BACKUP_REPORT: ${{ inputs.backup_report }}

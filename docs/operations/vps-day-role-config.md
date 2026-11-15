@@ -58,6 +58,14 @@ its own UUID; `--stage-id` selects the exact ID for the protected route. This
 workflow does not install the host route, approve activation, or deploy a
 candidate. The host route must be installed through its separately reviewed
 hash-bound update procedure after isolated rehearsal.
+Record the full `github.sha` from the successful stage workflow run as the
+stage's `source_sha`. Supply that exact SHA to later protected proof,
+preflight, activation, and recovery dispatches even if `main` advances. Those
+workflows execute their dispatch code from current `main`; the host accepts
+the source SHA only when it matches its unchanged reviewed checkout. CI also
+requires that SHA to be an ancestor of current `main`. This
+keeps a failed activation recoverable after a later merge without running
+older workflow code.
 
 Before activation, complete the separately confirmed maintenance pause and
 two-peer drain, managed encrypted backup, off-host recovery and isolated
@@ -96,6 +104,18 @@ The protected **VPS day-role preflight** workflow takes that proof SHA-256 and
 records an exact, single-use baseline and public-health acceptance. Its
 sanitized artifact returns `preflight_sha256`. If the installed state, pause,
 proof, or public signal changes, discard the stage and start again.
+For a manual host sequence, run the equivalent preflight before activation:
+
+```sh
+python3 scripts/portable-vps-day-role-config.py preflight \
+  --project-directory /srv/rsl-siege \
+  --stage-directory /protected/day-role/evidence/REPLACE-RUN-ID \
+  --public-config /protected/public/public-signal.json \
+  --backup-profile /srv/rsl-siege/runtime/release-backup-profile.json \
+  --confirm preflight
+```
+
+This creates the private `preflight-accepted.json` required by activation.
 
 Before dispatching **VPS day-role activate** or **VPS day-role recover**, an
 operator must set a matching, separately approved full deployment window ID

@@ -13,6 +13,10 @@ on:
         options:
           - rehearsal
           - production
+      source_sha:
+        description: Exact reviewed source SHA used for the failed activation
+        required: true
+        type: string
       stage_id:
         description: Exact failed activation stage UUID
         required: true
@@ -40,6 +44,15 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
+
+      - name: Require the staged source to be reviewed main history
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          git merge-base --is-ancestor "$SOURCE_SHA" HEAD
 
       - name: Require separately approved recovery window
         env:
@@ -60,7 +73,7 @@ jobs:
 
       - name: Recover failed activation through restricted SSH command
         env:
-          SOURCE_SHA: ${{ github.sha }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
           STAGE_ID: ${{ inputs.stage_id }}
           WINDOW_ID: ${{ inputs.window_id }}
           VPS_APPROVED_DAY_ROLE_WINDOW_ID: ${{ vars[inputs.target == 'rehearsal' && 'REHEARSAL_VPS_DAY_ROLE_WINDOW_ID' || 'VPS_DAY_ROLE_WINDOW_ID'] }}

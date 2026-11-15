@@ -63,8 +63,20 @@ class ReleaseTargetContract(unittest.TestCase):
                 self.assertIn("STAGE_ID: ${{ inputs.stage_id }}", raw)
                 self.assertIn('stage-id "$STAGE_ID"', raw)
                 for name in HOST_SECRETS:
-                    self.assertIn(f"'REHEARSAL_{name}'", raw)
+                    self.assertIn(
+                        "secrets[inputs.target == 'rehearsal' && "
+                        f"'REHEARSAL_{name}' || '{name}']", raw)
                     self.assertNotIn(f"secrets.{name}", raw)
+                self.assertIn(
+                    "vars[inputs.target == 'rehearsal' && "
+                    "'REHEARSAL_VPS_SSH_USER' || 'VPS_SSH_USER']", raw)
+                if phase == "stage":
+                    self.assertIn("SOURCE_SHA: ${{ github.sha }}", raw)
+                else:
+                    self.assertIn("SOURCE_SHA: ${{ inputs.source_sha }}", raw)
+                    self.assertIn("source_sha:\n", raw)
+                    self.assertIn("fetch-depth: 0", raw)
+                    self.assertIn('git merge-base --is-ancestor "$SOURCE_SHA" HEAD', raw)
                 if phase in {"activate", "recover"}:
                     self.assertIn("Require separately approved", raw)
                     self.assertIn("test \"$WINDOW_ID\" = \"$APPROVED_WINDOW_ID\"", raw)

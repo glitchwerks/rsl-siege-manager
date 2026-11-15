@@ -313,13 +313,13 @@ def update_day_role_script(key):
     entry = key_entry(key).encode()
     checks["restricted_key_exactly_once"] = AUTHORIZED_KEYS.read_bytes().splitlines().count(entry) == 1
     checks["old_script_reviewed"] = checked_file(REMOTE_SCRIPT) and digest(REMOTE_SCRIPT.read_bytes()) == DAY_ROLE_REMOTE_OLD_SHA256
-    checks["new_script_reviewed"] = digest(SOURCE_SCRIPT.read_bytes()) == DAY_ROLE_REMOTE_NEW_SHA256
+    new_data = SOURCE_SCRIPT.read_bytes()
+    checks["new_script_reviewed"] = digest(new_data) == DAY_ROLE_REMOTE_NEW_SHA256
     backup = day_role_script_backup_path()
     checks["backup_path_unused"] = not backup.exists() and not backup.is_symlink()
     if not all(checks.values()):
         return checks
     old_data = REMOTE_SCRIPT.read_bytes()
-    new_data = SOURCE_SCRIPT.read_bytes()
     descriptor = os.open(backup, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
     with os.fdopen(descriptor, "wb") as stream:
         stream.write(old_data)
