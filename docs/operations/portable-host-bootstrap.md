@@ -1,10 +1,17 @@
 # Bootstrap a dedicated Debian VPS
 
+> **Initial cutover procedure:** The production site now runs on the VPS and
+> the retained Azure apps are stopped. Do not restart Azure to prepare a new
+> isolated rehearsal VM. Review the new host, recovery access, and current
+> [VPS release runbook](vps-release-workflow.md) before applying any steps.
+
 This is the host preparation phase, before application activation or migration.
 Review the target, SSH recovery access, workload inventory, ports and storage
 first. Do not apply it to an infrastructure host with unrelated workloads. It is
 provider-neutral; do not invoke Incus provisioning for an ordinary VPS or VMware VM.
-Keep Azure running and the developer bot off during preparation.
+For the original cutover, Azure stayed running and the developer bot stayed
+off during preparation. A new isolated rehearsal keeps the retained Azure apps
+in their approved stopped state.
 
 ## Access and baseline
 

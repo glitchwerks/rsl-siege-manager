@@ -43,7 +43,7 @@ services:
 
   # The bundled Discord bot sidecar. Part of the default stack — `docker-compose up`
   # starts all four services. To run without the bundled bot (external sidecar mode),
-  # see `docker-compose.sidecar-external.yml` and the README's Deployment Modes section.
+  # see `docker-compose.sidecar-external.yml` and `docs/bot-seam.md`.
   bot:
     build: ./bot
     env_file: .env
