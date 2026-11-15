@@ -149,6 +149,7 @@ class PilotTests(unittest.TestCase):
             cfg = config(Path(tmp))
             report = self.observe_fixture(cfg)
             self.assertEqual(report["result"], "PASS")
+            self.assertTrue(report["observation_complete"])
             self.assertFalse(report["pilot_accepted"])
             raw = json.dumps(report)
             for private in (cfg["project"], cfg["origin"], cfg["storage_path"], "registry.fixture", "a" * 64):
@@ -163,7 +164,9 @@ class PilotTests(unittest.TestCase):
                 second = copy.deepcopy(first); second["backend"][key] = value
                 self.assertEqual(self.observe_fixture(cfg, [first, second])["result"], "STOP")
             sample = {name: {"memory_bytes": 950 * 1024 ** 2, "cpu_percent": 5.0} for name in first}
-            self.assertEqual(self.observe_fixture(cfg, resources=sample)["result"], "STOP")
+            completed = self.observe_fixture(cfg, resources=sample)
+            self.assertEqual(completed["result"], "STOP")
+            self.assertTrue(completed["observation_complete"])
             self.assertEqual(self.observe_fixture(cfg, health=[{"status": "unhealthy"}, cfg["versions"], cfg["versions"]])["result"], "STOP")
 
     def test_failure_evidence_sanitized_and_deadline_fails_closed(self):
@@ -173,6 +176,7 @@ class PilotTests(unittest.TestCase):
                 code, report = self.run_main(["--config", str(cfg), "--report", str(root / "report.json"),
                                               "--confirm-readonly-pilot"])
             self.assertEqual(code, 1)
+            self.assertFalse(report["observation_complete"])
             self.assertNotIn("sensitive", json.dumps(report))
             self.assertEqual(json.loads((root / "report.json").read_text()), report)
             self.assertEqual((root / "report.json").stat().st_mode & 0o777, 0o600)

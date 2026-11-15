@@ -213,6 +213,7 @@ def observe(cfg, report):
         name: (row["id"], row["restarts"], row["started_at"]) for name, row in final.items()}
     for name, row in final.items():
         checks[name + "_runtime"] = checks[name + "_runtime"] and runtime_healthy(cfg, name, row)
+    report["observation_complete"] = True
     report["result"] = "PASS" if checks and all(checks.values()) else "STOP"
 
 
@@ -223,7 +224,8 @@ def main(argv=None):
     parser.add_argument("--confirm-readonly-pilot", action="store_true")
     args = parser.parse_args(argv)
     report = {"schema": 1, "phase": "pilot-observation", "timestamp": datetime.now(timezone.utc).isoformat(),
-              "checks": {}, "result": "STOP", "samples_completed": 0, "pilot_accepted": False}
+              "checks": {}, "result": "STOP", "samples_completed": 0,
+              "observation_complete": False, "pilot_accepted": False}
     started = time.monotonic()
     global DEADLINE
     DEADLINE = started + 600

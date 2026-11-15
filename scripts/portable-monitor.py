@@ -98,6 +98,36 @@ def deliver(url, success):
         raise Stop("signal_delivery_failed") from None
 
 
+def completed_observation(path, code):
+    """Only a fully published observer result can drive a receiver signal."""
+    if code not in (0, 1):
+        return False
+    try:
+        pilot.private(path)
+        with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK), "rb") as source:
+            meta = os.fstat(source.fileno())
+            if not stat.S_ISREG(meta.st_mode) or meta.st_uid != os.geteuid() or meta.st_mode & 0o077:
+                return False
+            raw = source.read(pilot.MAX_JSON + 1)
+        if len(raw) > pilot.MAX_JSON:
+            return False
+        value = json.loads(raw)
+        if not isinstance(value, dict):
+            return False
+        checks = value.get("checks")
+        samples = value.get("samples_planned")
+        return (value.get("schema") == 1 and value.get("phase") == "pilot-observation"
+                and value.get("pilot_accepted") is False and value.get("observation_complete") is True
+                and value.get("result") == ("PASS" if code == 0 else "STOP")
+                and type(samples) is int and 2 <= samples <= 30
+                and value.get("samples_completed") == samples
+                and isinstance(checks, dict) and bool(checks)
+                and all(type(item) is bool for item in checks.values())
+                and all(checks.values()) == (code == 0))
+    except (OSError, ValueError, TypeError, KeyError):
+        return False
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, required=True)
@@ -132,6 +162,7 @@ def main(argv=None):
                     with redirect_stdout(io.StringIO()):
                         code = pilot.main(["--config", str(args.config), "--report", str(args.observation_report),
                                            "--confirm-readonly-pilot"])
+                    require(completed_observation(args.observation_report, code), "observation_incomplete")
                     report["observation_passed"] = code == 0
                     deliver(url, code == 0)
                     report["delivery_acknowledged"] = True

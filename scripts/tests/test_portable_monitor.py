@@ -34,6 +34,18 @@ class MonitorTests(unittest.TestCase):
         self.assertNotIn("fixture-domain", raw)
         return code, json.loads(raw)
 
+    def observer(self, code, *, complete=True, samples=2):
+        def run(argv):
+            path = Path(argv[argv.index("--report") + 1])
+            path.write_text(json.dumps({"schema": 1, "phase": "pilot-observation",
+                "pilot_accepted": False, "observation_complete": complete,
+                "result": "PASS" if code == 0 else "STOP",
+                "samples_planned": samples, "samples_completed": samples if complete else samples - 1,
+                "checks": {"runtime": code == 0}}))
+            path.chmod(0o600)
+            return code
+        return run
+
     def test_both_gates_required_before_observation_or_delivery(self):
         for gates in ([], [self.gates[0]], [self.gates[1]]):
             with self.subTest(gates=gates), patch.object(monitor.pilot, "main") as observe, patch.object(monitor, "deliver") as send:
@@ -46,8 +58,9 @@ class MonitorTests(unittest.TestCase):
 
     def test_fresh_success_and_failure_are_separate_signals(self):
         for observation_code in (0, 1):
-            with self.subTest(code=observation_code), patch.object(monitor.pilot, "main", return_value=observation_code) as observe, patch.object(monitor, "deliver") as send:
+            with self.subTest(code=observation_code), patch.object(monitor.pilot, "main", side_effect=self.observer(observation_code)) as observe, patch.object(monitor, "deliver") as send:
                 (self.root / "delivery.json").unlink(missing_ok=True)
+                (self.root / "observation.json").unlink(missing_ok=True)
                 code, result = self.run_main(self.args + self.gates)
                 self.assertEqual(code, observation_code)
                 self.assertEqual(result["observation_passed"], observation_code == 0)
@@ -110,7 +123,7 @@ class MonitorTests(unittest.TestCase):
                     monitor.endpoint(self.secret)
 
     def test_delivery_failure_is_sanitized_and_not_pass(self):
-        with patch.object(monitor.pilot, "main", return_value=0), patch.object(monitor, "deliver", side_effect=monitor.Stop("signal_delivery_failed")):
+        with patch.object(monitor.pilot, "main", side_effect=self.observer(0)), patch.object(monitor, "deliver", side_effect=monitor.Stop("signal_delivery_failed")):
             code, result = self.run_main(self.args + self.gates)
         self.assertEqual(code, 1)
         self.assertTrue(result["observation_passed"])
@@ -170,14 +183,27 @@ class MonitorTests(unittest.TestCase):
         observe.assert_not_called()
         send.assert_not_called()
 
-    def test_actual_observer_invalid_configuration_sends_failure_only(self):
+    def test_actual_observer_invalid_configuration_sends_no_signal(self):
         # Exercises real observation error handling without Docker/HTTPS access.
         with patch.object(monitor, "deliver") as send:
             code, result = self.run_main(self.args + self.gates)
         self.assertEqual(code, 1)
         self.assertFalse(result["observation_passed"])
-        send.assert_called_once_with("https://monitor.fixture-domain.net/private-token", False)
+        self.assertEqual(result["error"], "observation_incomplete")
+        send.assert_not_called()
         self.assertTrue((self.root / "observation.json").exists())
+
+    def test_incomplete_and_mismatched_observer_reports_send_no_signal(self):
+        for code, complete in ((0, False), (1, False), (2, True)):
+            with self.subTest(code=code, complete=complete), patch.object(
+                    monitor.pilot, "main", side_effect=self.observer(code, complete=complete)), patch.object(
+                    monitor, "deliver") as send:
+                (self.root / "delivery.json").unlink(missing_ok=True)
+                (self.root / "observation.json").unlink(missing_ok=True)
+                result_code, result = self.run_main(self.args + self.gates)
+            self.assertEqual(result_code, 1)
+            self.assertEqual(result["error"], "observation_incomplete")
+            send.assert_not_called()
 
 
 if __name__ == "__main__":
