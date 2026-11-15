@@ -203,6 +203,16 @@ def configuration_current(project, baseline):
         return False
 
 
+def stack_current(project, directory, owner):
+    """Compare the protected stage copy without emitting its contents or hash."""
+    try:
+        expected = GATE.read_private(directory / "baseline-stack.env", owner, MAX_FILE)
+        actual = GATE.read_private(project / "stack.env", owner, MAX_FILE)
+        return hmac.compare_digest(expected, actual)
+    except (OSError, ValueError):
+        return False
+
+
 def public_healthy(project, config_path, owner):
     """Check reviewed public hostname, TLS, health and exact version identity."""
     if (config_path is None or not private(config_path.parent, owner, directory=True)
@@ -266,6 +276,7 @@ def stage(project, pair, evidence, owner=0):
     """Create rollback and candidate copies; refuse drift without touching runtime."""
     if pair not in PAIRS or not private(evidence, owner, directory=True):
         raise ValueError("invalid pair or evidence directory")
+    stack_before = GATE.read_private(project / "stack.env", owner, MAX_FILE)
     before, baseline = project_snapshot(project, owner)
     run_id = str(uuid.uuid4())
     directory = evidence / run_id
@@ -273,6 +284,7 @@ def stage(project, pair, evidence, owner=0):
     if not private(directory, owner, directory=True):
         raise ValueError("unsafe stage directory")
     checks = {"initial_pair_equal": pairs_match(before), "baseline_stable": False,
+              "stack_baseline_stable": False,
               "staged_pair_equal": False, "unselected_pair_unchanged": False}
     write_private(directory / "report.json", (json.dumps({"phase": "bearer-stage", "status": "INCOMPLETE",
         "checks": checks, "timestamp": now()}, sort_keys=True) + "\n").encode(), owner)
@@ -290,11 +302,14 @@ def stage(project, pair, evidence, owner=0):
         checks["unselected_pair_unchanged"] = proposed_pairs[other] == original_pairs[other]
         current, current_baseline = project_snapshot(project, owner)
         checks["baseline_stable"] = current == before and current_baseline == baseline
+        checks["stack_baseline_stable"] = hmac.compare_digest(
+            GATE.read_private(project / "stack.env", owner, MAX_FILE), stack_before)
         if not all(checks.values()):
             raise ValueError("staging validation failed")
         for name in FILES:
             write_private(directory / f"rollback-{name}", before[name], owner)
             write_private(directory / f"candidate-{name}", proposed[name], owner)
+        write_private(directory / "baseline-stack.env", stack_before, owner)
         write_private(directory / "baseline.json", (json.dumps(baseline, sort_keys=True) + "\n").encode(), owner)
         if read_runtime(project, owner) != before:
             raise ValueError("runtime drift after staging")
@@ -317,6 +332,7 @@ def staged(project, directory, owner):
                           object_pairs_hook=PREFLIGHT.REMOTE.no_duplicate_keys)
     baseline = json.loads(GATE.read_private(directory / "baseline.json", owner),
                           object_pairs_hook=PREFLIGHT.REMOTE.no_duplicate_keys)
+    GATE.read_private(directory / "baseline-stack.env", owner, MAX_FILE)
     pair = accepted.get("pair") if isinstance(accepted, dict) else None
     if not (isinstance(accepted, dict)
             and accepted.get("phase") == "bearer-stage" and accepted.get("status") == "PASS"
@@ -490,7 +506,9 @@ def activate(project, directory, public_config=None, owner=0):
                                       "path_isolated_after_failure": False}}
     with PAUSE.project_lock(project):
         current, actual_baseline = project_snapshot(project, owner)
-        result["checks"]["baseline_current"] = current == rollback and actual_baseline == baseline
+        result["checks"]["baseline_current"] = (
+            current == rollback and actual_baseline == baseline
+            and stack_current(project, directory, owner))
         if not result["checks"]["baseline_current"]:
             raise ValueError("activation baseline drift")
         require_pause(project, drain=True)
@@ -553,7 +571,7 @@ def recover_routine(project, directory, old_bearer_safe=False, public_config=Non
     with PAUSE.project_lock(project):
         require_pause(project)
         result["checks"]["expected_project"] = (
-            configuration_current(project, baseline)
+            configuration_current(project, baseline) and stack_current(project, directory, owner)
             and PAUSE.no_extra_writers(baseline["project"]))
         if not result["checks"]["expected_project"]:
             raise ValueError("project drift")
@@ -616,7 +634,7 @@ def stage_fresh(project, directory, owner=0):
     with PAUSE.project_lock(project):
         require_pause(project)
         result["checks"]["expected_project"] = (
-            configuration_current(project, baseline)
+            configuration_current(project, baseline) and stack_current(project, directory, owner)
             and PAUSE.no_extra_writers(baseline["project"]))
         if not result["checks"]["expected_project"]:
             raise ValueError("project drift")
@@ -683,6 +701,7 @@ def activate_fresh(project, directory, public_config=None, owner=0):
         require_pause(project)
         result["checks"]["baseline_current"] = (
             configuration_current(project, baseline)
+            and stack_current(project, directory, owner)
             and PAUSE.no_extra_writers(baseline["project"])
             and read_runtime(project, owner) == source)
         result["checks"]["writers_isolated"] = isolated(baseline["project"])

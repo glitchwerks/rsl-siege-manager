@@ -22,6 +22,9 @@ and a separate confirmation for any phase that stages or changes state.
 | `activate-fresh` | Separately confirmed use of that fresh pair; refuses drift, recreates both peers and rejects both earlier selected bearers. | `fresh-activation-incomplete.json` and `fresh-activation-result.json`. |
 
 The stage directory and all evidence files must remain root-owned and private.
+It includes a protected exact copy of `stack.env`; activation and both recovery
+paths reject changes to that file even when images and project name stay the
+same. The copy contains configuration secrets and must remain on the host.
 Candidate and rollback files contain actual credentials and must never be
 uploaded to CI, attached to an issue, printed, or copied into a report. The
 sanitized JSON reports contain only fixed check names, PASS/STOP, a UUID and

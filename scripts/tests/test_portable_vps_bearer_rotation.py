@@ -31,6 +31,8 @@ def project(tmp_path):
     runtime.mkdir(mode=0o700)
     evidence = root / "evidence"
     evidence.mkdir(mode=0o700)
+    (root / "stack.env").write_text("COMPOSE_PROJECT_NAME=isolated\n")
+    (root / "stack.env").chmod(0o600)
     backend = (b"# preserved\r\nDISCORD_BOT_API_KEY=sidecar-old\r\n"
                b"BOT_SERVICE_TOKEN=reverse-old\nUNRELATED=keep exactly\n")
     mom = (b"MOM_BOT_SECRET_DISCORD_BOT_API_KEY=sidecar-old\n"
@@ -149,6 +151,8 @@ def _activation_fixture(project):
     root, evidence, rollback = project
     directory = evidence / "00000000-0000-4000-8000-000000000001"
     directory.mkdir(mode=0o700)
+    (directory / "baseline-stack.env").write_bytes((root / "stack.env").read_bytes())
+    (directory / "baseline-stack.env").chmod(0o600)
     candidate = {
         "backend.env": ROTATE.replace_assignment(
             rollback["backend.env"], "DISCORD_BOT_API_KEY", b"sidecar-new"),
@@ -208,6 +212,20 @@ def test_activate_requires_paused_and_drained_peers(project, state, drained):
           patch.object(ROTATE.MAINT, "drain", return_value=drained),
           patch.object(ROTATE, "stop_pair") as stop):
         with pytest.raises(ValueError, match="maintenance"):
+            ROTATE.activate(root, directory, owner=os.geteuid())
+    stop.assert_not_called()
+    assert not (directory / "activation-incomplete.json").exists()
+
+
+def test_activate_rejects_stack_configuration_drift(project):
+    root, directory, rollback, candidate, baseline = _activation_fixture(project)
+    (root / "stack.env").write_text("COMPOSE_PROJECT_NAME=isolated\nPROXY_IP=10.0.0.4\n")
+    (root / "stack.env").chmod(0o600)
+    with (patch.object(ROTATE, "staged", return_value=("sidecar", rollback, candidate, baseline)),
+          patch.object(ROTATE.PAUSE, "project_lock", side_effect=_lock),
+          patch.object(ROTATE, "project_snapshot", return_value=(rollback, baseline)),
+          patch.object(ROTATE, "stop_pair") as stop):
+        with pytest.raises(ValueError, match="baseline drift"):
             ROTATE.activate(root, directory, owner=os.geteuid())
     stop.assert_not_called()
     assert not (directory / "activation-incomplete.json").exists()
