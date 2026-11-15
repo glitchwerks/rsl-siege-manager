@@ -214,7 +214,7 @@ def inspect(project, stage_directory, manifest_digest):
                          "source_commit": candidate["mom"]["source_sha"],
                          "capabilities": ["portable-auth-v1", "scheduler-progress-probe-v1"]}
     checks["candidate_images_exact"] = candidate_images_match(proposed, candidate)
-    validation = PREFLIGHT.validate(proposed, "mom", proposed_approval)
+    validation = PREFLIGHT.validate(proposed, "mom", proposed_approval, project)
     checks["candidate_configuration_valid"] = bool(validation) and all(validation.values())
     checks["baseline_unchanged"] = (digest(GATE.read_private(stack, 0)) == digest(stack_raw)
         and runtime_hashes(project) == runtime_before

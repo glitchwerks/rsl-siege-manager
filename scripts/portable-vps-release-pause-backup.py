@@ -15,6 +15,7 @@ import re
 import stat
 import subprocess
 import tempfile
+import time
 import uuid
 
 
@@ -167,22 +168,28 @@ def stage(project, run_id, expected):
     return directory
 
 
-def identifiers(project_name, service):
+def identifiers(project_name, service, *, deadline=None):
+    timeout = min(20, deadline - time.monotonic()) if deadline is not None else 20
+    if timeout <= 0:
+        return None
     output = command(["docker", "ps", "--all", "--no-trunc",
                       "--filter", f"label=com.docker.compose.project={project_name}",
                       "--filter", f"label=com.docker.compose.service={service}",
-                      "--format", "{{.ID}}"])
+                      "--format", "{{.ID}}"], timeout=timeout)
     if output is None:
         return None
     ids = output.splitlines()
     return ids[0] if len(ids) == 1 and CONTAINER_ID.fullmatch(ids[0]) else None
 
 
-def container(project_name, service):
-    identifier = identifiers(project_name, service)
+def container(project_name, service, *, deadline=None):
+    identifier = identifiers(project_name, service, deadline=deadline)
     if identifier is None:
         return None
-    raw = command(["docker", "inspect", "--format", STATE, identifier])
+    timeout = min(20, deadline - time.monotonic()) if deadline is not None else 20
+    if timeout <= 0:
+        return None
+    raw = command(["docker", "inspect", "--format", STATE, identifier], timeout=timeout)
     if raw is None:
         return None
     try:

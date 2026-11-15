@@ -17,6 +17,7 @@ from urllib.parse import unquote, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 PORTABLE = ROOT / "deploy" / "portable"
+CONTROL_OWNER_UID = 0
 
 
 def read_secret_file(path):
@@ -37,7 +38,7 @@ def read_secret_file(path):
         return None
 
 
-def validate(model, topology, mom_approval=None):
+def validate(model, topology, mom_approval=None, project_directory=None):
     checks = {}
     services = model.get("services", {})
 
@@ -80,6 +81,24 @@ def validate(model, topology, mom_approval=None):
 
     backend = services.get("backend", {})
     env = backend.get("environment", {})
+    def reviewed_control_mount(service):
+        expected_source = (project_directory or Path("/synthetic")) / "control"
+        volumes = service.get("volumes", [])
+        matches = [volume for volume in volumes
+                   if volume.get("target") == "/run/rsl-maintenance"]
+        return (len(matches) == 1
+                and matches[0].get("read_only") is True
+                and matches[0].get("type") in (None, "bind")
+                and Path(matches[0].get("source", "")) == expected_source)
+
+    check("backend_maintenance_control_mounted", lambda:
+          all(services[n]["environment"].get("MAINTENANCE_ENFORCED") == "true"
+              and services[n]["environment"].get("MAINTENANCE_STATE_FILE") == "/run/rsl-maintenance/state"
+              and reviewed_control_mount(services[n])
+              for n in ("backend", "migrate-siege")))
+    check("single_backend_worker", lambda:
+          backend["command"].count("--workers") == 1
+          and backend["command"][backend["command"].index("--workers") + 1] == "1")
     proxy_env = services.get("proxy", {}).get("environment", {})
     host = proxy_env.get("PUBLIC_HOST", "")
     def public_hostname():
@@ -201,6 +220,11 @@ def validate(model, topology, mom_approval=None):
     check("sidecar_auth_matches", lambda: env["DISCORD_BOT_API_KEY"] == bot_env[
         "MOM_BOT_SECRET_DISCORD_BOT_API_KEY" if topology == "mom" else "BOT_API_KEY"])
     if topology == "mom":
+        check("mom_maintenance_control_mounted", lambda: all(
+              services[n]["environment"].get("MOM_BOT_MAINTENANCE_ENFORCED") == "true"
+              and services[n]["environment"].get("MOM_BOT_MAINTENANCE_STATE_FILE") == "/run/rsl-maintenance/state"
+              and reviewed_control_mount(services[n])
+              for n in ("mom", "migrate-mom")))
         check("mom_runtime_does_not_auto_migrate", lambda:
               services["mom"].get("entrypoint") == []
               and services["mom"].get("command") == ["/app/.venv/bin/python", "-m", "mom_bot"])
@@ -287,6 +311,41 @@ def private_runtime_files(topology, stack_env, project_directory):
 def deployment_bind_sources_current(project_directory):
     """Require reviewed non-secret bind files, never container-created directories."""
     try:
+        control = project_directory / "control"
+        info = control.lstat()
+        if (not stat.S_ISDIR(info.st_mode) or info.st_uid != CONTROL_OWNER_UID
+                or info.st_mode & 0o022 or not info.st_mode & 0o005):
+            return False
+        state = control / "state"
+        fd = os.open(state, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
+        with os.fdopen(fd, "rb") as source:
+            info = os.fstat(source.fileno())
+            if (not stat.S_ISREG(info.st_mode) or info.st_uid != CONTROL_OWNER_UID
+                    or info.st_mode & 0o022 or not info.st_mode & 0o004
+                    or source.read(17) not in (b"active\n", b"paused\n")):
+                return False
+        history = control / "history.json"
+        fd = os.open(history, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
+        with os.fdopen(fd, "rb") as source:
+            info = os.fstat(source.fileno())
+            if (not stat.S_ISREG(info.st_mode) or info.st_uid != CONTROL_OWNER_UID
+                    or info.st_mode & 0o022 or not info.st_mode & 0o004
+                    or info.st_size > 256):
+                return False
+            value = json.load(source)
+            if (not isinstance(value, dict) or set(value) !=
+                    {"schema", "pause_started_at", "last_resumed_at"}
+                    or value["schema"] != 1
+                    or any(item is not None and not isinstance(item, str)
+                           for item in (value["pause_started_at"], value["last_resumed_at"]))):
+                return False
+            for field in ("pause_started_at", "last_resumed_at"):
+                if value[field] is not None:
+                    parsed = datetime.fromisoformat(value[field])
+                    if parsed.tzinfo != timezone.utc:
+                        return False
+            if value["last_resumed_at"] is not None and value["pause_started_at"] is None:
+                return False
         for name in ("Caddyfile", "init-databases.sql"):
             path = project_directory / name
             fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
@@ -303,7 +362,7 @@ def deployment_bind_sources_current(project_directory):
                 if content not in reviewed:
                     return False
         return True
-    except OSError:
+    except (OSError, ValueError, TypeError):
         return False
 
 
@@ -353,7 +412,7 @@ def main():
             checks["mom_image_approval_record"] = approval is not None
         if all(checks.values()):
             checks.update(validate(render(args.topology, args.stack_env, args.project_directory),
-                                   args.topology, approval))
+                                   args.topology, approval, args.project_directory))
     except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired):
         # Compose stderr, exception messages, and rendered values may contain secrets.
         checks = {"compose_render": False}

@@ -19,6 +19,7 @@ from app.api.guides import router as guides_router
 from app.api.health import router as health_router
 from app.api.images import router as images_router
 from app.api.lifecycle import router as lifecycle_router
+from app.api.maintenance import router as maintenance_router
 from app.api.members import router as members_router
 from app.api.notifications import router as notifications_router
 from app.api.post_priority_config import router as post_priority_config_router
@@ -32,6 +33,8 @@ from app.api.version import router as version_router
 from app.config import settings
 from app.db.session import engine
 from app.dependencies.auth import get_current_user
+from app.maintenance import MaintenancePauseMiddleware
+from app.maintenance import gate as maintenance_gate
 from app.middleware import RequestLoggingMiddleware
 from app.rate_limit import RateLimitExceeded, limiter, rate_limit_exceeded_handler
 from app.telemetry import configure_telemetry
@@ -115,6 +118,7 @@ app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 configure_telemetry(app=app, engine=engine)
 
 app.add_middleware(RequestLoggingMiddleware)
+app.add_middleware(MaintenancePauseMiddleware, gate=maintenance_gate)
 
 _cors_origins = [o.strip() for o in settings.allowed_origins.split(",") if o.strip()]
 logger.info("CORS allowed origins: %s", _cors_origins)
@@ -130,6 +134,7 @@ app.add_middleware(
 # Public routes — no auth required
 app.include_router(health_router, prefix="/api")
 app.include_router(version_router, prefix="/api")
+app.include_router(maintenance_router, prefix="/api")
 app.include_router(config_router, prefix="/api")
 app.include_router(auth_router, prefix="/api")
 

@@ -7,6 +7,7 @@ import os
 import subprocess
 from pathlib import Path
 import tempfile
+from types import SimpleNamespace
 import unittest
 from contextlib import redirect_stdout
 from unittest.mock import patch
@@ -24,6 +25,13 @@ def mom_approval(image="registry.example/app@sha256:" + "a" * 64):
 
 def fixture(directory):
     directory = Path(directory)
+    control = directory / "control"
+    control.mkdir(mode=0o755)
+    (control / "state").write_bytes(b"active\n")
+    (control / "state").chmod(0o644)
+    (control / "history.json").write_text(
+        '{"schema":1,"pause_started_at":null,"last_resumed_at":null}\n')
+    (control / "history.json").chmod(0o644)
     for name in ("Caddyfile", "init-databases.sql"):
         (directory / name).write_bytes((preflight.PORTABLE / name).read_bytes())
         (directory / name).chmod(0o644)
@@ -87,8 +95,13 @@ def model():
         }
     services = result["services"]
     services["backend"]["networks"] = {"application": {}, "database": {}, "proxy": {"aliases": ["api-proxy"]}}
-    services["backend"].update(environment=env, entrypoint=[], command=["--proxy-headers", "--forwarded-allow-ips", "172.30.60.2"])
+    services["backend"].update(environment=env, entrypoint=[], command=["--workers", "1", "--proxy-headers", "--forwarded-allow-ips", "172.30.60.2"])
     services["migrate-siege"].update(environment=copy.deepcopy(env), entrypoint=[], command=["alembic", "upgrade", "head"], profiles=["maintenance"], restart="no")
+    for name in ("backend", "migrate-siege"):
+        services[name]["environment"].update(MAINTENANCE_ENFORCED="true",
+                                               MAINTENANCE_STATE_FILE="/run/rsl-maintenance/state")
+        services[name]["volumes"] = [{"source": "/synthetic/control",
+                                       "target": "/run/rsl-maintenance", "read_only": True}]
     services["proxy"].update(environment={"PUBLIC_HOST": "pilot.fixture-domain.net",
         "ROLE_SYNC_UPSTREAM": "api-proxy:8000", "ROLE_SYNC_PATH": "/api/internal/role-sync"},
         networks={"application": {}, "proxy": {"ipv4_address": "172.30.60.2"}}, ports=[
@@ -123,7 +136,11 @@ def mom_model():
         "MOM_BOT_SECRET_NEW_MEMBERS_CHANNEL_ID": "123456789012345679",
         "MOM_BOT_SECRET_REMINDER_CHANNEL_NAME": "synthetic-reminders",
         "MOM_BOT_SECRET_REMINDER_MENTION_ROLE_NAME": "synthetic-reminder-role",
+        "MOM_BOT_MAINTENANCE_ENFORCED": "true",
+        "MOM_BOT_MAINTENANCE_STATE_FILE": "/run/rsl-maintenance/state",
     }
+    mom["volumes"] = [{"source": "/synthetic/control",
+                        "target": "/run/rsl-maintenance", "read_only": True}]
     services["proxy"]["environment"].update(ROLE_SYNC_UPSTREAM="mom:8001",
         ROLE_SYNC_PATH="/api/internal/role-sync")
     mom.update(entrypoint=[], command=["/app/.venv/bin/python", "-m", "mom_bot"])
@@ -135,11 +152,37 @@ def mom_model():
     return data
 
 
+def rendered_model(data, project):
+    for service in data["services"].values():
+        for volume in service.get("volumes", []):
+            if volume.get("target") == "/run/rsl-maintenance":
+                volume["source"] = str(project / "control")
+    return data
+
+
 class SafetyTests(unittest.TestCase):
     def setUp(self):
         reader = patch.object(preflight, "read_secret_file", return_value="synthetic-admin-password-long-enough")
         reader.start()
         self.addCleanup(reader.stop)
+        owner = patch.object(preflight, "CONTROL_OWNER_UID", os.geteuid())
+        owner.start()
+        self.addCleanup(owner.stop)
+
+    def test_control_mount_must_match_project_and_backend_has_one_worker(self):
+        for topology, factory in (("bundled", model), ("mom", mom_model)):
+            data = factory()
+            service = data["services"]["mom" if topology == "mom" else "backend"]
+            service["volumes"][0]["source"] = "/other/control"
+            checks = preflight.validate(data, topology)
+            self.assertFalse(checks[
+                "mom_maintenance_control_mounted" if topology == "mom"
+                else "backend_maintenance_control_mounted"
+            ])
+        data = model()
+        data["services"]["backend"]["command"].remove("--workers")
+        data["services"]["backend"]["command"].remove("1")
+        self.assertFalse(preflight.validate(data, "bundled")["single_backend_worker"])
 
     def test_role_sync_requires_public_https_and_connected_selected_receiver(self):
         for topology, factory in (("bundled", model), ("mom", mom_model)):
@@ -209,7 +252,7 @@ class SafetyTests(unittest.TestCase):
                 stdout = io.StringIO()
                 with patch("sys.argv", ["portable-preflight", "--topology", "mom", "--stack-env", str(stack),
                                         "--project-directory", str(root), "--report", str(root / f"report-{index}.json")]), \
-                     patch.object(preflight, "render", return_value=mom_model()) as render, redirect_stdout(stdout):
+                     patch.object(preflight, "render", return_value=rendered_model(mom_model(), root)) as render, redirect_stdout(stdout):
                     status = preflight.main()
                 if content is None or content == "private-diagnostic":
                     render.assert_not_called()
@@ -515,7 +558,8 @@ class ReportTests(unittest.TestCase):
     def run_preflight(self, report_path):
         stdout = io.StringIO()
         with patch("sys.argv", ["portable-preflight", "--topology", "bundled",
-                               "--stack-env", "unused", "--report", str(report_path)]), \
+                               "--stack-env", "unused", "--project-directory", "/synthetic",
+                               "--report", str(report_path)]), \
                 patch.object(preflight, "render", return_value=model()), redirect_stdout(stdout):
             status = preflight.main()
         return status, json.loads(stdout.getvalue())
@@ -575,6 +619,39 @@ class ReportTests(unittest.TestCase):
 
 
 class RuntimePermissionTests(unittest.TestCase):
+    def setUp(self):
+        # Disposable fixtures are owned by the test user; production requires UID 0.
+        owner = patch.object(preflight, "CONTROL_OWNER_UID", os.geteuid())
+        owner.start()
+        self.addCleanup(owner.stop)
+
+    def test_root_owned_control_accepts_nonroot_operator_bind_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory)
+            fixture(project)
+            control = project / "control"
+            owned = {str(control / "state"), str(control / "history.json")}
+            original_lstat = Path.lstat
+            original_fstat = os.fstat
+
+            def lstat(path):
+                info = original_lstat(path)
+                if path == control:
+                    return SimpleNamespace(st_mode=info.st_mode, st_uid=0)
+                return info
+
+            def fstat(fd):
+                info = original_fstat(fd)
+                if os.readlink(f"/proc/self/fd/{fd}") in owned:
+                    return SimpleNamespace(st_mode=info.st_mode, st_uid=0,
+                                           st_size=info.st_size)
+                return info
+
+            with patch.object(Path, "lstat", lstat), patch.object(
+                preflight.os, "fstat", side_effect=fstat
+            ), patch.object(preflight, "CONTROL_OWNER_UID", 0):
+                self.assertTrue(preflight.deployment_bind_sources_current(project))
+
     def test_runtime_permissions_reject_exposed_or_nonregular_credentials(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -638,6 +715,39 @@ class RuntimePermissionTests(unittest.TestCase):
                         path.write_bytes(content)
                         path.chmod(0o644)
                 self.assertTrue(preflight.deployment_bind_sources_current(root))
+
+    def test_missing_or_invalid_maintenance_state_stops_before_render(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            fixture(root)
+            state = root / "control/state"
+            for content in (b"", b"unknown\n", b"active", b"active\npaused\n"):
+                state.write_bytes(content)
+                self.assertFalse(preflight.deployment_bind_sources_current(root))
+            state.write_bytes(b"paused\n")
+            self.assertTrue(preflight.deployment_bind_sources_current(root))
+            state.unlink()
+            self.assertFalse(preflight.deployment_bind_sources_current(root))
+
+    def test_invalid_pause_history_stops_before_render(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            fixture(root)
+            history = root / "control/history.json"
+            initial = history.read_text()
+            for content in (
+                "{}",
+                '{"schema":1,"pause_started_at":"invalid","last_resumed_at":null}',
+                '{"schema":1,"pause_started_at":null,"last_resumed_at":"2026-11-15T00:00:00+00:00"}',
+                '{"schema":1,"pause_started_at":42,"last_resumed_at":null}',
+            ):
+                with self.subTest(content=content):
+                    history.write_text(content)
+                    self.assertFalse(preflight.deployment_bind_sources_current(root))
+            history.write_text(initial)
+            self.assertTrue(preflight.deployment_bind_sources_current(root))
+            history.unlink()
+            self.assertFalse(preflight.deployment_bind_sources_current(root))
 
     def test_reviewed_www_redirect_is_accepted_without_accepting_other_edits(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -714,6 +824,11 @@ class AdministratorSecretTests(unittest.TestCase):
 
 @unittest.skipUnless(os.environ.get("PORTABLE_COMPOSE_TEST") == "1", "Compose rendering runs in CI")
 class ComposeTests(unittest.TestCase):
+    def setUp(self):
+        owner = patch.object(preflight, "CONTROL_OWNER_UID", os.geteuid())
+        owner.start()
+        self.addCleanup(owner.stop)
+
     def test_reviewed_www_redirect_adapts_to_canonical_host(self):
         result = subprocess.run([
             "docker", "run", "--rm", "--network", "none",
@@ -778,7 +893,7 @@ class ComposeTests(unittest.TestCase):
                         backend_file.write_text(content)
                     data = preflight.render(topology, stack, Path(directory))
                     approval = preflight.read_mom_approval(Path(directory) / "runtime/mom-image.json")
-                    checks = preflight.validate(data, topology, approval)
+                    checks = preflight.validate(data, topology, approval, Path(directory))
                     self.assertTrue(all(checks.values()), [k for k, v in checks.items() if not v])
 
     def test_candidate_image_overrides_render_without_editing_runtime(self):
