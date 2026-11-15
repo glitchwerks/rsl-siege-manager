@@ -24,6 +24,7 @@ LOCAL = load("vps_access", "scripts/portable-vps-access-check.py")
 REMOTE = load("vps_remote", "scripts/portable-vps-remote.py")
 STAGE = load("vps_stage", "scripts/portable-vps-stage.py")
 DAY_ROLE_STAGE = load("vps_day_role_stage", "scripts/portable-vps-day-role-stage-dispatch.py")
+DAY_ROLE_PROOF = load("vps_day_role_proof", "scripts/portable-vps-day-role-proof-dispatch.py")
 PREFLIGHT_DISPATCH = load("vps_preflight_dispatch", "scripts/portable-vps-release-preflight-dispatch.py")
 PLAN_DISPATCH = load("vps_plan_dispatch", "scripts/portable-vps-release-plan-dispatch.py")
 PAUSE_DISPATCH = load("vps_pause_dispatch", "scripts/portable-vps-release-pause-dispatch.py")
@@ -207,6 +208,53 @@ class AccessTests(unittest.TestCase):
         self.assertNotIn(decision, str(checks))
         with patch.object(DAY_ROLE_STAGE.ACCESS, "check") as baseline:
             self.assertFalse(all(DAY_ROLE_STAGE.dispatch("a" * 40, stage_id, "").values()))
+            baseline.assert_not_called()
+
+    def test_day_role_proof_route_refuses_extra_commands_and_returns_only_digest(self):
+        stage_id = "11111111-1111-4111-8111-111111111111"
+        valid = (f"proof-day-role {'a' * 40} {stage_id} pause /protected/job.json "
+                 "/protected/recover.json /protected/restore.json confirm-readonly-proof-day-role")
+        for command in (valid + "; id", valid + " extra"):
+            with patch.dict(os.environ, {"SSH_ORIGINAL_COMMAND": command}), patch.object(
+                REMOTE, "proof_day_role") as proof, redirect_stdout(io.StringIO()):
+                self.assertEqual(REMOTE.main(), 1)
+                proof.assert_not_called()
+        with tempfile.TemporaryDirectory() as directory:
+            evidence = Path(directory) / "evidence"
+            stage = evidence / "day-role-stages" / stage_id
+            stage.mkdir(parents=True)
+            record = stage / "proof-accepted.json"
+            record.write_text('{"private":"do-not-print"}')
+            digest = hashlib.sha256(record.read_bytes()).hexdigest()
+            outcome = {"phase": "day-role-proof", "status": "PASS", "stage_id": stage_id}
+            output = io.StringIO()
+            with patch.object(REMOTE, "EVIDENCE", evidence), patch.object(
+                REMOTE, "access_check", return_value=True), patch.object(
+                REMOTE, "reviewed_checkout", return_value=True), patch.object(
+                REMOTE, "reviewed_script", return_value=True), patch.object(
+                REMOTE, "profile_bound", return_value=True), patch.object(
+                REMOTE, "private_directory", return_value=True), patch.object(
+                REMOTE, "private_file", return_value=True), patch.object(
+                REMOTE.os, "geteuid", return_value=0), patch.object(
+                REMOTE.subprocess, "run", return_value=SimpleNamespace(
+                    returncode=0, stdout=json.dumps(outcome).encode())) as child, redirect_stdout(output):
+                self.assertEqual(REMOTE.proof_day_role("a" * 40, stage_id, "pause", "/protected/job.json",
+                                                       "/protected/recover.json", "/protected/restore.json"), 0)
+            self.assertEqual(json.loads(output.getvalue())["proof_sha256"], digest)
+            self.assertNotIn("do-not-print", output.getvalue())
+            self.assertEqual(child.call_args.args[0][-2:], ["--confirm", "proof"])
+            with patch.object(REMOTE, "access_check") as access, redirect_stdout(io.StringIO()):
+                self.assertEqual(REMOTE.proof_day_role("a" * 40, stage_id, "pause", "/protected/job.json",
+                                                       "/protected/recover.json", "/protected/recover.json"), 1)
+                access.assert_not_called()
+
+    def test_ci_day_role_proof_rejects_unsafe_paths_before_ssh(self):
+        stage_id = "11111111-1111-4111-8111-111111111111"
+        with patch.object(DAY_ROLE_PROOF.ACCESS, "check") as baseline:
+            checks, digest = DAY_ROLE_PROOF.dispatch("a" * 40, stage_id, "pause",
+                "/protected/../job.json", "/protected/recover.json", "/protected/restore.json")
+            self.assertFalse(all(checks.values()))
+            self.assertIsNone(digest)
             baseline.assert_not_called()
 
     def test_preflight_requires_exact_readonly_command(self):

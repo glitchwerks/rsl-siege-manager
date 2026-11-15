@@ -227,7 +227,9 @@ def stage_day_role(source_sha, stage_id, expected, stream):
     checks = {"root_execution": os.geteuid() == 0,
               "request_shape": bool(SOURCE_SHA.fullmatch(source_sha))
                                and canonical_uuid(stage_id) and bool(SHA256.fullmatch(expected)),
-              "read_only_baseline": access_check()}
+              "read_only_baseline": False}
+    if checks["root_execution"] and checks["request_shape"]:
+        checks["read_only_baseline"] = access_check()
     if all(checks.values()):
         try:
             checks["reviewed_checkout"] = reviewed_checkout(source_sha)
@@ -265,6 +267,59 @@ def stage_day_role(source_sha, stage_id, expected, stream):
             checks["stage_execution"] = False
     status = "PASS" if all(checks.values()) else "STOP"
     print(json.dumps({"phase": "day-role-stage-dispatch", "status": status, "checks": checks}, sort_keys=True))
+    return 0 if status == "PASS" else 1
+
+
+def proof_day_role(source_sha, stage_id, maintenance_kind, backup_report,
+                   recover_report, restore_report):
+    """Accept only the reviewed stage's private pause and same-copy evidence."""
+    paths = tuple(Path(item) for item in (backup_report, recover_report, restore_report))
+    checks = {"root_execution": os.geteuid() == 0,
+              "request_shape": bool(SOURCE_SHA.fullmatch(source_sha)) and canonical_uuid(stage_id)
+                               and maintenance_kind in {"pause", "drain"},
+              "evidence_selectors": all(PROOF_PATH.fullmatch(str(path)) and ".." not in path.parts
+                                        for path in paths) and len(set(paths)) == 3,
+              "read_only_baseline": False}
+    if checks["root_execution"] and checks["request_shape"] and checks["evidence_selectors"]:
+        checks["read_only_baseline"] = access_check()
+    proof_digest = None
+    if all(checks.values()):
+        try:
+            stage = EVIDENCE / "day-role-stages" / stage_id
+            checks["stage_private"] = private_directory(stage.parent) and private_directory(stage)
+            checks["reviewed_checkout"] = reviewed_checkout(source_sha)
+            checks["reviewed_script"] = reviewed_script(DAY_ROLE_SCRIPT)
+            checks["profile_bound"] = profile_bound()
+            checks["proof_not_attempted"] = not (stage / "proof-attempt.json").exists()
+            if all(checks.values()):
+                result = subprocess.run(
+                    ["/usr/bin/python3", "-I", "-B", str(DAY_ROLE_SCRIPT), "proof",
+                     "--project-directory", str(PROJECT), "--stage-directory", str(stage),
+                     "--backup-profile", str(BACKUP_PROFILE),
+                     "--maintenance-report", str(stage / f"{maintenance_kind}-report.json"),
+                     "--backup-report", str(paths[0]), "--recover-report", str(paths[1]),
+                     "--restore-report", str(paths[2]), "--confirm", "proof"],
+                    env={"PATH": "/usr/bin:/bin", "PYTHONNOUSERSITE": "1",
+                         "PYTHONDONTWRITEBYTECODE": "1", "PYTHONSAFEPATH": "1"},
+                    capture_output=True, timeout=360, check=False)
+                try:
+                    outcome = json.loads(result.stdout, object_pairs_hook=no_duplicate_keys)
+                except (UnicodeError, ValueError, TypeError):
+                    outcome = None
+                checks["reviewed_proof_accepted"] = (
+                    result.returncode == 0 and outcome == {
+                        "phase": "day-role-proof", "status": "PASS", "stage_id": stage_id})
+                record = stage / "proof-accepted.json"
+                checks["proof_record_private"] = checks["reviewed_proof_accepted"] and private_file(record)
+                if checks["proof_record_private"]:
+                    proof_digest = hashlib.sha256(record.read_bytes()).hexdigest()
+        except (OSError, ValueError, TypeError, subprocess.TimeoutExpired):
+            checks["proof_execution"] = False
+    status = "PASS" if all(checks.values()) and proof_digest else "STOP"
+    report = {"phase": "day-role-proof-dispatch", "status": status, "checks": checks}
+    if status == "PASS":
+        report["proof_sha256"] = proof_digest
+    print(json.dumps(report, sort_keys=True))
     return 0 if status == "PASS" else 1
 
 
@@ -1366,6 +1421,8 @@ def main():
         return stage_release(parts[1], parts[2], sys.stdin.buffer)
     if len(parts) == 5 and parts[0] == "stage-day-role" and parts[4] == "confirm-stage-day-role":
         return stage_day_role(parts[1], parts[2], parts[3], sys.stdin.buffer)
+    if len(parts) == 8 and parts[0] == "proof-day-role" and parts[7] == "confirm-readonly-proof-day-role":
+        return proof_day_role(parts[1], parts[2], parts[3], parts[4], parts[5], parts[6])
     if len(parts) == 4 and parts[0] == "preflight-release" and parts[3] == "confirm-readonly-preflight":
         return preflight_release(parts[1], parts[2])
     if len(parts) == 4 and parts[0] == "plan-release" and parts[3] == "confirm-readonly-plan":

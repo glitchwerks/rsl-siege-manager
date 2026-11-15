@@ -39,6 +39,17 @@ class ReleaseTargetContract(unittest.TestCase):
         self.assertNotIn("--stage-id '${{ inputs.stage_id }}'", raw)
         self.assertNotIn("secrets.DAY_ROLE_DECISION_JSON", raw)
 
+        proof = (WORKFLOWS / "vps-day-role-proof.yml").read_text()
+        self.assertIn("group: vps-production-promotion", proof)
+        self.assertIn(ENVIRONMENT, proof)
+        self.assertIn(TAILSCALE_TAG, proof)
+        self.assertIn("default: rehearsal", proof)
+        self.assertIn("inputs.target == 'rehearsal' || inputs.target == 'production'", proof)
+        for name in HOST_SECRETS:
+            self.assertIn(f"'REHEARSAL_{name}'", proof)
+        self.assertIn('stage-id "$STAGE_ID"', proof)
+        self.assertNotIn("--stage-id '${{ inputs.stage_id }}'", proof)
+
     def test_every_phase_requires_explicit_protected_target(self):
         paths = {path.stem.removeprefix("vps-release-"): path
                  for path in WORKFLOWS.glob("vps-release-*.yml")}

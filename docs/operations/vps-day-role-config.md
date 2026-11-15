@@ -85,7 +85,14 @@ python3 scripts/portable-vps-day-role-config.py proof \
 ```
 
 The example paths must be replaced with the protected paths on the selected
-host. The backup path must match the `backup_root` in the profile. Record the
+host. The backup path must match the `backup_root` in the profile. The
+protected **VPS day-role proof** workflow dispatches the same read-only host
+phase with the exact stage UUID, successful `pause` or `drain` report selector,
+and three private evidence paths. The restricted route rejects path traversal,
+duplicate paths, an unreviewed checkout, and a repeated proof attempt. The
+sanitized artifact contains the accepted proof SHA-256 to bind a later
+activation; it contains no report paths, role IDs, receiver URL, or credentials.
+Record the
 installed digest and public signal configuration. In the full approved window,
 activate the accepted stage using its exact private directory:
 
