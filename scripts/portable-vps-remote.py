@@ -8,6 +8,8 @@ import re
 import stat
 import subprocess
 import sys
+import tempfile
+import uuid
 from pathlib import Path
 
 
@@ -23,6 +25,7 @@ PROMOTION_READY_SCRIPT = REVIEWED_SOURCE / "scripts/portable-vps-release-promoti
 PROMOTE_SCRIPT = REVIEWED_SOURCE / "scripts/portable-vps-release-promote.py"
 ACCEPT_SCRIPT = REVIEWED_SOURCE / "scripts/portable-vps-release-accept.py"
 RECOVER_SCRIPT = REVIEWED_SOURCE / "scripts/portable-vps-release-recover.py"
+DAY_ROLE_SCRIPT = REVIEWED_SOURCE / "scripts/portable-vps-day-role-config.py"
 BACKUP_PROFILE = PROJECT / "runtime/release-backup-profile.json"
 ACCEPT_INPUTS = Path("/root/vps-release-acceptance")
 PILOT_CONFIG = ACCEPT_INPUTS / "pilot.json"
@@ -31,6 +34,7 @@ EXTERNAL_REPORTS = Path("/root/vps-release-reports")
 STAGE_SCRIPT_BACKUP = REVIEWED_SOURCE / "scripts/portable-vps-remote.py.before-release-stage"
 INITIAL_REMOTE_SHA256 = "f965a4edc244c7ece696bbeb30b650f67c3c21e82584c44185ca57a94db31da7"
 MAX_MANIFEST = 16 * 1024
+MAX_DAY_ROLE_DECISION = 4096
 SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 RUN = re.compile(r"[1-9][0-9]{0,19}-[1-9][0-9]{0,2}\Z")
 SOURCE_SHA = re.compile(r"[0-9a-f]{40}\Z")
@@ -209,6 +213,59 @@ def write_private(path, data):
         output.write(data)
         output.flush()
         os.fsync(output.fileno())
+
+
+def canonical_uuid(value):
+    try:
+        return isinstance(value, str) and str(uuid.UUID(value)) == value
+    except (ValueError, TypeError, AttributeError):
+        return False
+
+
+def stage_day_role(source_sha, stage_id, expected, stream):
+    """Pass a bounded private decision to the reviewed stage-only host runner."""
+    checks = {"root_execution": os.geteuid() == 0,
+              "request_shape": bool(SOURCE_SHA.fullmatch(source_sha))
+                               and canonical_uuid(stage_id) and bool(SHA256.fullmatch(expected)),
+              "read_only_baseline": access_check()}
+    if all(checks.values()):
+        try:
+            checks["reviewed_checkout"] = reviewed_checkout(source_sha)
+            checks["reviewed_script"] = reviewed_script(DAY_ROLE_SCRIPT)
+            if checks["reviewed_checkout"] and checks["reviewed_script"]:
+                parent = EVIDENCE / "day-role-stages"
+                if not parent.exists():
+                    parent.mkdir(mode=0o700)
+                checks["stage_parent_private"] = private_directory(parent)
+                checks["stage_id_unused"] = not (parent / stage_id).exists() and not (parent / stage_id).is_symlink()
+            if all(checks.values()):
+                raw = stream.read(MAX_DAY_ROLE_DECISION + 1)
+                checks["decision_bounded"] = 0 < len(raw) <= MAX_DAY_ROLE_DECISION
+                checks["decision_digest"] = checks["decision_bounded"] and hashlib.sha256(raw).hexdigest() == expected
+                if checks["decision_digest"]:
+                    with tempfile.TemporaryDirectory(prefix=".day-role-decision-", dir=EVIDENCE) as temporary:
+                        decision = Path(temporary) / "decision.json"
+                        write_private(decision, raw)
+                        result = subprocess.run(
+                            ["/usr/bin/python3", "-I", "-B", str(DAY_ROLE_SCRIPT), "stage",
+                             "--project-directory", str(PROJECT), "--decision-file", str(decision),
+                             "--evidence-directory", str(parent), "--stage-id", stage_id,
+                             "--confirm", "stage"],
+                            env={"PATH": "/usr/bin:/bin", "PYTHONNOUSERSITE": "1",
+                                 "PYTHONDONTWRITEBYTECODE": "1", "PYTHONSAFEPATH": "1"},
+                            capture_output=True, timeout=180, check=False)
+                        try:
+                            outcome = json.loads(result.stdout, object_pairs_hook=no_duplicate_keys)
+                        except (UnicodeError, ValueError, TypeError):
+                            outcome = None
+                        checks["reviewed_stage_accepted"] = (
+                            result.returncode == 0 and isinstance(outcome, dict)
+                            and outcome == {"phase": "day-role-stage", "status": "PASS", "run_id": stage_id})
+        except (OSError, ValueError, TypeError, subprocess.TimeoutExpired):
+            checks["stage_execution"] = False
+    status = "PASS" if all(checks.values()) else "STOP"
+    print(json.dumps({"phase": "day-role-stage-dispatch", "status": status, "checks": checks}, sort_keys=True))
+    return 0 if status == "PASS" else 1
 
 
 def stage_release(expected, run_id, stream):
@@ -1307,6 +1364,8 @@ def main():
     parts = command.split(" ")
     if len(parts) == 4 and parts[0] == "stage-release" and parts[3] == "confirm-stage":
         return stage_release(parts[1], parts[2], sys.stdin.buffer)
+    if len(parts) == 5 and parts[0] == "stage-day-role" and parts[4] == "confirm-stage-day-role":
+        return stage_day_role(parts[1], parts[2], parts[3], sys.stdin.buffer)
     if len(parts) == 4 and parts[0] == "preflight-release" and parts[3] == "confirm-readonly-preflight":
         return preflight_release(parts[1], parts[2])
     if len(parts) == 4 and parts[0] == "plan-release" and parts[3] == "confirm-readonly-plan":

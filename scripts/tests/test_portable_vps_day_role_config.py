@@ -83,6 +83,31 @@ def test_cli_rejects_missing_phase_confirmation_before_stage(monkeypatch, tmp_pa
     assert '"status": "STOP"' in capsys.readouterr().out
 
 
+def test_cli_passes_exact_stage_id_and_rejects_it_for_other_phases(monkeypatch, tmp_path, capsys):
+    stage_id = "11111111-1111-4111-8111-111111111111"
+    captured = []
+    monkeypatch.setattr(RUNNER.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(RUNNER, "stage", lambda *args, **kwargs: (
+        captured.append(kwargs["stage_id"]) or tmp_path / stage_id))
+    assert RUNNER.main(["stage", "--project-directory", str(tmp_path),
+                        "--decision-file", str(tmp_path / "decision.json"),
+                        "--evidence-directory", str(tmp_path),
+                        "--stage-id", stage_id, "--confirm", "stage"]) == 0
+    assert captured == [stage_id]
+    assert RUNNER.main(["recover", "--project-directory", str(tmp_path),
+                        "--stage-directory", str(tmp_path / stage_id),
+                        "--stage-id", stage_id, "--confirm", "recover"]) == 1
+    assert '"status": "STOP"' in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("stage_id", ["../other", "not-a-uuid",
+                                      "11111111-1111-4111-8111-111111111111/extra",
+                                      "11111111-1111-4111-8111-111111111111 "])
+def test_stage_selector_rejects_noncanonical_or_unsafe_id(stage_id):
+    with pytest.raises(ValueError, match="invalid stage ID"):
+        RUNNER.stage_selector(stage_id)
+
+
 def test_input_drift_guard_excludes_only_the_changed_backend_file(monkeypatch, tmp_path):
     expected = {"runtime": {"backend.env": "old", "mom.env": "same", "database.env": "db"},
                 "config": {"compose.yml": "same"}}

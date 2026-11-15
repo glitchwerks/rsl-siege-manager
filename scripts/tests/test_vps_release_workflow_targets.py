@@ -24,6 +24,21 @@ VARS = {"VPS_RELEASE_READ_USER", "VPS_SSH_USER"}
 
 
 class ReleaseTargetContract(unittest.TestCase):
+    def test_day_role_stage_uses_protected_target_and_secret_decision(self):
+        raw = (WORKFLOWS / "vps-day-role-stage.yml").read_text()
+        self.assertIn("group: vps-production-promotion", raw)
+        self.assertIn(ENVIRONMENT, raw)
+        self.assertIn(TAILSCALE_TAG, raw)
+        self.assertIn("default: rehearsal", raw)
+        self.assertIn("inputs.target == 'rehearsal' || inputs.target == 'production'", raw)
+        self.assertIn("'REHEARSAL_DAY_ROLE_DECISION_JSON' || 'DAY_ROLE_DECISION_JSON'", raw)
+        for name in HOST_SECRETS:
+            self.assertIn(f"'REHEARSAL_{name}'", raw)
+        self.assertIn("STAGE_ID: ${{ inputs.stage_id }}", raw)
+        self.assertIn('stage-id "$STAGE_ID"', raw)
+        self.assertNotIn("--stage-id '${{ inputs.stage_id }}'", raw)
+        self.assertNotIn("secrets.DAY_ROLE_DECISION_JSON", raw)
+
     def test_every_phase_requires_explicit_protected_target(self):
         paths = {path.stem.removeprefix("vps-release-"): path
                  for path in WORKFLOWS.glob("vps-release-*.yml")}

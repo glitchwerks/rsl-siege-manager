@@ -23,6 +23,7 @@ def load(name, file):
 LOCAL = load("vps_access", "scripts/portable-vps-access-check.py")
 REMOTE = load("vps_remote", "scripts/portable-vps-remote.py")
 STAGE = load("vps_stage", "scripts/portable-vps-stage.py")
+DAY_ROLE_STAGE = load("vps_day_role_stage", "scripts/portable-vps-day-role-stage-dispatch.py")
 PREFLIGHT_DISPATCH = load("vps_preflight_dispatch", "scripts/portable-vps-release-preflight-dispatch.py")
 PLAN_DISPATCH = load("vps_plan_dispatch", "scripts/portable-vps-release-plan-dispatch.py")
 PAUSE_DISPATCH = load("vps_pause_dispatch", "scripts/portable-vps-release-pause-dispatch.py")
@@ -130,6 +131,83 @@ class AccessTests(unittest.TestCase):
             ), patch.object(REMOTE, "stage_release") as stage:
                 self.assertEqual(REMOTE.main(), 1)
                 stage.assert_not_called()
+
+    def test_day_role_stage_route_requires_exact_confirmation(self):
+        stage_id = "11111111-1111-4111-8111-111111111111"
+        valid = f"stage-day-role {'a' * 40} {stage_id} {'b' * 64} confirm-stage-day-role"
+        for command in (valid[:-len(" confirm-stage-day-role")], valid + "; id", valid + " extra"):
+            with self.subTest(command=command), patch.dict(os.environ, {"SSH_ORIGINAL_COMMAND": command}), patch.object(
+                REMOTE, "stage_day_role") as stage, redirect_stdout(io.StringIO()):
+                self.assertEqual(REMOTE.main(), 1)
+                stage.assert_not_called()
+        with patch.dict(os.environ, {"SSH_ORIGINAL_COMMAND": valid}), patch.object(
+            REMOTE, "stage_day_role", return_value=0) as stage:
+            self.assertEqual(REMOTE.main(), 0)
+            stage.assert_called_once()
+
+    def test_day_role_stage_keeps_decision_private_and_disposable(self):
+        stage_id = "11111111-1111-4111-8111-111111111111"
+        decision = b'{"schema":1,"enabled":false}'
+        expected = hashlib.sha256(decision).hexdigest()
+        with tempfile.TemporaryDirectory() as directory:
+            evidence = Path(directory) / "evidence"
+            evidence.mkdir(mode=0o700)
+            calls = []
+            def reviewed_stage(argv, **kwargs):
+                path = Path(argv[argv.index("--decision-file") + 1])
+                self.assertEqual(path.read_bytes(), decision)
+                self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+                calls.append(argv)
+                return SimpleNamespace(returncode=0, stdout=json.dumps({
+                    "phase": "day-role-stage", "status": "PASS", "run_id": stage_id}).encode())
+            output = io.StringIO()
+            with patch.object(REMOTE, "EVIDENCE", evidence), patch.object(
+                REMOTE, "access_check", return_value=True), patch.object(
+                REMOTE, "reviewed_checkout", return_value=True), patch.object(
+                REMOTE, "reviewed_script", return_value=True), patch.object(
+                REMOTE, "private_directory", side_effect=lambda path: path.is_dir() and not path.is_symlink()), patch.object(
+                REMOTE.os, "geteuid", return_value=0), patch.object(
+                REMOTE.subprocess, "run", side_effect=reviewed_stage), redirect_stdout(output):
+                self.assertEqual(REMOTE.stage_day_role("a" * 40, stage_id, expected,
+                                                        io.BytesIO(decision)), 0)
+                self.assertEqual(REMOTE.stage_day_role("a" * 40, stage_id, "b" * 64,
+                                                        io.BytesIO(decision)), 1)
+                self.assertEqual(REMOTE.stage_day_role("a" * 40, stage_id, expected,
+                                                        io.BytesIO(b"x" * (REMOTE.MAX_DAY_ROLE_DECISION + 1))), 1)
+            self.assertEqual(len(calls), 1)
+            self.assertEqual(list(evidence.glob(".day-role-decision-*")), [])
+            self.assertNotIn("enabled", output.getvalue())
+            self.assertNotIn("role_id", output.getvalue())
+            (evidence / "day-role-stages" / stage_id).mkdir()
+            with patch.object(REMOTE, "EVIDENCE", evidence), patch.object(
+                REMOTE, "access_check", return_value=True), patch.object(
+                REMOTE, "reviewed_checkout", return_value=True), patch.object(
+                REMOTE, "reviewed_script", return_value=True), patch.object(
+                REMOTE, "private_directory", return_value=True), patch.object(
+                REMOTE.os, "geteuid", return_value=0), patch.object(
+                REMOTE.subprocess, "run") as child, redirect_stdout(io.StringIO()):
+                self.assertEqual(REMOTE.stage_day_role("a" * 40, stage_id, expected,
+                                                        io.BytesIO(decision)), 1)
+                child.assert_not_called()
+
+    def test_ci_day_role_stage_sends_only_private_stdin_and_sanitizes_report(self):
+        stage_id = "11111111-1111-4111-8111-111111111111"
+        decision = '{"schema":1,"enabled":false}'
+        remote_report = {"phase": "day-role-stage-dispatch", "status": "PASS",
+                         "checks": {"reviewed_stage_accepted": True}}
+        with patch.object(DAY_ROLE_STAGE.ACCESS, "check", return_value={"baseline": True}), patch.object(
+            DAY_ROLE_STAGE.ACCESS, "settings", return_value=({}, "100.0.0.1", "root", "", "private-key", "host-key")
+        ), patch.object(DAY_ROLE_STAGE.subprocess, "run", return_value=SimpleNamespace(
+            returncode=0, stdout=json.dumps(remote_report).encode())) as ssh:
+            checks = DAY_ROLE_STAGE.dispatch("a" * 40, stage_id, decision)
+        self.assertTrue(all(checks.values()))
+        self.assertEqual(ssh.call_args.kwargs["input"], decision.encode())
+        self.assertEqual(ssh.call_args.args[0][-1],
+                         f"stage-day-role {'a' * 40} {stage_id} {hashlib.sha256(decision.encode()).hexdigest()} confirm-stage-day-role")
+        self.assertNotIn(decision, str(checks))
+        with patch.object(DAY_ROLE_STAGE.ACCESS, "check") as baseline:
+            self.assertFalse(all(DAY_ROLE_STAGE.dispatch("a" * 40, stage_id, "").values()))
+            baseline.assert_not_called()
 
     def test_preflight_requires_exact_readonly_command(self):
         for command in (

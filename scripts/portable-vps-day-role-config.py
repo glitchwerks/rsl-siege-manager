@@ -52,6 +52,16 @@ def digest(raw):
     return hashlib.sha256(raw).hexdigest()
 
 
+def stage_selector(value):
+    run_id = str(uuid.uuid4()) if value is None else value
+    try:
+        if not isinstance(run_id, str) or str(uuid.UUID(run_id)) != run_id:
+            raise ValueError("invalid stage ID")
+    except (TypeError, AttributeError, ValueError) as error:
+        raise ValueError("invalid stage ID") from error
+    return run_id
+
+
 def assignments(raw):
     """Reject ambiguous role settings; preserve unrelated bytes on replacement."""
     seen = {}
@@ -186,7 +196,8 @@ def inputs_current(project, directory, owner, *, include_backend):
     return current == expected
 
 
-def stage(project, decision_path, evidence, owner=0):
+def stage(project, decision_path, evidence, owner=0, stage_id=None):
+    run_id = stage_selector(stage_id)
     if not ROTATION.private(evidence, owner, directory=True):
         raise ValueError("unsafe evidence directory")
     values = decision(decision_path, owner)
@@ -200,7 +211,6 @@ def stage(project, decision_path, evidence, owner=0):
         raise ValueError("baseline flag or running state mismatch")
     proposed_model(current, values, approval, project)
     candidate = changed(before["backend.env"], values)
-    run_id = str(uuid.uuid4())
     directory = evidence / run_id
     directory.mkdir(mode=0o700)
     if not ROTATION.private(directory, owner, directory=True):
@@ -621,6 +631,7 @@ def main(argv=None):
     parser.add_argument("--decision-file", type=Path)
     parser.add_argument("--evidence-directory", type=Path)
     parser.add_argument("--stage-directory", type=Path)
+    parser.add_argument("--stage-id")
     parser.add_argument("--public-config", type=Path)
     parser.add_argument("--backup-profile", type=Path)
     parser.add_argument("--maintenance-report", type=Path)
@@ -641,9 +652,11 @@ def main(argv=None):
             if args.decision_file is None or args.evidence_directory is None:
                 raise ValueError("missing stage inputs")
             directory = stage(args.project_directory, args.decision_file,
-                              args.evidence_directory)
+                              args.evidence_directory, stage_id=args.stage_id)
             print(json.dumps({"phase": "day-role-stage", "status": "PASS", "run_id": directory.name}))
             return 0
+        if args.stage_id is not None:
+            raise ValueError("stage ID only valid for stage")
         if args.stage_directory is None:
             raise ValueError("missing stage selector")
         if args.phase == "proof":

@@ -47,6 +47,18 @@ and an accepted record. Keep the directory private and off uploaded artifacts.
 A stage never edits the running project or sends a webhook. Re-stage after any
 STOP or baseline drift; never edit an accepted stage in place.
 
+The protected **VPS day-role stage** workflow accepts an exact UUID as its
+`stage_id` before environment approval. It chooses rehearsal or production
+credentials and tailnet tags separately, and sends the target's private
+`DAY_ROLE_DECISION_JSON` secret as bounded SSH stdin. The restricted host route
+checks the reviewed checkout and decision digest, invokes only the stage phase,
+and removes its temporary decision file. GitHub receives boolean checks and
+the already visible stage ID. The existing manual command may still generate
+its own UUID; `--stage-id` selects the exact ID for the protected route. This
+workflow does not install the host route, approve activation, or deploy a
+candidate. The host route must be installed through its separately reviewed
+hash-bound update procedure after isolated rehearsal.
+
 Before activation, complete the separately confirmed maintenance pause and
 two-peer drain, managed encrypted backup, off-host recovery and isolated
 same-copy restore. Write the successful maintenance `pause` report to the exact
