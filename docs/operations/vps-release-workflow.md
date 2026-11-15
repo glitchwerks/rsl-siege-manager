@@ -437,6 +437,16 @@ before invoking the reviewed acceptance script. It also requires the backup
 profile to point to `/srv/rsl-siege` and the reviewed checkout to match the
 candidate source. It does not accept arbitrary paths or commands from Actions.
 
+When `target=rehearsal`, a successful host acceptance starts a second,
+read-only external-sidecar smoke job. That job requires its own approval through
+the protected `integration-smoke` environment, joins only
+`tag:integration-smoke`, and runs `portable-integration.py readonly` against
+the dedicated test identity. Its private configuration must name the exact
+candidate versions and isolated HTTPS origins. A mismatch or unavailable
+sidecar fails the release acceptance workflow; it does not trigger a retry,
+Discord write, or automatic rollback. This job is skipped for
+`target=production`.
+
 Before dispatch, the operator must prepare root-owned `0700`
 `/root/vps-release-acceptance/` with root-owned `0600` files `pilot.json` and
 `session-cookie`. `pilot.json` follows `scripts/portable-pilot.py` settings:
