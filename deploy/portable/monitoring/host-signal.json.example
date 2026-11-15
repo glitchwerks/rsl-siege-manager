@@ -1,0 +1,10 @@
+{
+  "database_storage_path": "/REPLACE/verified/postgres/volume/source",
+  "backup_state_root": "/REPLACE/protected/backup/state",
+  "minimum_available_memory_bytes": 536870912,
+  "maximum_swap_used_bytes": 268435456,
+  "minimum_database_disk_bytes": 10737418240,
+  "minimum_backup_disk_bytes": 5368709120,
+  "baseline_boot_id": "REPLACE-reviewed-boot-uuid",
+  "baseline_oom_kills": 0
+}
