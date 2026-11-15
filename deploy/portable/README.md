@@ -211,6 +211,11 @@ that setting. Bundled support requires a separate contract fix before activation
 must verify TLS, a rejected unauthenticated webhook, and a successful authenticated
 role update in the test guild before production activation.
 
+After a separately approved configuration change, use the
+[read-only running-state check](../../docs/operations/vps-day-role-effective.md)
+to compare the reviewed candidate with the healthy backend container before
+resuming writers. It does not activate the flag or verify Discord role delivery.
+
 ## Read-only configuration gate
 
 From the repository root, with Docker Compose v2 installed on the reviewed target:
