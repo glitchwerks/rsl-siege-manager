@@ -6,8 +6,8 @@ The remaining live-stack acceptance is tracked in
 This runbook is not an authorization to change the production VPS. The shared
 [credential contract](https://github.com/glitchwerks/rsl-mom-apps/blob/main/docs/portable-credential-rotation.md)
 defines the two independent bearer pairs and the separate approval boundaries.
-Do not use this draft to perform a live rotation. The Azure Key Vault adapter
-remains available for a separately reviewed return path.
+Do not use this runbook for a live rotation before the remaining gates pass.
+The Azure Key Vault adapter remains available for a separately reviewed return path.
 
 ## Phases and evidence
 
