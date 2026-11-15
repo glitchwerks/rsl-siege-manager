@@ -39,6 +39,16 @@ change; an arbitrary local edit remains a STOP:
 - Exactly one of `runtime/mom.env` or `runtime/bundled.env`.
 - For mom topology, `runtime/mom-image.json`: a protected operator-reviewed image
   approval record based on `mom-image.json.example`, as described below.
+- `control/state`: a nonsecret, root-owned regular file containing exactly
+  `active` or `paused` followed by one newline. The `control` directory must be
+  root-owned, readable and traversable by the backend container, and must not be
+  group or world writable (0755 is appropriate); the state file should be 0644.
+  The portable backend reads this file for every affected request and fails closed
+  if it is absent, malformed, writable by other users, or a symlink. Mount the
+  directory as provided by Compose so a later atomic state replacement remains
+  visible without recreating the container. The host-side phase-scoped control
+  runner and Mom writer gate are tracked in #640 and #395; preparing this file
+  does not authorize a live pause or resume.
 
 The invoking deployment operator must own all deployment/runtime directories and
 credential files. Restrict directories to 0700 and credential files to 0600. These paths are ignored by Git. Never publish rendered `compose config`

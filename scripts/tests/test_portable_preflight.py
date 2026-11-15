@@ -648,6 +648,19 @@ class RuntimePermissionTests(unittest.TestCase):
                         path.chmod(0o644)
                 self.assertTrue(preflight.deployment_bind_sources_current(root))
 
+    def test_missing_or_invalid_maintenance_state_stops_before_render(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            fixture(root)
+            state = root / "control/state"
+            for content in (b"", b"unknown\n", b"active", b"active\npaused\n"):
+                state.write_bytes(content)
+                self.assertFalse(preflight.deployment_bind_sources_current(root))
+            state.write_bytes(b"paused\n")
+            self.assertTrue(preflight.deployment_bind_sources_current(root))
+            state.unlink()
+            self.assertFalse(preflight.deployment_bind_sources_current(root))
+
     def test_reviewed_www_redirect_is_accepted_without_accepting_other_edits(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

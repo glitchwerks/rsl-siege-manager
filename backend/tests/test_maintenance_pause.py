@@ -86,3 +86,11 @@ def test_missing_invalid_or_symlink_state_fails_closed(gate, tmp_path):
     target.write_bytes(b"active\n")
     state.symlink_to(target)
     assert gate.state() == "paused"
+
+
+def test_pause_state_survives_gate_recreation(gate):
+    gate.state_file.write_bytes(b"paused\n")
+    restarted = MaintenanceGate(
+        enabled=True, state_file=str(gate.state_file), owner_uid=os.geteuid()
+    )
+    assert restarted.snapshot() == {"paused": True, "inflight": 0}
