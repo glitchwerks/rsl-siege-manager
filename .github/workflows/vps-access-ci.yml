@@ -22,6 +22,8 @@ on:
       - "scripts/tests/test_portable_vps_release_promote_docker.py"
       - "scripts/tests/test_portable_vps_release_accept.py"
       - "scripts/tests/test_portable_vps_release_recover.py"
+      - "scripts/tests/test_portable_vps_bearer_rotation.py"
+      - "scripts/tests/test_portable_vps_bearer_rotation_docker.py"
       - "scripts/tests/test_portable_vps_public_signal.py"
       - "scripts/tests/test_portable_vps_public_monitor.py"
       - "scripts/tests/test_portable_vps_database_signal.py"
@@ -33,6 +35,7 @@ on:
       - "docs/operations/vps-release-workflow.md"
       - "docs/operations/vps-public-monitoring.md"
       - "docs/operations/vps-database-monitoring.md"
+      - "docs/operations/vps-bearer-rotation.md"
       - "docs/operations/vps-maintenance-control.md"
       - "deploy/portable/monitoring/public-signal.json.example"
       - "deploy/portable/monitoring/database-signal.json.example"
@@ -60,6 +63,8 @@ on:
       - "scripts/tests/test_portable_vps_release_promote_docker.py"
       - "scripts/tests/test_portable_vps_release_accept.py"
       - "scripts/tests/test_portable_vps_release_recover.py"
+      - "scripts/tests/test_portable_vps_bearer_rotation.py"
+      - "scripts/tests/test_portable_vps_bearer_rotation_docker.py"
       - "scripts/tests/test_portable_vps_public_signal.py"
       - "scripts/tests/test_portable_vps_public_monitor.py"
       - "scripts/tests/test_portable_vps_database_signal.py"
@@ -71,6 +76,7 @@ on:
       - "docs/operations/vps-release-workflow.md"
       - "docs/operations/vps-public-monitoring.md"
       - "docs/operations/vps-database-monitoring.md"
+      - "docs/operations/vps-bearer-rotation.md"
       - "docs/operations/vps-maintenance-control.md"
       - "deploy/portable/monitoring/public-signal.json.example"
       - "deploy/portable/monitoring/database-signal.json.example"
@@ -120,9 +126,14 @@ jobs:
         run: python3 -m unittest discover -s scripts/tests -p test_portable_vps_database_monitor.py -v
       - name: Test portable maintenance control phases
         run: python3 -m unittest discover -s scripts/tests -p test_portable_vps_maintenance_control.py -v
+      - name: Test paired bearer rotation guards
+        run: |
+          python3 -m venv "$RUNNER_TEMP/rotation-tests"
+          "$RUNNER_TEMP/rotation-tests/bin/python" -m pip install --disable-pip-version-check pytest==9.1.1
+          "$RUNNER_TEMP/rotation-tests/bin/python" -m pytest -q scripts/tests/test_portable_vps_bearer_rotation.py
   docker-rehearsal:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -135,6 +146,8 @@ jobs:
         run: sudo env VPS_WRITER_DOCKER_TEST=1 python3 -m unittest discover -s scripts/tests -p test_portable_vps_release_migrate_docker.py -v
       - name: Rehearse targeted application activation without recreating foundation
         run: sudo env VPS_WRITER_DOCKER_TEST=1 python3 -m unittest discover -s scripts/tests -p test_portable_vps_release_promote_docker.py -v
+      - name: Rehearse paired bearer rotation against disposable HTTP services
+        run: sudo env VPS_WRITER_DOCKER_TEST=1 python3 -m unittest discover -s scripts/tests -p test_portable_vps_bearer_rotation_docker.py -v
       - name: Rehearse least-privilege database signal against disposable PostgreSQL
         run: sudo env VPS_WRITER_DOCKER_TEST=1 python3 -m unittest discover -s scripts/tests -p test_portable_vps_database_signal_docker.py -v
       - name: Rehearse two-peer maintenance pause and restart
