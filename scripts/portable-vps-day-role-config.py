@@ -15,6 +15,7 @@ from pathlib import Path
 import re
 import subprocess
 import tempfile
+import time
 import uuid
 
 
@@ -285,6 +286,33 @@ def stop_backend(project_name, expected=None):
     return stopped is not None and stopped["running"] is False
 
 
+def recovery_drain(project, baseline):
+    """Accept a stopped backend only after checking Mom's paused drain alone."""
+    name = baseline["project"]
+    state = PAUSE.container(name, "backend")
+    if state is None or state["id"] != PAUSE.identifiers(name, "backend"):
+        return False
+    image_raw = PAUSE.command(["docker", "inspect", "--format", "{{json .Config.Image}}", state["id"]])
+    try:
+        if json.loads(image_raw) != baseline["installed"]["backend"]["image"]:
+            return False
+    except (TypeError, ValueError, KeyError):
+        return False
+    if state["running"] is True:
+        return ROTATION.MAINT.drain(project)
+    if state["running"] is not False or state["status"] not in {"exited", "created"}:
+        return False
+    deadline = time.monotonic() + 20
+    for attempt in range(3):
+        if (ROTATION.MAINT.state(project) != "paused"
+                or ROTATION.MAINT.service_status(project, "mom", deadline=deadline)
+                != {"paused": True, "inflight": 0}):
+            return False
+        if attempt < 2:
+            time.sleep(0.1)
+    return ROTATION.MAINT.state(project) == "paused"
+
+
 def compose_backend(project):
     command = ["docker", "compose", "--env-file", str(project / "stack.env"),
                "--project-directory", str(project), "-f", str(project / "compose.yml"),
@@ -390,10 +418,11 @@ def recover(project, directory, public_config, restore_enabled_safe=False, owner
             raise ValueError("successful activation cannot be rolled back here")
     result = {"phase": "day-role-recover", "status": "STOP", "timestamp": now(),
               "checks": {"pause_unchanged": False, "known_files": False,
+                         "writers_drained": False,
                          "backend_stopped": False, "rollback_installed": False,
                          "effective_state": False, "public_health": False}}
     with PAUSE.project_lock(project):
-        ROTATION.require_pause(project, drain=True)
+        ROTATION.require_pause(project)
         result["checks"]["pause_unchanged"] = ROTATION.MAINT.history(project) == marker.get("pause_history")
         current = GATE.read_private(project / "runtime" / "backend.env", owner, MAX_FILE)
         result["checks"]["known_files"] = (
@@ -406,6 +435,9 @@ def recover(project, directory, public_config, restore_enabled_safe=False, owner
             and mom_state["running"] is True and mom_state["healthy"] is True)
         if not result["checks"]["pause_unchanged"] or not result["checks"]["known_files"]:
             raise ValueError("recovery baseline changed")
+        result["checks"]["writers_drained"] = recovery_drain(project, baseline)
+        if not result["checks"]["writers_drained"]:
+            raise ValueError("recovery drain incomplete")
         ROTATION.write_result(directory / "recovery-incomplete.json",
             (json.dumps({"phase": "day-role-recover", "status": "INCOMPLETE"}) + "\n").encode(), owner)
         try:

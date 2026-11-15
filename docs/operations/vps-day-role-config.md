@@ -79,6 +79,9 @@ stops backend and keeps the pause; it is not permission to restart the whole
 stack. Recovery refuses a stage that already passed activation because new
 writes or Discord mutations may have occurred. A later kill switch is a new
 disable decision and stage, not a rollback of a completed activation.
+When backend is already stopped, recovery verifies its exact image and requires
+three paused, zero-inflight Mom observations. If backend remains running, the
+normal two-peer drain still applies.
 
 ```sh
 python3 scripts/portable-vps-day-role-config.py recover \

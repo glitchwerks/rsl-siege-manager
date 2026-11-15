@@ -95,6 +95,33 @@ def test_input_drift_guard_excludes_only_the_changed_backend_file(monkeypatch, t
     assert not RUNNER.inputs_current(tmp_path, tmp_path, 0, include_backend=False)
 
 
+def test_recovery_drain_accepts_verified_stopped_backend_and_paused_mom(monkeypatch, tmp_path):
+    baseline = {"project": "test", "installed": {"backend": {"image": "sha256:reviewed"}}}
+    monkeypatch.setattr(RUNNER.PAUSE, "container", lambda *args: {
+        "id": "backend-id", "running": False, "status": "exited"})
+    monkeypatch.setattr(RUNNER.PAUSE, "identifiers", lambda *args: "backend-id")
+    monkeypatch.setattr(RUNNER.PAUSE, "command", lambda *args: b'"sha256:reviewed"')
+    monkeypatch.setattr(RUNNER.ROTATION.MAINT, "state", lambda *_: "paused")
+    calls = []
+    monkeypatch.setattr(RUNNER.ROTATION.MAINT, "service_status",
+                        lambda *args, **kwargs: calls.append(args[1]) or
+                        {"paused": True, "inflight": 0})
+    monkeypatch.setattr(RUNNER.time, "sleep", lambda *_: None)
+    assert RUNNER.recovery_drain(tmp_path, baseline)
+    assert calls == ["mom", "mom", "mom"]
+
+
+def test_recovery_drain_rejects_wrong_backend_image(monkeypatch, tmp_path):
+    baseline = {"project": "test", "installed": {"backend": {"image": "sha256:reviewed"}}}
+    monkeypatch.setattr(RUNNER.PAUSE, "container", lambda *args: {
+        "id": "backend-id", "running": False, "status": "exited"})
+    monkeypatch.setattr(RUNNER.PAUSE, "identifiers", lambda *args: "backend-id")
+    monkeypatch.setattr(RUNNER.PAUSE, "command", lambda *args: b'"sha256:other"')
+    monkeypatch.setattr(RUNNER.ROTATION.MAINT, "service_status",
+                        lambda *args, **kwargs: pytest.fail("queried unexpected Mom"))
+    assert not RUNNER.recovery_drain(tmp_path, baseline)
+
+
 @pytest.mark.parametrize("compose_ok", [False, True])
 def test_activation_recreates_only_backend_and_isolates_failed_path(monkeypatch, tmp_path, compose_ok):
     project = tmp_path / "project"
@@ -148,6 +175,7 @@ def test_failed_recovery_verification_stops_backend_again(monkeypatch, tmp_path)
     monkeypatch.setattr(RUNNER.ROTATION, "require_pause", lambda *_, **__: None)
     monkeypatch.setattr(RUNNER.ROTATION.MAINT, "history", lambda *_: history)
     monkeypatch.setattr(RUNNER, "inputs_current", lambda *_, **__: True)
+    monkeypatch.setattr(RUNNER, "recovery_drain", lambda *args: True)
     monkeypatch.setattr(RUNNER.ROTATION, "configuration_current", lambda *_: True)
     monkeypatch.setattr(RUNNER.PAUSE, "identifiers", lambda *args: "mom-id")
     monkeypatch.setattr(RUNNER.PAUSE, "container", lambda *args: {"running": True, "healthy": True})
