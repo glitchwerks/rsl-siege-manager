@@ -87,11 +87,13 @@ reports and use fresh paths for another attempt.
 ## Initial policy and acceptance
 
 Request a signal every five minutes. The independent receiver should open an
-incident after two consecutive failed signals, resolve after a successful
-signal, and alert when no signal arrives for 20 minutes. After a separately
-approved PostgreSQL restart, apply a five-minute startup grace at the receiver
-without treating an unhealthy database as PASS. Record the incident owner and
-correlate this signal with the public API check in #584; an API outage alone
+incident on the first completed failed signal, resolve after a successful
+signal, and alert when no signal arrives for 20 minutes. The sender's `/fail`
+is an active failure; receiver grace does not count consecutive failures.
+After a separately approved PostgreSQL restart, apply a five-minute startup
+grace at the receiver without treating an unhealthy database as PASS. Record
+the incident owner and correlate this signal with the public API check in #584;
+an API outage alone
 does not establish a database outage. Configure the eventual receiver to send
 Slack as primary and email as fallback.
 
