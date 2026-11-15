@@ -406,6 +406,58 @@ def proof_current(project, directory, profile_path, held_candidate, owner=0):
                                              Path(maintenance["path"]), *paths, owner)
 
 
+def preflight_record(project, directory, public_config, backup_profile, owner=0):
+    accepted, baseline, old, candidate, mom, values = load(project, directory, owner)
+    before, current_baseline = ROTATION.project_snapshot(project, owner)
+    current, approval = model(project)
+    if (before["backend.env"] != old or before["mom.env"] != mom
+            or current_baseline != baseline
+            or not ROTATION.stack_current(project, directory, owner)
+            or not inputs_current(project, directory, owner, include_backend=True)
+            or not all(EFFECTIVE.inspect(current, accepted["old_enabled"]).values())):
+        raise ValueError("preflight baseline drift")
+    proposed_model(current, values, approval, project)
+    ROTATION.require_pause(project, drain=True)
+    if (not proof_current(project, directory, backup_profile, candidate, owner)
+            or not ROTATION.public_healthy(project, public_config, owner)):
+        raise ValueError("preflight proof or public health failed")
+    proof_raw = GATE.read_private(directory / "proof-accepted.json", owner)
+    public_raw = GATE.read_private(public_config, owner, 4096)
+    history = ROTATION.MAINT.history(project)
+    if history is None or ROTATION.MAINT.state(project) != "paused":
+        raise ValueError("preflight pause changed")
+    return {"schema": 1, "stage_id": directory.name,
+            "source_sha": baseline["source_sha"], "candidate_sha256": digest(candidate),
+            "proof_sha256": digest(proof_raw), "public_config_sha256": digest(public_raw),
+            "pause_history": history}
+
+
+def accept_preflight(project, directory, public_config, backup_profile, owner=0):
+    with PAUSE.project_lock(project):
+        load(project, directory, owner)
+        if (directory / "preflight-attempt.json").exists() or (directory / "preflight-accepted.json").exists():
+            raise ValueError("preflight already attempted")
+        private_json(directory / "preflight-attempt.json",
+                     {"phase": "day-role-preflight", "status": "INCOMPLETE"}, owner)
+        record = preflight_record(project, directory, public_config, backup_profile, owner)
+        private_json(directory / "preflight-accepted.json",
+                     {"phase": "day-role-preflight", "status": "PASS", "record": record}, owner)
+    return {"phase": "day-role-preflight", "status": "PASS", "stage_id": directory.name}
+
+
+def preflight_current(project, directory, public_config, backup_profile, owner=0):
+    value = json.loads(GATE.read_private(directory / "preflight-accepted.json", owner),
+                       object_pairs_hook=ROTATION.PREFLIGHT.REMOTE.no_duplicate_keys)
+    if (not isinstance(value, dict) or set(value) != {"phase", "status", "record"}
+            or value["phase"] != "day-role-preflight" or value["status"] != "PASS"
+            or not isinstance(value["record"], dict)
+            or set(value["record"]) != {"schema", "stage_id", "source_sha", "candidate_sha256",
+                                        "proof_sha256", "public_config_sha256", "pause_history"}
+            or value["record"]["schema"] != 1 or value["record"]["stage_id"] != directory.name):
+        raise ValueError("invalid preflight acceptance")
+    return value["record"] == preflight_record(project, directory, public_config, backup_profile, owner)
+
+
 def replace_backend(project, raw, owner):
     path = project / "runtime" / "backend.env"
     if not ROTATION.private(path, owner) or not ROTATION.private(path.parent, owner, directory=True):
@@ -502,6 +554,7 @@ def activate(project, directory, public_config, backup_profile, owner=0):
     result = {"phase": "day-role-activate", "status": "STOP", "timestamp": now(),
               "checks": {"baseline_current": False, "writers_paused": False,
                          "backup_proof_current": False,
+                         "preflight_current": False,
                          "public_baseline_healthy": False,
                          "backend_stopped": False, "candidate_valid": False,
                          "backend_recreated": False, "effective_state": False,
@@ -527,6 +580,10 @@ def activate(project, directory, public_config, backup_profile, owner=0):
             project, public_config, owner)
         if not result["checks"]["public_baseline_healthy"]:
             raise ValueError("public baseline unhealthy")
+        result["checks"]["preflight_current"] = preflight_current(
+            project, directory, public_config, backup_profile, owner)
+        if not result["checks"]["preflight_current"]:
+            raise ValueError("preflight changed")
         pause_history = ROTATION.MAINT.history(project)
         ROTATION.write_result(directory / "activation-incomplete.json",
             (json.dumps({"phase": "day-role-activate", "status": "INCOMPLETE",
@@ -626,7 +683,7 @@ def recover(project, directory, public_config, restore_enabled_safe=False, owner
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("phase", choices=("stage", "proof", "activate", "recover"))
+    parser.add_argument("phase", choices=("stage", "proof", "preflight", "activate", "recover"))
     parser.add_argument("--project-directory", type=Path, required=True)
     parser.add_argument("--decision-file", type=Path)
     parser.add_argument("--evidence-directory", type=Path)
@@ -638,7 +695,7 @@ def main(argv=None):
     parser.add_argument("--backup-report", type=Path)
     parser.add_argument("--recover-report", type=Path)
     parser.add_argument("--restore-report", type=Path)
-    parser.add_argument("--confirm", choices=("stage", "proof", "activate", "recover"))
+    parser.add_argument("--confirm", choices=("stage", "proof", "preflight", "activate", "recover"))
     parser.add_argument("--confirm-restore-enabled-safe", action="store_true")
     args = parser.parse_args(argv)
     try:
@@ -667,6 +724,13 @@ def main(argv=None):
             result = accept_proof(args.project_directory, args.stage_directory,
                                   args.backup_profile, args.maintenance_report, args.backup_report,
                                   args.recover_report, args.restore_report)
+            print(json.dumps(result, sort_keys=True))
+            return 0
+        if args.phase == "preflight":
+            if args.backup_profile is None or args.public_config is None:
+                raise ValueError("missing preflight inputs")
+            result = accept_preflight(args.project_directory, args.stage_directory,
+                                      args.public_config, args.backup_profile)
             print(json.dumps(result, sort_keys=True))
             return 0
         if args.public_config is None:

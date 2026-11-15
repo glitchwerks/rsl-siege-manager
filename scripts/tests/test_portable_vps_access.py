@@ -25,6 +25,9 @@ REMOTE = load("vps_remote", "scripts/portable-vps-remote.py")
 STAGE = load("vps_stage", "scripts/portable-vps-stage.py")
 DAY_ROLE_STAGE = load("vps_day_role_stage", "scripts/portable-vps-day-role-stage-dispatch.py")
 DAY_ROLE_PROOF = load("vps_day_role_proof", "scripts/portable-vps-day-role-proof-dispatch.py")
+DAY_ROLE_PREFLIGHT = load("vps_day_role_preflight", "scripts/portable-vps-day-role-preflight-dispatch.py")
+DAY_ROLE_ACTIVATE = load("vps_day_role_activate", "scripts/portable-vps-day-role-activate-dispatch.py")
+DAY_ROLE_RECOVER = load("vps_day_role_recover", "scripts/portable-vps-day-role-recover-dispatch.py")
 PREFLIGHT_DISPATCH = load("vps_preflight_dispatch", "scripts/portable-vps-release-preflight-dispatch.py")
 PLAN_DISPATCH = load("vps_plan_dispatch", "scripts/portable-vps-release-plan-dispatch.py")
 PAUSE_DISPATCH = load("vps_pause_dispatch", "scripts/portable-vps-release-pause-dispatch.py")
@@ -256,6 +259,111 @@ class AccessTests(unittest.TestCase):
             self.assertFalse(all(checks.values()))
             self.assertIsNone(digest)
             baseline.assert_not_called()
+
+    def test_day_role_mutation_routes_require_exact_confirmation(self):
+        stage_id = "11111111-1111-4111-8111-111111111111"
+        commands = (
+            (f"preflight-day-role {'a' * 40} {stage_id} {'b' * 64} /protected/public.json "
+             "confirm-readonly-preflight-day-role", "preflight_day_role"),
+            (f"activate-day-role {'a' * 40} {stage_id} {'b' * 64} {'c' * 64} /protected/public.json "
+             "window-123 confirm-activate-day-role", "activate_day_role"),
+            (f"recover-day-role {'a' * 40} {stage_id} /protected/public.json "
+             "window-123 confirm-recover-day-role", "recover_day_role"),
+        )
+        for valid, function in commands:
+            for command in (valid + "; id", valid + " extra"):
+                with self.subTest(command=command), patch.dict(os.environ, {"SSH_ORIGINAL_COMMAND": command}), patch.object(
+                    REMOTE, function) as runner, redirect_stdout(io.StringIO()):
+                    self.assertEqual(REMOTE.main(), 1)
+                    runner.assert_not_called()
+            with self.subTest(valid=valid), patch.dict(os.environ, {"SSH_ORIGINAL_COMMAND": valid}), patch.object(
+                REMOTE, function, return_value=0) as runner:
+                self.assertEqual(REMOTE.main(), 0)
+                runner.assert_called_once()
+
+    def test_day_role_activation_requires_exact_private_preflight_before_runner(self):
+        stage_id = "11111111-1111-4111-8111-111111111111"
+        with tempfile.TemporaryDirectory() as directory:
+            evidence = Path(directory) / "evidence"
+            stage = evidence / "day-role-stages" / stage_id
+            stage.mkdir(parents=True)
+            proof = stage / "proof-accepted.json"
+            preflight = stage / "preflight-accepted.json"
+            proof.write_text('{"phase":"day-role-proof","status":"PASS"}')
+            preflight.write_text('{"phase":"day-role-preflight","status":"PASS"}')
+            proof_sha = hashlib.sha256(proof.read_bytes()).hexdigest()
+            preflight_sha = hashlib.sha256(preflight.read_bytes()).hexdigest()
+            with patch.object(REMOTE, "EVIDENCE", evidence), patch.object(
+                REMOTE, "access_check", return_value=True), patch.object(
+                REMOTE, "reviewed_checkout", return_value=True), patch.object(
+                REMOTE, "reviewed_script", return_value=True), patch.object(
+                REMOTE, "profile_bound", return_value=True), patch.object(
+                REMOTE, "private_directory", return_value=True), patch.object(
+                REMOTE, "private_file", return_value=True), patch.object(
+                REMOTE.os, "geteuid", return_value=0), patch.object(
+                REMOTE.subprocess, "run") as child, redirect_stdout(io.StringIO()):
+                self.assertEqual(REMOTE.activate_day_role("a" * 40, stage_id, "b" * 64,
+                    preflight_sha, "/protected/public.json", "window-123"), 1)
+                child.assert_not_called()
+                self.assertFalse((stage / "activate-dispatch-start.json").exists())
+            def reviewed_activate(argv, **kwargs):
+                checks = {name: True for name in (
+                    "baseline_current", "writers_paused", "backup_proof_current",
+                    "preflight_current", "public_baseline_healthy", "backend_stopped",
+                    "candidate_valid", "backend_recreated", "effective_state", "public_health")}
+                (stage / "activation-result.json").write_text(json.dumps({
+                    "phase": "day-role-activate", "status": "PASS", "checks": checks}))
+                return SimpleNamespace(returncode=0, stdout=b'{"phase":"day-role-activate","status":"PASS"}')
+            output = io.StringIO()
+            with patch.object(REMOTE, "EVIDENCE", evidence), patch.object(
+                REMOTE, "access_check", return_value=True), patch.object(
+                REMOTE, "reviewed_checkout", return_value=True), patch.object(
+                REMOTE, "reviewed_script", return_value=True), patch.object(
+                REMOTE, "profile_bound", return_value=True), patch.object(
+                REMOTE, "private_directory", return_value=True), patch.object(
+                REMOTE, "private_file", return_value=True), patch.object(
+                REMOTE.os, "geteuid", return_value=0), patch.object(
+                REMOTE.subprocess, "run", side_effect=reviewed_activate) as child, redirect_stdout(output):
+                self.assertEqual(REMOTE.activate_day_role("a" * 40, stage_id, proof_sha,
+                    preflight_sha, "/protected/public.json", "window-123"), 0)
+                self.assertEqual(REMOTE.activate_day_role("a" * 40, stage_id, proof_sha,
+                    preflight_sha, "/protected/public.json", "window-123"), 1)
+            self.assertEqual(child.call_count, 1)
+            self.assertNotIn("window-123", output.getvalue())
+            self.assertNotIn("protected/public", output.getvalue())
+
+    def test_day_role_recovery_refuses_restoring_enabled_flag(self):
+        stage_id = "11111111-1111-4111-8111-111111111111"
+        with tempfile.TemporaryDirectory() as directory:
+            evidence = Path(directory) / "evidence"
+            stage = evidence / "day-role-stages" / stage_id
+            stage.mkdir(parents=True)
+            (stage / "activate-dispatch-start.json").write_text("{}")
+            (stage / "accepted.json").write_text(json.dumps({"phase": "day-role-stage",
+                "status": "PASS", "run_id": stage_id, "old_enabled": "true"}))
+            with patch.object(REMOTE, "EVIDENCE", evidence), patch.object(
+                REMOTE, "access_check", return_value=True), patch.object(
+                REMOTE, "reviewed_checkout", return_value=True), patch.object(
+                REMOTE, "reviewed_script", return_value=True), patch.object(
+                REMOTE, "private_directory", return_value=True), patch.object(
+                REMOTE, "private_file", return_value=True), patch.object(
+                REMOTE.os, "geteuid", return_value=0), patch.object(
+                REMOTE.subprocess, "run") as child, redirect_stdout(io.StringIO()):
+                self.assertEqual(REMOTE.recover_day_role("a" * 40, stage_id,
+                    "/protected/public.json", "window-123"), 1)
+                child.assert_not_called()
+
+    def test_ci_day_role_mutation_requires_matching_protected_window(self):
+        stage_id = "11111111-1111-4111-8111-111111111111"
+        for module, arguments in (
+            (DAY_ROLE_ACTIVATE, ("a" * 40, stage_id, "b" * 64, "c" * 64,
+                                  "/protected/public.json", "window-123", "other-window")),
+            (DAY_ROLE_RECOVER, ("a" * 40, stage_id, "/protected/public.json",
+                                 "window-123", "other-window")),
+        ):
+            with self.subTest(module=module.__name__), patch.object(module.ACCESS, "check") as baseline:
+                self.assertFalse(all(module.dispatch(*arguments).values()))
+                baseline.assert_not_called()
 
     def test_preflight_requires_exact_readonly_command(self):
         for command in (

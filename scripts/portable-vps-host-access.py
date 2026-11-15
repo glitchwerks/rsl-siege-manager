@@ -34,10 +34,16 @@ OLD_REMOTE_SHA256S = (
     "e634b0eb9a8e01518b78e3dfc72d44cf4a2174c75ee36f858a678293cddaf30e",
 )
 NEW_REMOTE_SHA256 = "a223e74a4ecd2b285a47bd6e695fd437d8dc68f3cbe8093243b26dd6c0447e00"
+DAY_ROLE_REMOTE_OLD_SHA256 = NEW_REMOTE_SHA256
+DAY_ROLE_REMOTE_NEW_SHA256 = "b5b8518a0a8a83cd3655e5a4da79df81f1582647e6ec166a9723fe42c8304e64"
 
 
 def script_backup_path():
     return Path("/root/portable-vps-remote.py.before-recovery-restore")
+
+
+def day_role_script_backup_path():
+    return Path("/root/portable-vps-remote.py.before-day-role-dispatch")
 
 
 def digest(data):
@@ -269,6 +275,60 @@ def restore_script(key):
     return checks
 
 
+def update_day_role_script(key):
+    """Replace only the reviewed forced-command script, preserving its exact old bytes."""
+    checks = preflight()
+    checks["public_key_valid"] = bool(key)
+    if not all(checks.values()):
+        return checks
+    entry = key_entry(key).encode()
+    checks["restricted_key_exactly_once"] = AUTHORIZED_KEYS.read_bytes().splitlines().count(entry) == 1
+    checks["old_script_reviewed"] = checked_file(REMOTE_SCRIPT) and digest(REMOTE_SCRIPT.read_bytes()) == DAY_ROLE_REMOTE_OLD_SHA256
+    checks["new_script_reviewed"] = digest(SOURCE_SCRIPT.read_bytes()) == DAY_ROLE_REMOTE_NEW_SHA256
+    backup = day_role_script_backup_path()
+    checks["backup_path_unused"] = not backup.exists() and not backup.is_symlink()
+    if not all(checks.values()):
+        return checks
+    old_data = REMOTE_SCRIPT.read_bytes()
+    new_data = SOURCE_SCRIPT.read_bytes()
+    descriptor = os.open(backup, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(descriptor, "wb") as stream:
+        stream.write(old_data)
+        stream.flush()
+        os.fsync(stream.fileno())
+    checks["old_script_backup"] = private_file(backup) and backup.read_bytes() == old_data
+    if not checks["old_script_backup"]:
+        return checks
+    try:
+        atomic_write(REMOTE_SCRIPT, new_data, 0o644)
+        checks["updated_script_installed"] = checked_file(REMOTE_SCRIPT) and REMOTE_SCRIPT.read_bytes() == new_data
+    except OSError:
+        checks["script_update"] = False
+    if not checks.get("updated_script_installed"):
+        atomic_write(REMOTE_SCRIPT, old_data, 0o644)
+        checks["old_script_restored"] = REMOTE_SCRIPT.read_bytes() == old_data
+    return checks
+
+
+def restore_day_role_script(key):
+    checks = preflight()
+    checks["public_key_valid"] = bool(key)
+    if not all(checks.values()):
+        return checks
+    entry = key_entry(key).encode()
+    checks["restricted_key_exactly_once"] = AUTHORIZED_KEYS.read_bytes().splitlines().count(entry) == 1
+    checks["updated_script_present"] = checked_file(REMOTE_SCRIPT) and digest(REMOTE_SCRIPT.read_bytes()) == DAY_ROLE_REMOTE_NEW_SHA256
+    checks["new_script_reviewed"] = digest(SOURCE_SCRIPT.read_bytes()) == DAY_ROLE_REMOTE_NEW_SHA256
+    backup = day_role_script_backup_path()
+    checks["reviewed_old_script_backup"] = private_file(backup) and digest(backup.read_bytes()) == DAY_ROLE_REMOTE_OLD_SHA256
+    if not all(checks.values()):
+        return checks
+    old_data = backup.read_bytes()
+    atomic_write(REMOTE_SCRIPT, old_data, 0o644)
+    checks["old_script_restored"] = REMOTE_SCRIPT.read_bytes() == old_data
+    return checks
+
+
 def rollback(key):
     checks = preflight()
     checks["public_key_valid"] = bool(key)
@@ -331,10 +391,10 @@ def replace_restricted_key(old_key, new_key, phase):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("phase", choices=("inspect", "install", "verify", "rollback", "update-script", "restore-script", "rotate-key", "restore-key"))
+    parser.add_argument("phase", choices=("inspect", "install", "verify", "rollback", "update-script", "restore-script", "update-day-role-script", "restore-day-role-script", "rotate-key", "restore-key"))
     parser.add_argument("--public-key", type=Path)
     parser.add_argument("--old-public-key", type=Path)
-    parser.add_argument("--confirm", choices=("install", "rollback", "update-script", "restore-script", "rotate-key", "restore-key"))
+    parser.add_argument("--confirm", choices=("install", "rollback", "update-script", "restore-script", "update-day-role-script", "restore-day-role-script", "rotate-key", "restore-key"))
     parser.add_argument("--report", required=True, type=Path)
     args = parser.parse_args()
     checks = preflight()
@@ -347,7 +407,7 @@ def main():
             old_key = public_key(args.old_public_key) if args.old_public_key else ""
         except (OSError, ValueError, subprocess.TimeoutExpired):
             old_key = ""
-        if args.phase in ("install", "rollback", "update-script", "restore-script", "rotate-key", "restore-key") and args.confirm != args.phase:
+        if args.phase in ("install", "rollback", "update-script", "restore-script", "update-day-role-script", "restore-day-role-script", "rotate-key", "restore-key") and args.confirm != args.phase:
             checks["explicit_phase_confirmation"] = False
         elif args.phase == "install":
             checks = install(key)
@@ -357,6 +417,10 @@ def main():
             checks = update_script(key)
         elif args.phase == "restore-script":
             checks = restore_script(key)
+        elif args.phase == "update-day-role-script":
+            checks = update_day_role_script(key)
+        elif args.phase == "restore-day-role-script":
+            checks = restore_day_role_script(key)
         elif args.phase == "rotate-key":
             checks = replace_restricted_key(old_key, key, "rotation")
         elif args.phase == "restore-key":

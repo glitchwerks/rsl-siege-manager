@@ -50,6 +50,28 @@ class ReleaseTargetContract(unittest.TestCase):
         self.assertIn('stage-id "$STAGE_ID"', proof)
         self.assertNotIn("--stage-id '${{ inputs.stage_id }}'", proof)
 
+    def test_every_day_role_phase_keeps_target_credentials_and_approval_separate(self):
+        for phase in ("stage", "proof", "preflight", "activate", "recover"):
+            with self.subTest(phase=phase):
+                raw = (WORKFLOWS / f"vps-day-role-{phase}.yml").read_text()
+                self.assertIn("group: vps-production-promotion", raw)
+                self.assertIn(ENVIRONMENT, raw)
+                self.assertIn(TAILSCALE_TAG, raw)
+                self.assertIn("default: rehearsal", raw)
+                self.assertIn("github.ref == 'refs/heads/main'", raw)
+                self.assertIn("inputs.target == 'rehearsal' || inputs.target == 'production'", raw)
+                self.assertIn("STAGE_ID: ${{ inputs.stage_id }}", raw)
+                self.assertIn('stage-id "$STAGE_ID"', raw)
+                for name in HOST_SECRETS:
+                    self.assertIn(f"'REHEARSAL_{name}'", raw)
+                    self.assertNotIn(f"secrets.{name}", raw)
+                if phase in {"activate", "recover"}:
+                    self.assertIn("Require separately approved", raw)
+                    self.assertIn("test \"$WINDOW_ID\" = \"$APPROVED_WINDOW_ID\"", raw)
+                    self.assertIn("'REHEARSAL_VPS_DAY_ROLE_WINDOW_ID' || 'VPS_DAY_ROLE_WINDOW_ID'", raw)
+                if phase in {"preflight", "activate", "recover"}:
+                    self.assertIn("'REHEARSAL_VPS_PUBLIC_SIGNAL_CONFIG_PATH' || 'VPS_PUBLIC_SIGNAL_CONFIG_PATH'", raw)
+
     def test_every_phase_requires_explicit_protected_target(self):
         paths = {path.stem.removeprefix("vps-release-"): path
                  for path in WORKFLOWS.glob("vps-release-*.yml")}
