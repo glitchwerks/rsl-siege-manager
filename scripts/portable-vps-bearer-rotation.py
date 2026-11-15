@@ -537,7 +537,7 @@ def activate(project, directory, public_config=None, owner=0):
         if not result["checks"]["baseline_current"]:
             raise ValueError("activation baseline drift")
         require_pause(project, drain=True)
-        write_private(directory / "activation-incomplete.json",
+        write_result(directory / "activation-incomplete.json",
                       (json.dumps(result, sort_keys=True) + "\n").encode(), owner)
         try:
             if not stop_pair(baseline["project"], baseline["installed"]) or not stopped(
@@ -634,7 +634,7 @@ def recover_routine(project, directory, old_bearer_safe=False, public_config=Non
             result["attempt_id"] = str(uuid.uuid4())
             attempt_directory = attempts / result["attempt_id"]
             attempt_directory.mkdir(mode=0o700)
-        write_private(attempt_directory / "recovery-incomplete.json",
+        write_result(attempt_directory / "recovery-incomplete.json",
                       (json.dumps(result, sort_keys=True) + "\n").encode(), owner)
         try:
             result["checks"]["writers_isolated"] = (
@@ -808,7 +808,7 @@ def activate_fresh(project, directory, public_config=None, owner=0):
         result["checks"]["writers_isolated"] = isolated(baseline["project"])
         if not result["checks"]["baseline_current"] or not result["checks"]["writers_isolated"]:
             raise ValueError("fresh activation drift")
-        write_private(directory / "fresh-activation-incomplete.json",
+        write_result(directory / "fresh-activation-incomplete.json",
                       (json.dumps(result, sort_keys=True) + "\n").encode(), owner)
         try:
             replace_runtime(project, fresh, owner)

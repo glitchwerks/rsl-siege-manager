@@ -135,6 +135,10 @@ def test_result_publication_does_not_leave_partial_target(project):
             ROTATE.write_result(target, b'{"status":"PASS"}\n', os.geteuid())
     assert not target.exists()
     assert not list(evidence.glob(".result.json.*"))
+    ROTATE.write_result(target, b'{"status":"STOP"}\n', os.geteuid())
+    with pytest.raises(FileExistsError):
+        ROTATE.write_result(target, b'{"status":"PASS"}\n', os.geteuid())
+    assert target.read_bytes() == b'{"status":"STOP"}\n'
 
 
 def test_second_running_mom_refuses_single_bot_topology():
