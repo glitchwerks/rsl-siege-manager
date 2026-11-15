@@ -12,6 +12,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import re
 import secrets
 import subprocess
 import tempfile
@@ -82,7 +83,9 @@ def parse_env(raw, required):
             continue
         if name in result or not value or key != name.encode():
             raise ValueError("ambiguous or empty bearer assignment")
-        if any(byte in value for byte in (b"\x00", b"\r", b"\n")):
+        # Compose can strip quotes, interpolate $, or interpret inline comments.
+        # Only literal bearer-token bytes may be probed from this raw file.
+        if not re.fullmatch(rb"[A-Za-z0-9._~+/-]+={0,2}", value):
             raise ValueError("invalid bearer assignment")
         result[name] = value
     if set(result) != set(required):
@@ -219,7 +222,9 @@ def public_healthy(project, config_path, owner):
 
 def require_pause(project, *, drain=False):
     """Refuse bearer changes unless both application writers are paused."""
-    if MAINT.state(project) != "paused" or MAINT.history(project) is None:
+    history = MAINT.history(project)
+    if (MAINT.state(project) != "paused" or history is None
+            or history["pause_started_at"] is None):
         raise ValueError("maintenance pause missing")
     if drain and not MAINT.drain(project):
         raise ValueError("maintenance drain incomplete")

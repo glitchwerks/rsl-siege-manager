@@ -18,7 +18,7 @@ SPEC.loader.exec_module(ROTATE)
 @pytest.fixture(autouse=True)
 def paused_peer_contract():
     with patch.object(ROTATE.MAINT, "state", return_value="paused"), patch.object(
-        ROTATE.MAINT, "history", return_value={"schema": 1}
+        ROTATE.MAINT, "history", return_value={"schema": 1, "pause_started_at": "2026-11-15T00:00:00+00:00"}
     ), patch.object(ROTATE.MAINT, "drain", return_value=True):
         yield
 
@@ -101,6 +101,9 @@ def test_stage_refuses_drift_without_accepted_candidate(project):
     b"DISCORD_BOT_API_KEY=\nBOT_SERVICE_TOKEN=reverse-old\n",
     b"export DISCORD_BOT_API_KEY=one\nBOT_SERVICE_TOKEN=reverse-old\n",
     b"DISCORD_BOT_API_KEY=one\nexport DISCORD_BOT_API_KEY=two\nBOT_SERVICE_TOKEN=reverse-old\n",
+    b"DISCORD_BOT_API_KEY='quoted'\nBOT_SERVICE_TOKEN=reverse-old\n",
+    b"DISCORD_BOT_API_KEY=raw # comment\nBOT_SERVICE_TOKEN=reverse-old\n",
+    b"DISCORD_BOT_API_KEY=${TOKEN}\nBOT_SERVICE_TOKEN=reverse-old\n",
 ])
 def test_ambiguous_bearer_assignment_stops(invalid):
     with pytest.raises(ValueError):
@@ -208,6 +211,13 @@ def test_activate_requires_paused_and_drained_peers(project, state, drained):
             ROTATE.activate(root, directory, owner=os.geteuid())
     stop.assert_not_called()
     assert not (directory / "activation-incomplete.json").exists()
+
+
+def test_pause_without_durable_boundary_is_rejected(project):
+    root, _evidence, _before = project
+    with patch.object(ROTATE.MAINT, "history", return_value={"pause_started_at": None}):
+        with pytest.raises(ValueError, match="maintenance pause missing"):
+            ROTATE.require_pause(root, drain=True)
 
 
 def test_interrupted_activation_cannot_be_replayed(project):
