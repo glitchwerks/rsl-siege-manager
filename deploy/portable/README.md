@@ -140,10 +140,12 @@ must match Mom's inbound `MOM_BOT_SECRET_DISCORD_BOT_API_KEY`. Siege's inbound
 `MOM_BOT_SECRET_SIEGE_WEB_BOT_TOKEN`. Neither bearer accepts an overlap token,
 so rotate one pair at a time with a reviewed write/notification pause, protected
 copies of both files, final drift checks, a project lock, targeted service
-restarts and verification in both directions. Do not treat a single changed
+restarts and verification in both directions. Acquire the lock before the final
+drift check and hold it through activation and verification. Do not treat a single changed
 environment file or one healthy endpoint as a complete rotation. A failed
-paired activation keeps the path paused until both old files and both affected
-services are recovered and verified. Mom caches loaded secrets for its process
+paired routine activation keeps the path paused until both old files and both affected
+services are recovered and verified, but an exposed old bearer must never be
+restored; stage another fresh bearer on both sides instead. Mom caches loaded secrets for its process
 lifetime; an edit without a restart does not change its active bearer.
 
 Discord bot-token and OAuth-secret resets happen in the Developer Portal and
