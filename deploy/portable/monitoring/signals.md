@@ -27,17 +27,17 @@ Connect the selected operator Slack channel using the receiver's independently
 hosted [notification integration](https://healthchecks.io/docs/configuring_notifications/).
 Configure both down and recovery notifications, assign the integration to each
 check, and keep credentials out of repository/evidence. These are operator setup
-steps requiring separate approval, not actions performed by this code. No paid
-plan or provider account is selected here.
+steps requiring separate approval, not actions performed by this code. Healthchecks.io
+was selected on 2026-11-15; the five production checks remain paused.
 
 Create separate runtime and backup checks. The existing backup job sends success
 only after encrypted object and independent receipt readback; use its separate
 endpoint file and hourly/40-minute-grace policy. Runtime success must never reset
-backup age. External HTTPS health/identity and certificate-expiry monitoring
-remain separately configured requirements in `monitor-policy.json.example`.
+backup age. External HTTPS health/identity and certificate-expiry monitoring use
+the separate public producer in `monitor-policy.json.example`.
 A runtime heartbeat passing is not a certificate-expiry check.
 
-If Healthchecks.io is selected, configure five distinct UUID checks using its
+The five Healthchecks.io UUID checks use its
 [period/grace settings](https://healthchecks.io/docs/configuring_checks/) and
 [active failure endpoint](https://healthchecks.io/docs/http_api/). The public
 sender runs **outside** the VPS; the other four are host/job signals. Each

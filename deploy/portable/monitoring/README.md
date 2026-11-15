@@ -123,17 +123,19 @@ an unscheduled local producer; independent receiver delivery and measured
 production thresholds remain separate #579 gates.
 
 `monitor-policy.json.example` is an inert, provider-neutral requirements template,
-not an executable monitor configuration. The chosen external monitoring service
-must implement HTTPS health/identity checks, certificate-expiry alerts, failure
-thresholds and outage/recovery delivery to an independently available operator
-channel. The observer validates TLS today but does not measure expiry. Configure
-backup success/failure and overdue signals using the separate backup job runbook.
-An unchosen channel or same-host observer alone is not sufficient monitoring.
+not an executable monitor configuration. It maps the five distinct reviewed
+Healthchecks receiver checks to their producer, location, period and grace.
+The public producer checks HTTPS health, release identity and certificate expiry;
+the database producer authenticates to both application databases. The existing
+managed backup job has its own check and must not share a runtime heartbeat.
+Thresholds requiring live host measurements remain unset. The disposable
+failure/recovery/missed-signal delivery test reached Slack and email on
+2026-11-15; production checks remain paused until separately approved.
 
 The separately gated [runtime signal exporter](signals.md) runs a fresh
 observation and sends an empty success/failure signal to an independent
 missed-signal receiver. The observer itself does **not** send notifications.
-Receiver/Slack setup, scheduling and delivered-alert evidence remain unactivated.
+Scheduling and production sender activation remain separate gates.
 An observer that stops with the VM cannot notify about its own disappearance.
 Scheduler progress is available in the mom-bot 1.6.0 candidate; the bundled bot
 needs separate progress acceptance. The [service-specific watchdog](../../../docs/operations/vps-service-watchdog.md)

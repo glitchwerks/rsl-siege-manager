@@ -1,20 +1,48 @@
 {
   "activation": "separately-approved",
-  "public_origin": "https://siege-pilot.example.com",
-  "independent_probes": {
-    "database_health": {"method": "GET", "path": "/api/health", "expected_status": 200, "expected_json": {"status": "healthy"}, "interval_seconds": 300, "timeout_seconds": 5, "failure_threshold": 2},
-    "release_identity": {"method": "GET", "path": "/api/version", "expected_status": 200, "compare": "exact-reviewed-component-versions", "interval_seconds": 300, "timeout_seconds": 5},
-    "certificate_expiry": {"minimum_remaining_days": 14},
-    "backup_completion": {"outside_vm": true, "interval_seconds": 3600, "grace_seconds": 2400, "success_requires": "encrypted-object-and-independent-receipt-readback", "failure_signal": "empty-post-to-fail"},
-    "local_observation_delivery": {"outside_vm": true, "required_before_activation": true, "missed_signal_alert": true, "sender": "scripts/portable-monitor.py", "interval_seconds": 900, "grace_seconds": 600, "activation": "separately-approved"}
+  "receiver": "independent-missed-signal-service",
+  "notifications": {
+    "primary": "infrastructure-slack",
+    "fallback": "email",
+    "failure": "first-completed-failed-observation",
+    "recovery": "next-completed-passing-observation",
+    "incomplete_or_absent_observation": "missed-signal-deadline"
   },
-  "local_signals": {
-    "bot_gateway": "both-topologies-require-connection-mom-also-requires-scheduler-progress",
-    "scheduler_progress": "mom-bot-1.6.0-private-progress-probe-required-bundled-not-covered",
-    "restart_or_oom": "fail-observation",
-    "memory": "less-than-85-percent-of-service-limit",
-    "disk": "reviewed-database-filesystem-reserve",
-    "watchdog": "inert-runner-separate-restart-approval-and-independent-escalation-required"
+  "signals": {
+    "public_web_api_tls": {
+      "sender": "scripts/portable-vps-public-monitor.py",
+      "location": "outside-production-vps",
+      "period_seconds": 300,
+      "grace_seconds": 600,
+      "certificate_minimum_remaining_days": 14
+    },
+    "runtime_gateway_scheduler": {
+      "sender": "scripts/portable-monitor.py",
+      "location": "production-vps",
+      "period_seconds": 900,
+      "grace_seconds": 600
+    },
+    "database_readiness_pressure": {
+      "sender": "scripts/portable-vps-database-monitor.py",
+      "location": "production-vps",
+      "period_seconds": 300,
+      "grace_seconds": 900,
+      "thresholds": "review-after-live-measurements"
+    },
+    "host_pressure": {
+      "sender": "scripts/portable-vps-host-monitor.py",
+      "location": "production-vps",
+      "period_seconds": 300,
+      "grace_seconds": 900,
+      "thresholds": "review-after-live-measurements"
+    },
+    "managed_encrypted_backup": {
+      "sender": "existing-managed-backup-job",
+      "location": "production-vps",
+      "period_seconds": 3600,
+      "grace_seconds": 2400,
+      "success_requires": "encrypted-object-and-independent-receipt-readback"
+    }
   },
-  "notifications": {"operator_channel": "REPLACE-approved-independent-channel", "outage_and_recovery_delivery_test": "separate-approval-required"}
+  "watchdog": "separately-reviewed-bounded-service-recovery"
 }
