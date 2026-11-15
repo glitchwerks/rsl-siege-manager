@@ -38,9 +38,11 @@ class PolicyTests(unittest.TestCase):
         self.assertEqual(watchdog.decide(unhealthy(restarts=1), state, 1090 + watchdog.COOLDOWN_SECONDS + 1), "ESCALATE")
 
     def test_no_restart_for_missing_healthy_stopped_oom_or_changed_container(self):
-        for current in (None, unhealthy(health="healthy"), unhealthy(running=False), unhealthy(oom=True)):
+        for current in (None, unhealthy(running=False), unhealthy(oom=True)):
             state = initial()
-            self.assertEqual(watchdog.decide(current, state, 1000), "NO_RECOVERY")
+            self.assertEqual(watchdog.decide(current, state, 1000), "ESCALATE")
+        state = initial()
+        self.assertEqual(watchdog.decide(unhealthy(health="healthy"), state, 1000), "NO_RECOVERY")
         state = initial()
         watchdog.decide(unhealthy(), state, 1000)
         self.assertEqual(watchdog.decide(unhealthy(cid="c" * 64), state, 2000), "OBSERVING")
@@ -74,10 +76,10 @@ class RunnerTests(unittest.TestCase):
 
     def test_stable_unhealthy_service_only_restarts_once(self):
         result, report, count, docker = self.run_main(1000, unhealthy())
-        self.assertEqual((result, report["decision"], count), (0, "OBSERVING", 1))
+        self.assertEqual((result, report["decision"], count), (1, "OBSERVING", 1))
         docker.assert_not_called()
         result, report, count, docker = self.run_main(1090, unhealthy())
-        self.assertEqual((result, report["decision"], count), (0, "RESTARTED", 2))
+        self.assertEqual((result, report["decision"], count), (1, "RESTARTED", 2))
         docker.assert_called_once_with("container", "restart", "--time", "10", CID)
         self.assertEqual(json.loads(self.state.read_text())["attempts"], [1090])
         result, report, _, docker = self.run_main(1200, unhealthy(restarts=1))

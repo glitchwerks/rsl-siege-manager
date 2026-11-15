@@ -24,8 +24,9 @@ least 90 seconds apart with the same full container ID and restart count. The
 runner rechecks immediately before the targeted `docker container restart`.
 It consumes the allowance before invoking Docker so a failed or interrupted
 restart cannot cause a rapid retry. A service gets at most one attempt per six
-hours and two attempts in 24 hours. Suppressed attempts return `ESCALATE`, not
-success. The separate independent alert must reach an operator; this runner
+hours and two attempts in 24 hours. Missing, stopped and OOM-killed containers,
+suppressed attempts and restarted containers return `STOP` until a later healthy
+observation. The separate independent alert must reach an operator; this runner
 does not suppress or clear the alert.
 
 Once the deployment operator has approved the exact config, Docker privilege,

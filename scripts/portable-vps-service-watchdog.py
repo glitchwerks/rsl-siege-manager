@@ -141,9 +141,12 @@ def atomic(path, value):
 def decide(current, state, now):
     attempts = [x for x in state["attempts"] if now - WINDOW_SECONDS <= x <= now]
     state["attempts"] = attempts
-    if current is None or not current["running"] or current["health"] != "unhealthy" or current["oom"]:
+    if current is None or not current["running"] or current["oom"]:
         state.update(first_unhealthy=None, container_id=None, restart_count=None)
-        return "NO_RECOVERY"
+        return "ESCALATE"
+    if current["health"] != "unhealthy":
+        state.update(first_unhealthy=None, container_id=None, restart_count=None)
+        return "NO_RECOVERY" if current["health"] == "healthy" else "ESCALATE"
     if type(current["restarts"]) is not int or current["restarts"] < 0:
         raise ValueError("invalid_restart_count")
     if state["container_id"] != current["id"] or state["restart_count"] != current["restarts"]:
@@ -203,7 +206,8 @@ def main(argv=None):
                     report["decision"] = "RESTARTED"
             else:
                 atomic(args.state, state)
-            report["status"] = "PASS" if report["decision"] in {"NO_RECOVERY", "OBSERVING", "RESTARTED"} else "STOP"
+            # A restart attempt is not recovery; only a subsequent healthy check can pass.
+            report["status"] = "PASS" if report["decision"] == "NO_RECOVERY" else "STOP"
     except (Exception, KeyboardInterrupt):
         pass  # Fail closed; do not print Docker output, image names or private paths.
     if not reserved:
