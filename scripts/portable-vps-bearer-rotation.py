@@ -129,8 +129,9 @@ def pairs_match(files):
 
 def reviewed_checkout():
     root = PREFLIGHT.PREFLIGHT.ROOT
-    head = PAUSE.command(["git", "-C", str(root), "rev-parse", "HEAD"])
-    changed = PAUSE.command(["git", "-C", str(root), "status", "--porcelain"])
+    reviewed_git = ["git", "-c", f"safe.directory={root}", "-C", str(root)]
+    head = PAUSE.command([*reviewed_git, "rev-parse", "HEAD"])
+    changed = PAUSE.command([*reviewed_git, "status", "--porcelain"])
     if (head is None or not PREFLIGHT.REMOTE.SOURCE_SHA.fullmatch(head)
             or changed != ""):
         raise ValueError("unreviewed checkout")
@@ -250,6 +251,30 @@ def write_private(path, raw, owner):
         os.fsync(output.fileno())
 
 
+def write_result(path, raw, owner):
+    """Publish complete private JSON without exposing a partial result path."""
+    if not private(path.parent, owner, directory=True):
+        raise ValueError("unsafe evidence directory")
+    descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        with os.fdopen(descriptor, "wb") as output:
+            os.fchmod(output.fileno(), 0o600)
+            output.write(raw)
+            output.flush()
+            os.fsync(output.fileno())
+        os.link(temporary, path, follow_symlinks=False)
+        os.unlink(temporary)
+        temporary = None
+        directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+    finally:
+        if temporary is not None and os.path.exists(temporary):
+            os.unlink(temporary)
+
+
 def report(path, phase, checks, owner):
     result = {"phase": phase, "status": "PASS" if all(checks.values()) else "STOP",
               "checks": checks, "timestamp": now()}
@@ -316,7 +341,7 @@ def stage(project, pair, evidence, owner=0):
         final = {"phase": "bearer-stage", "status": "PASS", "checks": checks,
                  "timestamp": now(), "run_id": run_id, "pair": pair}
         # The initial report remains as an interruption marker; final evidence is separate.
-        write_private(directory / "accepted.json", (json.dumps(final, sort_keys=True) + "\n").encode(), owner)
+        write_result(directory / "accepted.json", (json.dumps(final, sort_keys=True) + "\n").encode(), owner)
         return final
     except Exception:
         write_private(directory / "stopped.json", (json.dumps({"phase": "bearer-stage", "status": "STOP",
@@ -537,17 +562,27 @@ def activate(project, directory, public_config=None, owner=0):
             # Recovery has its own confirmation and phase. Leave both peers stopped.
             result["checks"]["path_isolated_after_failure"] = (
                 stop_pair(baseline["project"]) and isolated(baseline["project"]))
-        write_private(directory / "activation-result.json",
+        write_result(directory / "activation-result.json",
                       (json.dumps(result, sort_keys=True) + "\n").encode(), owner)
     return result
+
+
+def fresh_path_selected(directory):
+    """Treat even an interrupted fresh stage as an irreversible path choice."""
+    names = [directory / f"fresh-{kind}-{name}"
+             for kind in ("source", "candidate") for name in FILES]
+    names.extend(directory / name for name in (
+        "fresh-accepted.json", "fresh-activation-incomplete.json",
+        "fresh-activation-result.json"))
+    return any(path.exists() or path.is_symlink() for path in names) or any(
+        directory.glob("fresh-interrupted-*"))
 
 
 def recover_routine(project, directory, old_bearer_safe=False, public_config=None, owner=0):
     """Separately confirmed paired rollback when the previous bearer remains safe."""
     if not old_bearer_safe:
         raise ValueError("old bearer safety not confirmed")
-    if ((directory / "fresh-accepted.json").exists()
-            or (directory / "fresh-activation-incomplete.json").exists()):
+    if fresh_path_selected(directory):
         raise ValueError("fresh recovery path already selected")
     pair, rollback, candidate, baseline = staged(project, directory, owner)
     marker = json.loads(GATE.read_private(directory / "activation-incomplete.json", owner),
@@ -560,8 +595,6 @@ def recover_routine(project, directory, old_bearer_safe=False, public_config=Non
                              object_pairs_hook=PREFLIGHT.REMOTE.no_duplicate_keys)
         if not isinstance(outcome, dict) or outcome.get("status") != "STOP":
             raise ValueError("successful activation cannot be rolled back here")
-    if (directory / "recovery-incomplete.json").exists():
-        raise ValueError("recovery already attempted")
     result = {"phase": "bearer-recover", "status": "STOP", "run_id": directory.name,
               "pair": pair, "checks": {"expected_project": False, "known_files": False,
                                       "writers_isolated": False, "rollback_installed": False,
@@ -569,6 +602,18 @@ def recover_routine(project, directory, old_bearer_safe=False, public_config=Non
                                       "public_health": False,
                                       "path_isolated_after_failure": False}}
     with PAUSE.project_lock(project):
+        if fresh_path_selected(directory):
+            raise ValueError("fresh recovery path already selected")
+        prior_results = [directory / "recovery-result.json"]
+        prior_results.extend((directory / "routine-attempts").glob("*/recovery-result.json"))
+        for path in prior_results:
+            if path.exists():
+                prior = json.loads(GATE.read_private(path, owner),
+                                   object_pairs_hook=PREFLIGHT.REMOTE.no_duplicate_keys)
+                if not isinstance(prior, dict) or prior.get("status") not in {"PASS", "STOP"}:
+                    raise ValueError("invalid recovery evidence")
+                if prior["status"] == "PASS":
+                    raise ValueError("recovery already succeeded")
         require_pause(project)
         result["checks"]["expected_project"] = (
             configuration_current(project, baseline) and stack_current(project, directory, owner)
@@ -580,7 +625,16 @@ def recover_routine(project, directory, old_bearer_safe=False, public_config=Non
             current[name] in (rollback[name], candidate[name]) for name in FILES)
         if not result["checks"]["known_files"]:
             raise ValueError("runtime drift")
-        write_private(directory / "recovery-incomplete.json",
+        attempt_directory = directory
+        if (directory / "recovery-incomplete.json").exists():
+            attempts = directory / "routine-attempts"
+            attempts.mkdir(mode=0o700, exist_ok=True)
+            if not private(attempts, owner, directory=True):
+                raise ValueError("unsafe recovery attempts directory")
+            result["attempt_id"] = str(uuid.uuid4())
+            attempt_directory = attempts / result["attempt_id"]
+            attempt_directory.mkdir(mode=0o700)
+        write_private(attempt_directory / "recovery-incomplete.json",
                       (json.dumps(result, sort_keys=True) + "\n").encode(), owner)
         try:
             result["checks"]["writers_isolated"] = (
@@ -604,7 +658,7 @@ def recover_routine(project, directory, old_bearer_safe=False, public_config=Non
         except Exception:
             result["checks"]["path_isolated_after_failure"] = (
                 stop_pair(baseline["project"]) and isolated(baseline["project"]))
-        write_private(directory / "recovery-result.json",
+        write_result(attempt_directory / "recovery-result.json",
                       (json.dumps(result, sort_keys=True) + "\n").encode(), owner)
     return result
 
@@ -622,16 +676,41 @@ def failed_activation(directory, owner):
             raise ValueError("activation did not fail")
 
 
+def prior_fresh_candidates(directory, owner, *, include_current=False):
+    """Read protected earlier fresh candidates for a safely isolated retry."""
+    result = {name: set() for name in FILES}
+    for name in FILES:
+        paths = list(directory.glob(f"fresh-interrupted-*/fresh-candidate-{name}"))
+        if include_current:
+            paths.append(directory / f"fresh-candidate-{name}")
+        for path in paths:
+            if path.exists():
+                result[name].add(GATE.read_private(path, owner, MAX_FILE))
+    return result
+
+
 def stage_fresh(project, directory, owner=0):
     """Stage a different bearer after exposure, while both peers stay stopped."""
     pair, rollback, candidate, baseline = staged(project, directory, owner)
     failed_activation(directory, owner)
-    if (directory / "fresh-accepted.json").exists() or (directory / "recovery-incomplete.json").exists():
+    if (directory / "recovery-incomplete.json").exists():
         raise ValueError("recovery path already selected")
     result = {"phase": "bearer-stage-fresh", "status": "STOP", "run_id": directory.name,
               "pair": pair, "checks": {"expected_project": False, "known_files": False,
                                       "writers_isolated": False, "fresh_pair_distinct": False}}
     with PAUSE.project_lock(project):
+        if (directory / "recovery-incomplete.json").exists():
+            raise ValueError("routine recovery path already selected")
+        accepted = directory / "fresh-accepted.json"
+        attempted = directory / "fresh-activation-incomplete.json"
+        if accepted.exists() and not attempted.exists():
+            raise ValueError("fresh stage already accepted")
+        outcome_path = directory / "fresh-activation-result.json"
+        if outcome_path.exists():
+            outcome = json.loads(GATE.read_private(outcome_path, owner),
+                                 object_pairs_hook=PREFLIGHT.REMOTE.no_duplicate_keys)
+            if not isinstance(outcome, dict) or outcome.get("status") != "STOP":
+                raise ValueError("fresh activation already succeeded")
         require_pause(project)
         result["checks"]["expected_project"] = (
             configuration_current(project, baseline) and stack_current(project, directory, owner)
@@ -639,11 +718,26 @@ def stage_fresh(project, directory, owner=0):
         if not result["checks"]["expected_project"]:
             raise ValueError("project drift")
         source = read_runtime(project, owner)
+        previous = prior_fresh_candidates(directory, owner, include_current=True)
         result["checks"]["known_files"] = all(
-            source[name] in (rollback[name], candidate[name]) for name in FILES)
+            source[name] in {rollback[name], candidate[name], *previous[name]}
+            for name in FILES)
         result["checks"]["writers_isolated"] = isolated(baseline["project"])
         if not result["checks"]["known_files"] or not result["checks"]["writers_isolated"]:
             raise ValueError("exposed path not isolated")
+        incomplete = [directory / name for name in (
+            *(f"fresh-{kind}-{file}" for kind in ("source", "candidate") for file in FILES),
+            "fresh-accepted.json", "fresh-activation-incomplete.json",
+            "fresh-activation-result.json") if (directory / name).exists()]
+        if incomplete:
+            archive = directory / f"fresh-interrupted-{uuid.uuid4()}"
+            archive.mkdir(mode=0o700)
+            if not private(archive, owner, directory=True):
+                raise ValueError("unsafe interrupted stage archive")
+            for path in incomplete:
+                if not private(path, owner):
+                    raise ValueError("unsafe interrupted stage file")
+                os.replace(path, archive / path.name)
         fresh_value = secrets.token_urlsafe(48).encode("ascii")
         keys = PAIRS[pair]
         fresh = {"backend.env": replace_assignment(source["backend.env"], keys[0], fresh_value),
@@ -651,16 +745,21 @@ def stage_fresh(project, directory, owner=0):
         other = next(name for name in PAIRS if name != pair)
         source_pairs = pair_values(source)
         fresh_pairs = pair_values(fresh)
+        old_values = {pair_values(rollback)[pair][0], pair_values(candidate)[pair][0]}
+        for name in FILES:
+            key = PAIRS[pair][FILES.index(name)]
+            old_values.update(parse_env(raw, {key})[key] for raw in previous[name])
         result["checks"]["fresh_pair_distinct"] = (
-            pairs_match(fresh) and fresh_pairs[other] == source_pairs[other]
-            and fresh_value not in (pair_values(rollback)[pair][0], pair_values(candidate)[pair][0]))
+            pairs_match(fresh) and hmac.compare_digest(*source_pairs[other])
+            and fresh_pairs[other] == source_pairs[other]
+            and fresh_value not in old_values)
         if not result["checks"]["fresh_pair_distinct"] or read_runtime(project, owner) != source:
             raise ValueError("fresh stage drift")
         for name in FILES:
             write_private(directory / f"fresh-source-{name}", source[name], owner)
             write_private(directory / f"fresh-candidate-{name}", fresh[name], owner)
         result["status"] = "PASS"
-        write_private(directory / "fresh-accepted.json",
+        write_result(directory / "fresh-accepted.json",
                       (json.dumps(result, sort_keys=True) + "\n").encode(), owner)
     return result
 
@@ -681,7 +780,9 @@ def activate_fresh(project, directory, public_config=None, owner=0):
               for name in FILES}
     fresh = {name: GATE.read_private(directory / f"fresh-candidate-{name}", owner, MAX_FILE)
              for name in FILES}
-    if not all(source[name] in (rollback[name], candidate[name]) for name in FILES):
+    previous = prior_fresh_candidates(directory, owner)
+    if not all(source[name] in {rollback[name], candidate[name], *previous[name]}
+               for name in FILES):
         raise ValueError("unknown fresh source")
     fresh_pairs = pair_values(fresh)
     other = next(name for name in PAIRS if name != pair)
@@ -728,8 +829,12 @@ def activate_fresh(project, directory, public_config=None, owner=0):
                 container, url = installed["installed"]["backend"]["id"], "http://mom:8001/api/members"
             else:
                 container, url = installed["installed"]["mom"]["id"], "http://backend:8000/api/members/me/preferences"
-            result["checks"]["both_prior_bearers_rejected"] = probe(
-                container, url, pair_values(candidate)[pair][0]) == 401
+            prior_values = {pair_values(candidate)[pair][0]}
+            for name in FILES:
+                key = PAIRS[pair][FILES.index(name)]
+                prior_values.update(parse_env(raw, {key})[key] for raw in previous[name])
+            result["checks"]["both_prior_bearers_rejected"] = all(
+                probe(container, url, value) == 401 for value in prior_values)
             if not result["checks"]["both_prior_bearers_rejected"]:
                 raise ValueError("prior candidate still accepted")
             result["checks"]["public_health"] = public_healthy(project, public_config, owner)
@@ -739,7 +844,7 @@ def activate_fresh(project, directory, public_config=None, owner=0):
         except Exception:
             result["checks"]["path_isolated_after_failure"] = (
                 stop_pair(baseline["project"]) and isolated(baseline["project"]))
-        write_private(directory / "fresh-activation-result.json",
+        write_result(directory / "fresh-activation-result.json",
                       (json.dumps(result, sort_keys=True) + "\n").encode(), owner)
     return result
 
@@ -818,7 +923,7 @@ def main(argv=None):
     except (OSError, ValueError, TypeError, KeyError, UnicodeError):
         print("STOP")
         return 1
-    print(result["status"], result.get("run_id", ""))
+    print(result["status"], result.get("run_id", ""), result.get("attempt_id", ""))
     return 0 if result["status"] == "PASS" else 1
 
 

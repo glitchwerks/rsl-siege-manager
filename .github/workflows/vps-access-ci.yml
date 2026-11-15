@@ -126,6 +126,11 @@ jobs:
         run: python3 -m unittest discover -s scripts/tests -p test_portable_vps_database_monitor.py -v
       - name: Test portable maintenance control phases
         run: python3 -m unittest discover -s scripts/tests -p test_portable_vps_maintenance_control.py -v
+      - name: Test paired bearer rotation guards
+        run: |
+          python3 -m venv "$RUNNER_TEMP/rotation-tests"
+          "$RUNNER_TEMP/rotation-tests/bin/python" -m pip install --disable-pip-version-check pytest==9.1.1
+          "$RUNNER_TEMP/rotation-tests/bin/python" -m pytest -q scripts/tests/test_portable_vps_bearer_rotation.py
   docker-rehearsal:
     runs-on: ubuntu-latest
     timeout-minutes: 15

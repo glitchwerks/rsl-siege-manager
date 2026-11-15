@@ -118,6 +118,25 @@ def test_dirty_source_checkout_is_rejected():
             ROTATE.reviewed_checkout()
 
 
+def test_checkout_trust_is_scoped_to_exact_reviewed_repository():
+    with patch.object(ROTATE.PAUSE, "command", side_effect=["a" * 40, ""]) as command:
+        assert ROTATE.reviewed_checkout() == "a" * 40
+    for call in command.call_args_list:
+        args = call.args[0]
+        assert args[:5] == ["git", "-c", f"safe.directory={ROTATE.PREFLIGHT.PREFLIGHT.ROOT}",
+                            "-C", str(ROTATE.PREFLIGHT.PREFLIGHT.ROOT)]
+
+
+def test_result_publication_does_not_leave_partial_target(project):
+    _root, evidence, _before = project
+    target = evidence / "result.json"
+    with patch.object(ROTATE.os, "link", side_effect=OSError("synthetic interruption")):
+        with pytest.raises(OSError):
+            ROTATE.write_result(target, b'{"status":"PASS"}\n', os.geteuid())
+    assert not target.exists()
+    assert not list(evidence.glob(".result.json.*"))
+
+
 def test_second_running_mom_refuses_single_bot_topology():
     with (patch.object(ROTATE.PAUSE, "command", return_value="a" * 64 + "\n" + "b" * 64),
           patch.object(ROTATE.PAUSE, "identifiers", return_value="a" * 64)):
@@ -305,11 +324,49 @@ def test_routine_recovery_restores_both_files_after_failed_activation(project):
     assert current == rollback
 
 
+def test_stopped_routine_recovery_can_retry_with_separate_evidence(project):
+    root, directory, rollback, candidate, baseline = _activation_fixture(project)
+    ROTATE.write_private(directory / "activation-incomplete.json",
+                         b'{"phase":"bearer-activate","status":"STOP"}\n', os.geteuid())
+    ROTATE.write_private(directory / "recovery-incomplete.json", b'{"status":"STOP"}\n', os.geteuid())
+    ROTATE.write_private(directory / "recovery-result.json", b'{"status":"STOP"}\n', os.geteuid())
+    current = dict(candidate)
+    with (patch.object(ROTATE, "staged", return_value=("sidecar", rollback, candidate, baseline)),
+          patch.object(ROTATE.PAUSE, "project_lock", side_effect=_lock),
+          patch.object(ROTATE, "configuration_current", return_value=True),
+          patch.object(ROTATE.PAUSE, "no_extra_writers", return_value=True),
+          patch.object(ROTATE, "read_runtime", side_effect=lambda *_args: dict(current)),
+          patch.object(ROTATE, "stop_pair", return_value=True),
+          patch.object(ROTATE, "isolated", return_value=True),
+          patch.object(ROTATE, "replace_runtime", side_effect=lambda _p, files, _o: current.update(files)),
+          patch.object(ROTATE, "compose_up", return_value=True),
+          patch.object(ROTATE, "verified", return_value=True),
+          patch.object(ROTATE, "public_healthy", return_value=True)):
+        result = ROTATE.recover_routine(root, directory, old_bearer_safe=True,
+                                        owner=os.geteuid())
+    assert result["status"] == "PASS"
+    retry = directory / "routine-attempts" / result["attempt_id"]
+    assert (retry / "recovery-incomplete.json").exists()
+    assert (retry / "recovery-result.json").exists()
+    assert (directory / "recovery-result.json").read_bytes() == b'{"status":"STOP"}\n'
+
+
 def test_exposed_old_bearer_cannot_enter_routine_recovery(project):
     root, directory, _rollback, _candidate, _baseline = _activation_fixture(project)
     with patch.object(ROTATE, "staged") as staged:
         with pytest.raises(ValueError, match="safety not confirmed"):
             ROTATE.recover_routine(root, directory, old_bearer_safe=False,
+                                   owner=os.geteuid())
+    staged.assert_not_called()
+
+
+def test_partial_fresh_stage_prevents_routine_recovery(project):
+    root, directory, rollback, candidate, baseline = _activation_fixture(project)
+    ROTATE.write_private(directory / "fresh-source-backend.env", candidate["backend.env"],
+                         os.geteuid())
+    with patch.object(ROTATE, "staged") as staged:
+        with pytest.raises(ValueError, match="fresh recovery path already selected"):
+            ROTATE.recover_routine(root, directory, old_bearer_safe=True,
                                    owner=os.geteuid())
     staged.assert_not_called()
 
@@ -421,3 +478,54 @@ def test_fresh_stage_refuses_running_writer(project):
         with pytest.raises(ValueError, match="not isolated"):
             ROTATE.stage_fresh(root, directory, owner=os.geteuid())
     assert not (directory / "fresh-accepted.json").exists()
+
+
+def test_interrupted_fresh_stage_preserves_partial_files_and_retries(project):
+    root, directory, rollback, candidate, baseline = _activation_fixture(project)
+    ROTATE.write_private(directory / "activation-incomplete.json",
+                         b'{"phase":"bearer-activate","status":"STOP"}\n', os.geteuid())
+    partial = directory / "fresh-source-backend.env"
+    ROTATE.write_private(partial, candidate["backend.env"], os.geteuid())
+    with (patch.object(ROTATE, "staged", return_value=("sidecar", rollback, candidate, baseline)),
+          patch.object(ROTATE.PAUSE, "project_lock", side_effect=_lock),
+          patch.object(ROTATE, "configuration_current", return_value=True),
+          patch.object(ROTATE.PAUSE, "no_extra_writers", return_value=True),
+          patch.object(ROTATE, "isolated", return_value=True),
+          patch.object(ROTATE, "read_runtime", return_value=candidate)):
+        result = ROTATE.stage_fresh(root, directory, owner=os.geteuid())
+    assert result["status"] == "PASS"
+    archived = list(directory.glob("fresh-interrupted-*/fresh-source-backend.env"))
+    assert len(archived) == 1 and archived[0].read_bytes() == candidate["backend.env"]
+    assert (directory / "fresh-accepted.json").exists()
+
+
+def test_failed_fresh_activation_can_stage_new_token_and_preserve_evidence(project):
+    root, directory, rollback, candidate, baseline = _activation_fixture(project)
+    ROTATE.write_private(directory / "activation-incomplete.json",
+                         b'{"phase":"bearer-activate","status":"STOP"}\n', os.geteuid())
+    current = dict(candidate)
+    with (patch.object(ROTATE, "staged", return_value=("sidecar", rollback, candidate, baseline)),
+          patch.object(ROTATE.PAUSE, "project_lock", side_effect=_lock),
+          patch.object(ROTATE, "configuration_current", return_value=True),
+          patch.object(ROTATE.PAUSE, "no_extra_writers", return_value=True),
+          patch.object(ROTATE, "isolated", return_value=True),
+          patch.object(ROTATE, "read_runtime", side_effect=lambda *_args: dict(current)),
+          patch.object(ROTATE.secrets, "token_urlsafe", side_effect=["fresh-one", "fresh-two"])):
+        ROTATE.stage_fresh(root, directory, owner=os.geteuid())
+        first = {name: (directory / f"fresh-candidate-{name}").read_bytes()
+                 for name in ROTATE.FILES}
+        current.update(first)
+        ROTATE.write_private(directory / "fresh-activation-incomplete.json",
+                             b'{"status":"STOP"}\n', os.geteuid())
+        ROTATE.write_result(directory / "fresh-activation-result.json",
+                            b'{"status":"STOP"}\n', os.geteuid())
+        second = ROTATE.stage_fresh(root, directory, owner=os.geteuid())
+    assert second["status"] == "PASS"
+    assert ROTATE.pair_values(current)["sidecar"][0] == b"fresh-one"
+    latest = {name: (directory / f"fresh-candidate-{name}").read_bytes()
+              for name in ROTATE.FILES}
+    assert ROTATE.pair_values(latest)["sidecar"][0] == b"fresh-two"
+    archives = list(directory.glob("fresh-interrupted-*"))
+    assert len(archives) == 1
+    assert (archives[0] / "fresh-activation-result.json").read_bytes() == b'{"status":"STOP"}\n'
+    assert (archives[0] / "fresh-candidate-backend.env").read_bytes() == first["backend.env"]
