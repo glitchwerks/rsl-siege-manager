@@ -192,7 +192,7 @@ def replace_state(project: Path, value: str) -> bool:
             os.unlink(temporary)
 
 
-def service_status(project: Path, service: str) -> dict | None:
+def service_status(project: Path, service: str, *, timeout: float = 10) -> dict | None:
     """Query the exact Compose peer using its own secret, without printing it."""
     if service not in {"backend", "mom"}:
         return None
@@ -213,7 +213,7 @@ def service_status(project: Path, service: str) -> dict | None:
             env=PAUSE.ENVIRONMENT,
             stdin=subprocess.DEVNULL,
             capture_output=True,
-            timeout=10,
+            timeout=timeout,
             check=False,
         )
         if result.returncode or len(result.stdout) > 128:
@@ -231,20 +231,29 @@ def service_status(project: Path, service: str) -> dict | None:
         return None
 
 
-def drain(project: Path, *, attempts: int = 20, interval: float = 1) -> bool:
+def drain(project: Path, *, attempts: int = 20, interval: float = 1,
+          deadline_seconds: float = 20) -> bool:
     """Require repeated zero in-flight observations from both paused peers."""
     consecutive = 0
+    deadline = time.monotonic() + deadline_seconds
     for _ in range(attempts):
-        if state(project) != "paused":
+        remaining = deadline - time.monotonic()
+        if state(project) != "paused" or remaining <= 0:
             return False
-        backend = service_status(project, "backend")
-        mom = service_status(project, "mom")
+        backend = service_status(project, "backend", timeout=min(10, remaining))
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return False
+        mom = service_status(project, "mom", timeout=min(10, remaining))
         consecutive = (
             consecutive + 1 if backend == mom == {"paused": True, "inflight": 0} else 0
         )
         if consecutive >= 3 and state(project) == "paused":
             return True
-        time.sleep(interval)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return False
+        time.sleep(min(interval, remaining))
     return False
 
 
@@ -367,11 +376,9 @@ def run(args: argparse.Namespace) -> dict:
             checks["explicit_confirmation"] = args.confirm == "pause"
             checks["currently_active"] = state(args.project_directory) == "active"
             if all(checks.values()):
-                checks["paused"] = replace_state(args.project_directory, "paused")
                 prior = history(args.project_directory)
                 checks["pause_boundary_recorded"] = (
-                    checks["paused"]
-                    and prior is not None
+                    prior is not None
                     and replace_history(
                         args.project_directory,
                         {
@@ -382,7 +389,10 @@ def run(args: argparse.Namespace) -> dict:
                         },
                     )
                 )
-                checks["drained"] = checks["pause_boundary_recorded"] and drain(
+                checks["paused"] = checks["pause_boundary_recorded"] and replace_state(
+                    args.project_directory, "paused"
+                )
+                checks["drained"] = checks["paused"] and drain(
                     args.project_directory
                 )
             report["status"] = "PASS" if all(checks.values()) else "STOP"
@@ -415,9 +425,22 @@ def run(args: argparse.Namespace) -> dict:
                         },
                     )
                 )
-                checks["resumed"] = checks[
-                    "resume_boundary_recorded"
-                ] and replace_state(args.project_directory, "active")
+                if checks["resume_boundary_recorded"]:
+                    try:
+                        checks["resumed"] = replace_state(args.project_directory, "active")
+                    except BaseException:
+                        checks["resumed"] = False
+                    if not checks["resumed"] or state(args.project_directory) != "active":
+                        checks["resumed"] = False
+                        try:
+                            if state(args.project_directory) == "active":
+                                replace_state(args.project_directory, "paused")
+                        except BaseException:
+                            pass
+                        checks["paused_after_failure"] = state(args.project_directory) == "paused"
+                        if not checks["paused_after_failure"]:
+                            report["status"] = "DANGER"
+                            return report
             report["status"] = "PASS" if all(checks.values()) else "STOP"
     return report
 

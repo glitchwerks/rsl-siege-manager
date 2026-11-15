@@ -95,7 +95,7 @@ def model():
         }
     services = result["services"]
     services["backend"]["networks"] = {"application": {}, "database": {}, "proxy": {"aliases": ["api-proxy"]}}
-    services["backend"].update(environment=env, entrypoint=[], command=["--proxy-headers", "--forwarded-allow-ips", "172.30.60.2"])
+    services["backend"].update(environment=env, entrypoint=[], command=["--workers", "1", "--proxy-headers", "--forwarded-allow-ips", "172.30.60.2"])
     services["migrate-siege"].update(environment=copy.deepcopy(env), entrypoint=[], command=["alembic", "upgrade", "head"], profiles=["maintenance"], restart="no")
     for name in ("backend", "migrate-siege"):
         services[name]["environment"].update(MAINTENANCE_ENFORCED="true",
@@ -152,6 +152,14 @@ def mom_model():
     return data
 
 
+def rendered_model(data, project):
+    for service in data["services"].values():
+        for volume in service.get("volumes", []):
+            if volume.get("target") == "/run/rsl-maintenance":
+                volume["source"] = str(project / "control")
+    return data
+
+
 class SafetyTests(unittest.TestCase):
     def setUp(self):
         reader = patch.object(preflight, "read_secret_file", return_value="synthetic-admin-password-long-enough")
@@ -160,6 +168,21 @@ class SafetyTests(unittest.TestCase):
         owner = patch.object(preflight, "CONTROL_OWNER_UID", os.geteuid())
         owner.start()
         self.addCleanup(owner.stop)
+
+    def test_control_mount_must_match_project_and_backend_has_one_worker(self):
+        for topology, factory in (("bundled", model), ("mom", mom_model)):
+            data = factory()
+            service = data["services"]["mom" if topology == "mom" else "backend"]
+            service["volumes"][0]["source"] = "/other/control"
+            checks = preflight.validate(data, topology)
+            self.assertFalse(checks[
+                "mom_maintenance_control_mounted" if topology == "mom"
+                else "backend_maintenance_control_mounted"
+            ])
+        data = model()
+        data["services"]["backend"]["command"].remove("--workers")
+        data["services"]["backend"]["command"].remove("1")
+        self.assertFalse(preflight.validate(data, "bundled")["single_backend_worker"])
 
     def test_role_sync_requires_public_https_and_connected_selected_receiver(self):
         for topology, factory in (("bundled", model), ("mom", mom_model)):
@@ -229,7 +252,7 @@ class SafetyTests(unittest.TestCase):
                 stdout = io.StringIO()
                 with patch("sys.argv", ["portable-preflight", "--topology", "mom", "--stack-env", str(stack),
                                         "--project-directory", str(root), "--report", str(root / f"report-{index}.json")]), \
-                     patch.object(preflight, "render", return_value=mom_model()) as render, redirect_stdout(stdout):
+                     patch.object(preflight, "render", return_value=rendered_model(mom_model(), root)) as render, redirect_stdout(stdout):
                     status = preflight.main()
                 if content is None or content == "private-diagnostic":
                     render.assert_not_called()
@@ -535,7 +558,8 @@ class ReportTests(unittest.TestCase):
     def run_preflight(self, report_path):
         stdout = io.StringIO()
         with patch("sys.argv", ["portable-preflight", "--topology", "bundled",
-                               "--stack-env", "unused", "--report", str(report_path)]), \
+                               "--stack-env", "unused", "--project-directory", "/synthetic",
+                               "--report", str(report_path)]), \
                 patch.object(preflight, "render", return_value=model()), redirect_stdout(stdout):
             status = preflight.main()
         return status, json.loads(stdout.getvalue())
@@ -869,7 +893,7 @@ class ComposeTests(unittest.TestCase):
                         backend_file.write_text(content)
                     data = preflight.render(topology, stack, Path(directory))
                     approval = preflight.read_mom_approval(Path(directory) / "runtime/mom-image.json")
-                    checks = preflight.validate(data, topology, approval)
+                    checks = preflight.validate(data, topology, approval, Path(directory))
                     self.assertTrue(all(checks.values()), [k for k, v in checks.items() if not v])
 
     def test_candidate_image_overrides_render_without_editing_runtime(self):

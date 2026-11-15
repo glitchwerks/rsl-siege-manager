@@ -12,7 +12,7 @@ router = APIRouter(tags=["maintenance"])
 
 
 @router.get("/maintenance/status")
-def maintenance_status(authorization: Annotated[str | None, Header()] = None) -> dict:
+async def maintenance_status(authorization: Annotated[str | None, Header()] = None) -> dict:
     """Return pause and in-flight count without exposing runtime inputs."""
     prefix = "Bearer "
     if (

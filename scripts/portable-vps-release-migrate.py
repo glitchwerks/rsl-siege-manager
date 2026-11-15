@@ -90,7 +90,7 @@ def candidate_config(project, manifest):
     approval = {"schema": 1, "image": overrides["MOM_IMAGE"],
                 "source_commit": manifest["mom"]["source_sha"],
                 "capabilities": ["portable-auth-v1", "scheduler-progress-probe-v1"]}
-    checks = PREFLIGHT.validate(rendered, "mom", approval)
+    checks = PREFLIGHT.validate(rendered, "mom", approval, project)
     return (bool(checks) and all(checks.values())
             and all(services[name]["image"] == image for name, image in images.items())), overrides
 

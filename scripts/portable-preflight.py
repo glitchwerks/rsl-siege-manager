@@ -38,7 +38,7 @@ def read_secret_file(path):
         return None
 
 
-def validate(model, topology, mom_approval=None):
+def validate(model, topology, mom_approval=None, project_directory=None):
     checks = {}
     services = model.get("services", {})
 
@@ -81,14 +81,24 @@ def validate(model, topology, mom_approval=None):
 
     backend = services.get("backend", {})
     env = backend.get("environment", {})
+    def reviewed_control_mount(service):
+        expected_source = (project_directory or Path("/synthetic")) / "control"
+        volumes = service.get("volumes", [])
+        matches = [volume for volume in volumes
+                   if volume.get("target") == "/run/rsl-maintenance"]
+        return (len(matches) == 1
+                and matches[0].get("read_only") is True
+                and matches[0].get("type") in (None, "bind")
+                and Path(matches[0].get("source", "")) == expected_source)
+
     check("backend_maintenance_control_mounted", lambda:
           all(services[n]["environment"].get("MAINTENANCE_ENFORCED") == "true"
               and services[n]["environment"].get("MAINTENANCE_STATE_FILE") == "/run/rsl-maintenance/state"
-              and any(volume.get("target") == "/run/rsl-maintenance"
-                      and volume.get("read_only") is True
-                      and Path(volume.get("source", "")).name == "control"
-                      for volume in services[n].get("volumes", []))
+              and reviewed_control_mount(services[n])
               for n in ("backend", "migrate-siege")))
+    check("single_backend_worker", lambda:
+          backend["command"].count("--workers") == 1
+          and backend["command"][backend["command"].index("--workers") + 1] == "1")
     proxy_env = services.get("proxy", {}).get("environment", {})
     host = proxy_env.get("PUBLIC_HOST", "")
     def public_hostname():
@@ -213,10 +223,7 @@ def validate(model, topology, mom_approval=None):
         check("mom_maintenance_control_mounted", lambda: all(
               services[n]["environment"].get("MOM_BOT_MAINTENANCE_ENFORCED") == "true"
               and services[n]["environment"].get("MOM_BOT_MAINTENANCE_STATE_FILE") == "/run/rsl-maintenance/state"
-              and any(volume.get("target") == "/run/rsl-maintenance"
-                      and volume.get("read_only") is True
-                      and Path(volume.get("source", "")).name == "control"
-                      for volume in services[n].get("volumes", []))
+              and reviewed_control_mount(services[n])
               for n in ("mom", "migrate-mom")))
         check("mom_runtime_does_not_auto_migrate", lambda:
               services["mom"].get("entrypoint") == []
@@ -405,7 +412,7 @@ def main():
             checks["mom_image_approval_record"] = approval is not None
         if all(checks.values()):
             checks.update(validate(render(args.topology, args.stack_env, args.project_directory),
-                                   args.topology, approval))
+                                   args.topology, approval, args.project_directory))
     except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired):
         # Compose stderr, exception messages, and rendered values may contain secrets.
         checks = {"compose_render": False}

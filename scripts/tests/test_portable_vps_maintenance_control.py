@@ -97,6 +97,56 @@ class MaintenanceControlTests(unittest.TestCase):
         self.assertEqual(result["status"], "PASS")
         self.assertEqual(written[0]["pause_started_at"], first)
 
+    def test_pause_records_boundary_before_closing_admission(self):
+        calls = []
+        args = Namespace(phase="pause", confirm="pause",
+                         project_directory=Path("/synthetic"), bearer_report=[],
+                         monitor_report=None)
+        prior = {"schema": 1, "pause_started_at": None, "last_resumed_at": None}
+        with patch.object(CONTROL.os, "geteuid", return_value=0), patch.object(
+            CONTROL.PAUSE.GATE, "protected", return_value=True
+        ), patch.object(CONTROL.PAUSE, "project_lock", return_value=nullcontext()), patch.object(
+            CONTROL, "state", return_value="active"
+        ), patch.object(CONTROL, "history", return_value=prior), patch.object(
+            CONTROL, "replace_history", side_effect=lambda _p, _v: calls.append("history") or True
+        ), patch.object(CONTROL, "replace_state", side_effect=lambda _p, _v: calls.append("state") or False
+        ), patch.object(CONTROL, "drain") as drain:
+            result = CONTROL.run(args)
+        self.assertEqual(calls, ["history", "state"])
+        self.assertEqual(result["status"], "STOP")
+        drain.assert_not_called()
+
+    def test_resume_restores_pause_after_state_write_failure(self):
+        current = {"state": "paused"}
+        calls = []
+        args = Namespace(phase="resume", confirm="resume",
+                         project_directory=Path("/synthetic"), bearer_report=[],
+                         monitor_report=None)
+        def replace(_project, value):
+            calls.append(value)
+            current["state"] = value
+            if value == "active":
+                raise OSError("directory sync failed")
+            return True
+        prior = {"schema": 1, "pause_started_at": "2026-11-15T00:00:00+00:00",
+                 "last_resumed_at": None}
+        with patch.object(CONTROL.os, "geteuid", return_value=0), patch.object(
+            CONTROL.PAUSE.GATE, "protected", return_value=True
+        ), patch.object(CONTROL.PAUSE, "project_lock", return_value=nullcontext()), patch.object(
+            CONTROL, "state", side_effect=lambda _p: current["state"]
+        ), patch.object(CONTROL, "history", return_value=prior), patch.object(
+            CONTROL, "replace_history", return_value=True
+        ), patch.object(CONTROL, "drain", return_value=True), patch.object(
+            CONTROL, "resume_evidence", return_value=True
+        ), patch.object(CONTROL, "replace_state", side_effect=replace), patch.object(
+            Path, "stat"
+        ) as metadata:
+            metadata.return_value.st_mtime = 100.0
+            result = CONTROL.run(args)
+        self.assertEqual(calls, ["active", "paused"])
+        self.assertEqual(current["state"], "paused")
+        self.assertEqual(result["status"], "STOP")
+
     def test_resume_without_evidence_never_reactivates(self):
         args = Namespace(
             phase="resume",
@@ -147,12 +197,13 @@ class MaintenanceControlTests(unittest.TestCase):
             "pause_started_at": "2026-11-15T00:00:00+00:00",
             "last_resumed_at": None,
         }
+        current = {"state": "paused"}
         with patch.object(CONTROL.os, "geteuid", return_value=0), patch.object(
             CONTROL.PAUSE.GATE, "protected", return_value=True
         ), patch.object(
             CONTROL.PAUSE, "project_lock", return_value=nullcontext()
         ), patch.object(
-            CONTROL, "state", return_value="paused"
+            CONTROL, "state", side_effect=lambda _p: current["state"]
         ), patch.object(
             CONTROL, "drain", return_value=True
         ), patch.object(
@@ -166,7 +217,7 @@ class MaintenanceControlTests(unittest.TestCase):
         ), patch.object(
             CONTROL,
             "replace_state",
-            side_effect=lambda _p, _v: calls.append("state") or True,
+            side_effect=lambda _p, value: calls.append("state") or current.update(state=value) or True,
         ), patch.object(
             Path, "stat"
         ) as metadata:
@@ -269,6 +320,14 @@ class MaintenanceControlTests(unittest.TestCase):
             ],
         ), patch.object(CONTROL.time, "sleep"):
             self.assertTrue(CONTROL.drain(Path("/synthetic"), attempts=4))
+
+    def test_drain_stops_at_elapsed_deadline(self):
+        clock = iter((0.0, 0.1, 20.1))
+        with patch.object(CONTROL, "state", return_value="paused"), patch.object(
+            CONTROL.time, "monotonic", side_effect=lambda: next(clock)
+        ), patch.object(CONTROL, "service_status", return_value={"paused": True, "inflight": 0}) as status:
+            self.assertFalse(CONTROL.drain(Path("/synthetic")))
+        status.assert_called_once()
 
     def test_resume_requires_both_directions_and_fresh_monitor(self):
         with tempfile.TemporaryDirectory() as directory:

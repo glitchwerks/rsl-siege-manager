@@ -23,8 +23,9 @@ release lock serializes it with promotion operations.
 2. `pause --confirm pause` changes `active` to `paused`, then waits for three
    successive zero in-flight observations from **both** running peers. It
    reports STOP if either peer lacks the status contract or the 20-second
-   bounded drain expires. It records the earliest pause boundary after closing
-   admission. The state remains paused on failure or interruption.
+   bounded drain expires. It records the earliest pause boundary before closing
+   admission. A retry preserves that boundary after interruption. A failed
+   drain leaves the state paused.
 3. `drain` retries only the read-only two-peer drain after a STOP. It does not
    change the control state.
 4. `resume --confirm resume` requires one fresh successful bearer activation
@@ -45,4 +46,22 @@ restart services or alter the database. Escalate to the separately reviewed
 paired recovery phase if the bearer activation itself failed. Before an
 operator can resume, confirm the independent receiver actually delivered the
 monitoring notification to the infrastructure channel; the report confirms
-receiver acknowledgement, not a human Slack receipt.
+   receiver acknowledgement, not a human Slack receipt. If resume reports
+   DANGER, inspect the control state immediately: the runner could not verify
+   that admission was restored to paused after a failed state transition.
+
+## Backend work inventory
+
+The portable backend starts no scheduler or independent background worker in
+its application lifespan. All database writes and outbound Discord requests
+originate from HTTP routes. The assignment and attack-day routes enqueue
+day-role-sync webhooks through FastAPI `BackgroundTasks`; the notifications
+route enqueues member DMs the same way. Those tasks remain part of the ASGI
+response call, so the outer maintenance middleware retains its in-flight
+count until the tasks finish. Authentication may backfill a member Discord ID
+even for a GET request; therefore the only authenticated GET exempted from
+pause is the deliberately invalid acting-ID bearer probe. Health, version,
+and service-authenticated maintenance status are read-only. The portable
+Uvicorn command pins one worker so the in-flight count covers every request
+in the process. The bot's gateway handlers and schedules are separately
+guarded by Mom #395.
