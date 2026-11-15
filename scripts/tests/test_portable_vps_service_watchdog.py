@@ -106,8 +106,12 @@ class RunnerTests(unittest.TestCase):
 
     def test_identity_change_before_restart_fails_closed(self):
         self.run_main(1000, unhealthy())
-        result, report, count, docker = self.run_main(1090, unhealthy(), latest=unhealthy(cid="c" * 64))
+        result, report, count, docker = self.run_main(1090, unhealthy(), latest=unhealthy(health="healthy"))
         self.assertEqual((result, report["decision"], count), (1, "CHANGED_BEFORE_RESTART", 2))
+        docker.assert_not_called()
+        self.assertIsNone(json.loads(self.state.read_text())["first_unhealthy"])
+        result, report, _, docker = self.run_main(1100, unhealthy())
+        self.assertEqual((result, report["decision"]), (1, "OBSERVING"))
         docker.assert_not_called()
 
     def test_confirmation_allowlist_and_private_paths(self):

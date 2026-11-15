@@ -201,6 +201,8 @@ def main(argv=None):
             if decision == "ELIGIBLE":
                 latest = snapshot(cfg)
                 if latest != current:
+                    state.update(first_unhealthy=None, container_id=None, restart_count=None)
+                    atomic(args.state, state)
                     report["decision"] = "CHANGED_BEFORE_RESTART"
                 else:
                     state["attempts"].append(now)
