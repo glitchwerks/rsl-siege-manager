@@ -24,6 +24,8 @@ on:
       - "scripts/tests/test_portable_vps_release_recover.py"
       - "scripts/tests/test_portable_vps_bearer_rotation.py"
       - "scripts/tests/test_portable_vps_bearer_rotation_docker.py"
+      - "scripts/tests/test_portable_vps_day_role_config.py"
+      - "scripts/tests/test_portable_vps_day_role_config_docker.py"
       - "scripts/tests/test_portable_vps_public_signal.py"
       - "scripts/tests/test_portable_vps_public_monitor.py"
       - "scripts/tests/test_portable_vps_database_signal.py"
@@ -36,6 +38,8 @@ on:
       - "docs/operations/vps-public-monitoring.md"
       - "docs/operations/vps-database-monitoring.md"
       - "docs/operations/vps-bearer-rotation.md"
+      - "docs/operations/vps-day-role-config.md"
+      - "docs/operations/vps-day-role-effective.md"
       - "docs/operations/vps-maintenance-control.md"
       - "deploy/portable/monitoring/public-signal.json.example"
       - "deploy/portable/monitoring/database-signal.json.example"
@@ -65,6 +69,8 @@ on:
       - "scripts/tests/test_portable_vps_release_recover.py"
       - "scripts/tests/test_portable_vps_bearer_rotation.py"
       - "scripts/tests/test_portable_vps_bearer_rotation_docker.py"
+      - "scripts/tests/test_portable_vps_day_role_config.py"
+      - "scripts/tests/test_portable_vps_day_role_config_docker.py"
       - "scripts/tests/test_portable_vps_public_signal.py"
       - "scripts/tests/test_portable_vps_public_monitor.py"
       - "scripts/tests/test_portable_vps_database_signal.py"
@@ -77,6 +83,8 @@ on:
       - "docs/operations/vps-public-monitoring.md"
       - "docs/operations/vps-database-monitoring.md"
       - "docs/operations/vps-bearer-rotation.md"
+      - "docs/operations/vps-day-role-config.md"
+      - "docs/operations/vps-day-role-effective.md"
       - "docs/operations/vps-maintenance-control.md"
       - "deploy/portable/monitoring/public-signal.json.example"
       - "deploy/portable/monitoring/database-signal.json.example"
@@ -126,11 +134,11 @@ jobs:
         run: python3 -m unittest discover -s scripts/tests -p test_portable_vps_database_monitor.py -v
       - name: Test portable maintenance control phases
         run: python3 -m unittest discover -s scripts/tests -p test_portable_vps_maintenance_control.py -v
-      - name: Test paired bearer rotation guards
+      - name: Test paired bearer and day-role configuration guards
         run: |
           python3 -m venv "$RUNNER_TEMP/rotation-tests"
           "$RUNNER_TEMP/rotation-tests/bin/python" -m pip install --disable-pip-version-check pytest==9.1.1
-          "$RUNNER_TEMP/rotation-tests/bin/python" -m pytest -q scripts/tests/test_portable_vps_bearer_rotation.py
+          "$RUNNER_TEMP/rotation-tests/bin/python" -m pytest -q scripts/tests/test_portable_vps_bearer_rotation.py scripts/tests/test_portable_vps_day_role_config.py
   docker-rehearsal:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -148,6 +156,8 @@ jobs:
         run: sudo env VPS_WRITER_DOCKER_TEST=1 python3 -m unittest discover -s scripts/tests -p test_portable_vps_release_promote_docker.py -v
       - name: Rehearse paired bearer rotation against disposable HTTP services
         run: sudo env VPS_WRITER_DOCKER_TEST=1 python3 -m unittest discover -s scripts/tests -p test_portable_vps_bearer_rotation_docker.py -v
+      - name: Rehearse targeted day-role configuration and recovery
+        run: sudo env VPS_WRITER_DOCKER_TEST=1 python3 -m unittest discover -s scripts/tests -p test_portable_vps_day_role_config_docker.py -v
       - name: Rehearse least-privilege database signal against disposable PostgreSQL
         run: sudo env VPS_WRITER_DOCKER_TEST=1 python3 -m unittest discover -s scripts/tests -p test_portable_vps_database_signal_docker.py -v
       - name: Rehearse two-peer maintenance pause and restart

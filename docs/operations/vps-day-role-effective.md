@@ -41,5 +41,6 @@ and disabled negative-control tests under their separate authorization before
 accepting role-sync behavior. If the check stops, keep writers paused, inspect
 private host evidence, and use the reviewed configuration recovery path. Do
 not run `docker compose restart` to apply an `env_file` change; it does not
-reload that file. The configuration-only mutation and recovery phases remain
-to be implemented and rehearsed before live use.
+reload that file. The [configuration-only mutation and recovery phases](vps-day-role-config.md)
+are implemented as an opt-in host runner. They require isolated rehearsal and
+separate approval before live use.
