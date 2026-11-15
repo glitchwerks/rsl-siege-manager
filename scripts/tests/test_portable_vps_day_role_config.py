@@ -1,6 +1,7 @@
 """Safety boundaries for a staged, configuration-only day-role change."""
 
 from contextlib import nullcontext
+from datetime import datetime, timedelta, timezone
 import importlib.util
 import json
 from pathlib import Path
@@ -150,11 +151,107 @@ def test_activation_recreates_only_backend_and_isolates_failed_path(monkeypatch,
     monkeypatch.setattr(RUNNER, "compose_backend", lambda *_: calls.append("compose") or compose_ok)
     monkeypatch.setattr(RUNNER, "verify", lambda *args: True)
     monkeypatch.setattr(RUNNER.ROTATION, "public_healthy", lambda *args: True)
+    monkeypatch.setattr(RUNNER, "proof_current", lambda *args: True)
 
-    result = RUNNER.activate(project, stage, tmp_path / "public.json")
+    result = RUNNER.activate(project, stage, tmp_path / "public.json", tmp_path / "backup-profile.json")
     assert calls[:4] == ["marker", "stop", "replace", "compose"]
     assert result["status"] == ("PASS" if compose_ok else "STOP")
     assert calls.count("stop") == (1 if compose_ok else 2)
+
+
+def test_activation_refuses_changed_backup_proof_before_stopping_backend(monkeypatch, tmp_path):
+    project, stage = tmp_path / "project", tmp_path / "stage"
+    baseline = {"project": "test", "installed": {"backend": {"id": "old-id"}}}
+    current = {"services": {"backend": {"environment": {"DAY_ROLE_SYNC_ENABLED": "false"}}}}
+    monkeypatch.setattr(RUNNER, "load", lambda *_: (
+        {"old_enabled": "false", "new_enabled": "true"}, baseline, DISABLED,
+        b"candidate", b"mom", VALUES))
+    monkeypatch.setattr(RUNNER.PAUSE, "project_lock", lambda *_: nullcontext())
+    monkeypatch.setattr(RUNNER.ROTATION, "project_snapshot", lambda *_: (
+        {"backend.env": DISABLED, "mom.env": b"mom"}, baseline))
+    monkeypatch.setattr(RUNNER, "model", lambda *_: (current, {}))
+    monkeypatch.setattr(RUNNER, "proposed_model", lambda *args: current)
+    monkeypatch.setattr(RUNNER.ROTATION, "stack_current", lambda *_: True)
+    monkeypatch.setattr(RUNNER, "inputs_current", lambda *_, **__: True)
+    monkeypatch.setattr(RUNNER.EFFECTIVE, "inspect", lambda *_: {"valid": True})
+    monkeypatch.setattr(RUNNER.ROTATION, "require_pause", lambda *_, **__: None)
+    monkeypatch.setattr(RUNNER, "proof_current", lambda *_: False)
+    monkeypatch.setattr(RUNNER, "stop_backend", lambda *_: pytest.fail("backend was stopped"))
+    with pytest.raises(ValueError, match="backup proof changed"):
+        RUNNER.activate(project, stage, tmp_path / "public.json", tmp_path / "profile.json")
+
+
+def test_proof_rejects_backup_started_before_current_pause(monkeypatch, tmp_path):
+    project, stage = tmp_path / "project", tmp_path / "stage"
+    backup_id = "11111111-1111-4111-8111-111111111111"
+    backup_root = tmp_path / "backups"
+    backup = backup_root / "runs" / backup_id / "job.json"
+    recover, restore = tmp_path / "recover.json", tmp_path / "restore.json"
+    pause = datetime.now(timezone.utc) - timedelta(minutes=30)
+    history = {"schema": 1, "pause_started_at": pause.isoformat(), "last_resumed_at": None}
+    reports = {"job.json": {"timestamp": (pause - timedelta(minutes=1)).isoformat(),
+                            "run_id": backup_id},
+               "recover.json": {}, "restore.json": {}}
+    baseline = {"project": "test", "installed": {}}
+    monkeypatch.setattr(RUNNER, "load", lambda *_: (
+        {"old_enabled": "false"}, baseline, DISABLED, b"candidate", b"mom", {}))
+    monkeypatch.setattr(RUNNER.ROTATION, "require_pause", lambda *_, **__: None)
+    monkeypatch.setattr(RUNNER.ROTATION.MAINT, "history", lambda *_: history)
+    monkeypatch.setattr(RUNNER.ROTATION.MAINT, "state", lambda *_: "paused")
+    monkeypatch.setattr(RUNNER.BACKUP_PROFILE, "profile", lambda *_: (
+        {"project_directory": project, "backup_owner": "root", "backup_root": backup_root}, "profile-hash"))
+    monkeypatch.setattr(RUNNER.ROTATION, "project_snapshot", lambda *_: (
+        {"backend.env": DISABLED, "mom.env": b"mom"}, baseline))
+    monkeypatch.setattr(RUNNER, "model", lambda *_: (
+        {"services": {"backend": {"environment": {"DAY_ROLE_SYNC_ENABLED": "false"}}}}, {}))
+    monkeypatch.setattr(RUNNER.ROTATION, "stack_current", lambda *_: True)
+    monkeypatch.setattr(RUNNER, "inputs_current", lambda *_, **__: True)
+    monkeypatch.setattr(RUNNER.EFFECTIVE, "inspect", lambda *_: {"valid": True})
+    monkeypatch.setattr(RUNNER.GATE, "read_private", lambda path, *_: json.dumps(reports[path.name]).encode())
+    monkeypatch.setattr(RUNNER.BACKUP_EVIDENCE, "inspect", lambda *_, **__: {"valid": True})
+    with pytest.raises(ValueError, match="backup proof or pause changed"):
+        RUNNER.proof_snapshot(project, stage, tmp_path / "profile.json", backup, recover, restore)
+    with pytest.raises(ValueError, match="backup outside managed run"):
+        RUNNER.proof_snapshot(project, stage, tmp_path / "profile.json", backup.parent / "other.json",
+                              recover, restore)
+    reports["job.json"]["timestamp"] = (pause + timedelta(minutes=1)).isoformat()
+    accepted = RUNNER.proof_snapshot(project, stage, tmp_path / "profile.json",
+                                     backup, recover, restore)
+    assert accepted["stage_id"] == stage.name
+    assert accepted["pause_history"] == history
+    assert set(accepted["reports"]) == {"backup", "recover", "restore"}
+    reads = {"job.json": 0}
+    def changed_report(path, *_):
+        if path.name == "job.json":
+            reads["job.json"] += 1
+            if reads["job.json"] > 1:
+                return b'{"changed":true}'
+        return json.dumps(reports[path.name]).encode()
+    monkeypatch.setattr(RUNNER.GATE, "read_private", changed_report)
+    with pytest.raises(ValueError, match="backup proof or pause changed"):
+        RUNNER.proof_snapshot(project, stage, tmp_path / "profile.json",
+                              backup, recover, restore)
+
+
+def test_accepted_proof_rejects_changed_record(monkeypatch, tmp_path):
+    stage = tmp_path / "11111111-1111-4111-8111-111111111111"
+    backup = "/protected/backup/runs/22222222-2222-4222-8222-222222222222/job.json"
+    record = {"phase": "day-role-proof", "status": "PASS", "proof": {
+        "schema": 1, "stage_id": stage.name, "pause_history": {},
+        "profile_sha256": "a" * 64,
+        "reports": {name: {"path": path, "sha256": "b" * 64} for name, path in (
+            ("backup", backup), ("recover", "/protected/recover.json"),
+            ("restore", "/protected/restore.json"))}}}
+    monkeypatch.setattr(RUNNER.GATE, "read_private", lambda *args: json.dumps(record).encode())
+    monkeypatch.setattr(RUNNER, "proof_snapshot", lambda *args: record["proof"])
+    assert RUNNER.proof_current(tmp_path, stage, tmp_path / "profile.json")
+    record["proof"]["profile_sha256"] = "c" * 64
+    monkeypatch.setattr(RUNNER, "proof_snapshot", lambda *args: {**record["proof"],
+        "profile_sha256": "a" * 64})
+    assert not RUNNER.proof_current(tmp_path, stage, tmp_path / "profile.json")
+    record["proof"]["reports"]["backup"]["sha256"] = "invalid"
+    with pytest.raises(ValueError, match="invalid proof selector"):
+        RUNNER.proof_current(tmp_path, stage, tmp_path / "profile.json")
 
 
 def test_failed_recovery_verification_stops_backend_again(monkeypatch, tmp_path):
