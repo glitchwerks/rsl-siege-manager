@@ -131,6 +131,32 @@ This new-instance check is not applicable to the populated production databases
 or to schema migrations. Existing production readiness uses the separate live
 revision and backup gates.
 
+### Portable credential rotation
+
+Use the [shared portable credential inventory and rotation contract](https://github.com/glitchwerks/rsl-mom-apps/blob/main/docs/portable-credential-rotation.md)
+for the current single-Mom topology. The Siege outbound `DISCORD_BOT_API_KEY`
+must match Mom's inbound `MOM_BOT_SECRET_DISCORD_BOT_API_KEY`. Siege's inbound
+`BOT_SERVICE_TOKEN` must separately match Mom's outbound
+`MOM_BOT_SECRET_SIEGE_WEB_BOT_TOKEN`. Neither bearer accepts an overlap token,
+so rotate one pair at a time with a reviewed write/notification pause, protected
+copies of both files, final drift checks, a project lock, targeted service
+restarts and verification in both directions. Do not treat a single changed
+environment file or one healthy endpoint as a complete rotation. A failed
+paired activation keeps the path paused until both old files and both affected
+services are recovered and verified. Mom caches loaded secrets for its process
+lifetime; an edit without a restart does not change its active bearer.
+
+Discord bot-token and OAuth-secret resets happen in the Developer Portal and
+may revoke the old value immediately. Session-signing-key rotation logs out
+existing users; do not restore a compromised old key. Application database
+password rotation must update the live role as well as the raw `database.env`
+copy and the encoded application URL. The `postgres-admin` file likewise does
+not alter an existing PostgreSQL role by itself. Each class requires its own
+authorization, isolated rehearsal, sanitized report and recovery plan. The
+historical Azure Key Vault path is retained as a separate recovery adapter;
+it is not the portable rotation sequence. Merging this documentation does not
+authorize a live credential or host change.
+
 The portable API services explicitly clear the existing image's entrypoint,
 which otherwise runs migrations automatically and ignores the supplied command.
 Runtime starts Uvicorn with the reviewed proxy trust settings; only the opt-in
