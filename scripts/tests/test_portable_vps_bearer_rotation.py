@@ -252,3 +252,62 @@ def test_verified_probes_both_directions_and_rejects_selected_old_token(project,
     assert any("mom:8001" in url for _, url, _ in calls)
     assert any("backend:8000" in url for _, url, _ in calls)
     assert len(calls) == 3
+
+
+def test_exposed_path_stages_and_activates_only_a_fresh_pair(project):
+    root, directory, rollback, candidate, baseline = _activation_fixture(project)
+    ROTATE.write_private(directory / "activation-incomplete.json",
+                         b'{"phase":"bearer-activate","status":"STOP"}\n', os.geteuid())
+    current = dict(candidate)
+    snapshots = []
+
+    def replace(_project, files, _owner):
+        snapshots.append(dict(files))
+        current.update(files)
+
+    with (patch.object(ROTATE, "staged", return_value=("sidecar", rollback, candidate, baseline)),
+          patch.object(ROTATE.PAUSE, "project_lock", side_effect=_lock),
+          patch.object(ROTATE, "configuration_current", return_value=True),
+          patch.object(ROTATE.PAUSE, "no_extra_writers", return_value=True),
+          patch.object(ROTATE, "isolated", return_value=True),
+          patch.object(ROTATE, "read_runtime", side_effect=lambda *_args: dict(current)),
+          patch.object(ROTATE.secrets, "token_urlsafe", return_value="sidecar-fresh")):
+        staged = ROTATE.stage_fresh(root, directory, owner=os.geteuid())
+    assert staged["status"] == "PASS"
+    assert current == candidate
+    fresh = {name: (directory / f"fresh-candidate-{name}").read_bytes() for name in ROTATE.FILES}
+    assert ROTATE.pairs_match(fresh)
+    assert ROTATE.pair_values(fresh)["sidecar"][0] == b"sidecar-fresh"
+
+    with (patch.object(ROTATE, "staged", return_value=("sidecar", rollback, candidate, baseline)),
+          patch.object(ROTATE.PAUSE, "project_lock", side_effect=_lock),
+          patch.object(ROTATE, "configuration_current", return_value=True),
+          patch.object(ROTATE.PAUSE, "no_extra_writers", return_value=True),
+          patch.object(ROTATE, "isolated", return_value=True),
+          patch.object(ROTATE, "read_runtime", side_effect=lambda *_args: dict(current)),
+          patch.object(ROTATE, "replace_runtime", side_effect=replace),
+          patch.object(ROTATE, "compose_up", return_value=True),
+          patch.object(ROTATE, "verified", return_value=True),
+          patch.object(ROTATE, "project_snapshot", side_effect=lambda *_args:
+                       (dict(current), {"installed": {"backend": {"id": "fresh-backend"}}})),
+          patch.object(ROTATE, "probe", return_value=401)):
+        activated = ROTATE.activate_fresh(root, directory, owner=os.geteuid())
+    assert activated["status"] == "PASS"
+    assert activated["checks"]["both_prior_bearers_rejected"]
+    assert snapshots == [fresh]
+    assert current == fresh
+
+
+def test_fresh_stage_refuses_running_writer(project):
+    root, directory, rollback, candidate, baseline = _activation_fixture(project)
+    ROTATE.write_private(directory / "activation-incomplete.json",
+                         b'{"phase":"bearer-activate","status":"STOP"}\n', os.geteuid())
+    with (patch.object(ROTATE, "staged", return_value=("sidecar", rollback, candidate, baseline)),
+          patch.object(ROTATE.PAUSE, "project_lock", side_effect=_lock),
+          patch.object(ROTATE, "configuration_current", return_value=True),
+          patch.object(ROTATE.PAUSE, "no_extra_writers", return_value=True),
+          patch.object(ROTATE, "read_runtime", return_value=candidate),
+          patch.object(ROTATE, "isolated", return_value=False)):
+        with pytest.raises(ValueError, match="not isolated"):
+            ROTATE.stage_fresh(root, directory, owner=os.geteuid())
+    assert not (directory / "fresh-accepted.json").exists()

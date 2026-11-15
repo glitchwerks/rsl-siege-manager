@@ -493,9 +493,132 @@ def recover_routine(project, directory, old_bearer_safe=False, owner=0):
     return result
 
 
+def failed_activation(directory, owner):
+    marker = json.loads(GATE.read_private(directory / "activation-incomplete.json", owner),
+                        object_pairs_hook=PREFLIGHT.REMOTE.no_duplicate_keys)
+    if not isinstance(marker, dict) or marker.get("phase") != "bearer-activate":
+        raise ValueError("activation marker missing")
+    outcome_path = directory / "activation-result.json"
+    if outcome_path.exists():
+        outcome = json.loads(GATE.read_private(outcome_path, owner),
+                             object_pairs_hook=PREFLIGHT.REMOTE.no_duplicate_keys)
+        if not isinstance(outcome, dict) or outcome.get("status") != "STOP":
+            raise ValueError("activation did not fail")
+
+
+def stage_fresh(project, directory, owner=0):
+    """Stage a different bearer after exposure, while both peers stay stopped."""
+    pair, rollback, candidate, baseline = staged(project, directory, owner)
+    failed_activation(directory, owner)
+    if (directory / "fresh-accepted.json").exists() or (directory / "recovery-incomplete.json").exists():
+        raise ValueError("recovery path already selected")
+    result = {"phase": "bearer-stage-fresh", "status": "STOP", "run_id": directory.name,
+              "pair": pair, "checks": {"expected_project": False, "known_files": False,
+                                      "writers_isolated": False, "fresh_pair_distinct": False}}
+    with PAUSE.project_lock(project):
+        result["checks"]["expected_project"] = (
+            configuration_current(project, baseline)
+            and PAUSE.no_extra_writers(baseline["project"]))
+        if not result["checks"]["expected_project"]:
+            raise ValueError("project drift")
+        source = read_runtime(project, owner)
+        result["checks"]["known_files"] = all(
+            source[name] in (rollback[name], candidate[name]) for name in FILES)
+        result["checks"]["writers_isolated"] = isolated(baseline["project"])
+        if not result["checks"]["known_files"] or not result["checks"]["writers_isolated"]:
+            raise ValueError("exposed path not isolated")
+        fresh_value = secrets.token_urlsafe(48).encode("ascii")
+        keys = PAIRS[pair]
+        fresh = {"backend.env": replace_assignment(source["backend.env"], keys[0], fresh_value),
+                 "mom.env": replace_assignment(source["mom.env"], keys[1], fresh_value)}
+        other = next(name for name in PAIRS if name != pair)
+        source_pairs = pair_values(source)
+        fresh_pairs = pair_values(fresh)
+        result["checks"]["fresh_pair_distinct"] = (
+            pairs_match(fresh) and fresh_pairs[other] == source_pairs[other]
+            and fresh_value not in (pair_values(rollback)[pair][0], pair_values(candidate)[pair][0]))
+        if not result["checks"]["fresh_pair_distinct"] or read_runtime(project, owner) != source:
+            raise ValueError("fresh stage drift")
+        for name in FILES:
+            write_private(directory / f"fresh-source-{name}", source[name], owner)
+            write_private(directory / f"fresh-candidate-{name}", fresh[name], owner)
+        result["status"] = "PASS"
+        write_private(directory / "fresh-accepted.json",
+                      (json.dumps(result, sort_keys=True) + "\n").encode(), owner)
+    return result
+
+
+def activate_fresh(project, directory, owner=0):
+    """Use only a fresh pair after exposure; failure leaves both peers stopped."""
+    pair, rollback, candidate, baseline = staged(project, directory, owner)
+    failed_activation(directory, owner)
+    accepted = json.loads(GATE.read_private(directory / "fresh-accepted.json", owner),
+                          object_pairs_hook=PREFLIGHT.REMOTE.no_duplicate_keys)
+    if not isinstance(accepted, dict) or accepted.get("phase") != "bearer-stage-fresh" or accepted.get("status") != "PASS":
+        raise ValueError("fresh stage not accepted")
+    if (directory / "fresh-activation-incomplete.json").exists():
+        raise ValueError("fresh activation already attempted")
+    source = {name: GATE.read_private(directory / f"fresh-source-{name}", owner, MAX_FILE)
+              for name in FILES}
+    fresh = {name: GATE.read_private(directory / f"fresh-candidate-{name}", owner, MAX_FILE)
+             for name in FILES}
+    if not all(source[name] in (rollback[name], candidate[name]) for name in FILES):
+        raise ValueError("unknown fresh source")
+    fresh_pairs = pair_values(fresh)
+    other = next(name for name in PAIRS if name != pair)
+    if not (pairs_match(fresh) and fresh_pairs[other] == pair_values(source)[other]
+            and fresh_pairs[pair][0] not in (pair_values(rollback)[pair][0],
+                                             pair_values(candidate)[pair][0])
+            and all(replace_assignment(source[name], PAIRS[pair][index], fresh_pairs[pair][0])
+                    == fresh[name] for index, name in enumerate(FILES))):
+        raise ValueError("invalid fresh pair")
+    result = {"phase": "bearer-activate-fresh", "status": "STOP", "run_id": directory.name,
+              "pair": pair, "checks": {"baseline_current": False, "writers_isolated": False,
+                                      "fresh_installed": False, "paired_verification": False,
+                                      "both_prior_bearers_rejected": False}}
+    with PAUSE.project_lock(project):
+        result["checks"]["baseline_current"] = (
+            configuration_current(project, baseline)
+            and PAUSE.no_extra_writers(baseline["project"])
+            and read_runtime(project, owner) == source)
+        result["checks"]["writers_isolated"] = isolated(baseline["project"])
+        if not result["checks"]["baseline_current"] or not result["checks"]["writers_isolated"]:
+            raise ValueError("fresh activation drift")
+        write_private(directory / "fresh-activation-incomplete.json",
+                      (json.dumps(result, sort_keys=True) + "\n").encode(), owner)
+        try:
+            replace_runtime(project, fresh, owner)
+            result["checks"]["fresh_installed"] = read_runtime(project, owner) == fresh
+            if not result["checks"]["fresh_installed"] or not compose_up(project):
+                raise ValueError("fresh activation failed")
+            result["checks"]["paired_verification"] = verified(
+                project, pair, fresh, rollback, baseline, owner)
+            if not result["checks"]["paired_verification"]:
+                raise ValueError("fresh pair verification failed")
+            active, installed = project_snapshot(project, owner)
+            if active != fresh:
+                raise ValueError("fresh drift")
+            direction = pair
+            if direction == "sidecar":
+                container, url = installed["installed"]["backend"]["id"], "http://mom:8001/api/members"
+            else:
+                container, url = installed["installed"]["mom"]["id"], "http://backend:8000/api/members/me/preferences"
+            result["checks"]["both_prior_bearers_rejected"] = probe(
+                container, url, pair_values(candidate)[pair][0]) == 401
+            if not result["checks"]["both_prior_bearers_rejected"]:
+                raise ValueError("prior candidate still accepted")
+            result["status"] = "PASS"
+        except Exception:
+            stop_pair(baseline["project"])
+        write_private(directory / "fresh-activation-result.json",
+                      (json.dumps(result, sort_keys=True) + "\n").encode(), owner)
+    return result
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("phase", choices=("inspect", "stage", "activate", "recover-routine"))
+    parser.add_argument("phase", choices=("inspect", "stage", "activate", "recover-routine",
+                                          "stage-fresh", "activate-fresh"))
     parser.add_argument("--project-directory", required=True, type=Path)
     parser.add_argument("--report", type=Path)
     parser.add_argument("--pair", choices=sorted(PAIRS))
@@ -504,6 +627,8 @@ def main(argv=None):
     parser.add_argument("--run-id")
     parser.add_argument("--confirm-activate")
     parser.add_argument("--confirm-recover-routine")
+    parser.add_argument("--confirm-stage-fresh")
+    parser.add_argument("--confirm-activate-fresh")
     parser.add_argument("--old-bearer-safe", action="store_true")
     args = parser.parse_args(argv)
     if os.geteuid() != 0:
@@ -513,13 +638,15 @@ def main(argv=None):
         if args.phase == "inspect":
             if (args.report is None or args.pair or args.evidence_directory or args.confirm_stage
                     or args.run_id or args.confirm_activate or args.confirm_recover_routine
-                    or args.old_bearer_safe):
+                    or args.old_bearer_safe or args.confirm_stage_fresh
+                    or args.confirm_activate_fresh):
                 raise ValueError("invalid inspect arguments")
             result = inspect(args.project_directory, args.report)
         elif args.phase == "stage":
             if (not args.pair or not args.evidence_directory or not args.confirm_stage or args.report
                     or args.run_id or args.confirm_activate or args.confirm_recover_routine
-                    or args.old_bearer_safe):
+                    or args.old_bearer_safe or args.confirm_stage_fresh
+                    or args.confirm_activate_fresh):
                 raise ValueError("invalid stage arguments")
             result = stage(args.project_directory, args.pair, args.evidence_directory)
         else:
@@ -529,15 +656,29 @@ def main(argv=None):
             directory = args.evidence_directory / args.run_id
             if args.phase == "activate":
                 if (args.confirm_activate != args.run_id or args.confirm_recover_routine
-                        or args.old_bearer_safe):
+                        or args.old_bearer_safe or args.confirm_stage_fresh
+                        or args.confirm_activate_fresh):
                     raise ValueError("activation not confirmed")
                 result = activate(args.project_directory, directory)
-            else:
+            elif args.phase == "recover-routine":
                 if (args.confirm_recover_routine != args.run_id or args.confirm_activate
-                        or not args.old_bearer_safe):
+                        or not args.old_bearer_safe or args.confirm_stage_fresh
+                        or args.confirm_activate_fresh):
                     raise ValueError("routine recovery not confirmed")
                 result = recover_routine(args.project_directory, directory,
                                          old_bearer_safe=args.old_bearer_safe)
+            elif args.phase == "stage-fresh":
+                if (args.confirm_stage_fresh != args.run_id or args.confirm_activate
+                        or args.confirm_recover_routine or args.confirm_activate_fresh
+                        or args.old_bearer_safe):
+                    raise ValueError("fresh staging not confirmed")
+                result = stage_fresh(args.project_directory, directory)
+            else:
+                if (args.confirm_activate_fresh != args.run_id or args.confirm_activate
+                        or args.confirm_recover_routine or args.confirm_stage_fresh
+                        or args.old_bearer_safe):
+                    raise ValueError("fresh activation not confirmed")
+                result = activate_fresh(args.project_directory, directory)
     except (OSError, ValueError, TypeError, KeyError, UnicodeError):
         print("STOP")
         return 1

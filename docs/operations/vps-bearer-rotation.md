@@ -8,7 +8,7 @@ remains available for a separately reviewed return path.
 
 ## Phases and evidence
 
-`scripts/portable-vps-bearer-rotation.py` has four phase selectors. Each run
+`scripts/portable-vps-bearer-rotation.py` has six phase selectors. Each run
 requires root on the already reviewed host, an absolute protected project path,
 and a separate confirmation for any phase that stages or changes state.
 
@@ -18,6 +18,8 @@ and a separate confirmation for any phase that stages or changes state.
 | `stage` | Creates one private stage directory with complete rollback and candidate copies of `backend.env` and `mom.env`; leaves live files and services alone. | UUID run ID, `accepted.json` only after validation. |
 | `activate` | Takes the existing release project lock; stops only backend and Mom, replaces both files, recreates those containers, then checks both bearer directions. | `activation-incomplete.json` followed by `activation-result.json`. A failure keeps the path stopped. |
 | `recover-routine` | Takes the same lock and restores both old files, then recreates and verifies both peers. | Separate `recovery-incomplete.json` and `recovery-result.json`. Requires an affirmative declaration that the old bearer remains safe. |
+| `stage-fresh` | After failed activation of an exposed old bearer, stages a different new pair while both peers remain stopped. | Protected `fresh-source-*`, `fresh-candidate-*`, and `fresh-accepted.json`. |
+| `activate-fresh` | Separately confirmed use of that fresh pair; refuses drift, recreates both peers and rejects both earlier selected bearers. | `fresh-activation-incomplete.json` and `fresh-activation-result.json`. |
 
 The stage directory and all evidence files must remain root-owned and private.
 Candidate and rollback files contain actual credentials and must never be
@@ -45,9 +47,9 @@ database state. A healthy container alone does not satisfy this gate.
 
 Routine recovery is only valid if the old bearer was not exposed. If it was
 exposed, do not declare it safe or invoke `recover-routine`; keep both peers
-isolated and stage a different fresh value under a separately reviewed
-incident procedure. Never restore an exposed old bearer. Failed recovery
-also leaves the path stopped for operator diagnosis.
+isolated, then use the separately confirmed fresh stage and activation phases.
+Never restore an exposed old bearer. Failed recovery also leaves the path
+stopped for operator diagnosis.
 
 ## Required before production use
 

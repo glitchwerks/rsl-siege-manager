@@ -110,7 +110,7 @@ class DisposableBearerRotationTests(unittest.TestCase):
                         stage = ROTATE.stage(project, pair, evidence)
                         self.assertEqual(ROTATE.read_runtime(project, 0), before)
                         activated = ROTATE.activate(project, evidence / stage["run_id"])
-                        self.assertEqual(activated["status"], "PASS")
+                        self.assertEqual(activated["status"], "PASS", activated["checks"])
                         after, installed = snapshot(project, 0)
                         self.assertNotEqual(ROTATE.pair_values(after)[pair],
                                             ROTATE.pair_values(before)[pair])
