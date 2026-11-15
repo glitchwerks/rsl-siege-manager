@@ -127,6 +127,36 @@ class EffectiveTests(unittest.TestCase):
                         "--confirm-readonly"]), 1)
                 self.assertEqual(report.read_text(), result)
 
+    def test_report_publish_failure_cannot_return_success(self):
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory) / "project"
+            project.mkdir(mode=0o700)
+            report = Path(directory) / "report.json"
+            original_lstat = Path.lstat
+
+            def owner_lstat(path):
+                if path == project:
+                    return SimpleNamespace(st_mode=stat.S_IFDIR | 0o700, st_uid=0)
+                return original_lstat(path)
+
+            with (patch.object(effective.os, "geteuid", return_value=0),
+                  patch.object(Path, "lstat", owner_lstat),
+                  patch.object(effective.PREFLIGHT, "private_report_directory", return_value=True),
+                  patch.object(effective.PREFLIGHT, "private_runtime_files", return_value=True),
+                  patch.object(effective.PREFLIGHT, "deployment_bind_sources_current", return_value=True),
+                  patch.object(effective.PREFLIGHT, "render", return_value=model()),
+                  patch.object(effective.PREFLIGHT, "read_mom_approval", return_value={}),
+                  patch.object(effective.PREFLIGHT, "validate", return_value={"valid": True}),
+                  patch.object(effective, "inspect", return_value=dict.fromkeys(effective.CHECKS, True)),
+                  patch.object(effective, "publish", side_effect=OSError("disk full"))):
+                output = io.StringIO()
+                with redirect_stdout(output):
+                    self.assertEqual(effective.main(["--project-directory", str(project),
+                        "--expected-enabled", "true", "--report", str(report),
+                        "--confirm-readonly"]), 1)
+                self.assertEqual(output.getvalue().strip(), "STOP")
+                self.assertEqual(json.loads(report.read_text())["status"], "INCOMPLETE")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -158,6 +158,7 @@ def main(argv=None):
               "timestamp": datetime.now(timezone.utc).isoformat(),
               "status": "STOP", "checks": {name: False for name in CHECKS}}
     reserved = False
+    published = False
     try:
         project = args.project_directory
         report = args.report
@@ -188,14 +189,16 @@ def main(argv=None):
                 result["checks"] = inspect(model, args.expected_enabled)
         result["status"] = "PASS" if all(result["checks"].values()) else "STOP"
         publish(report, result)
+        published = True
     except (OSError, ValueError, TypeError, KeyError, RuntimeError):
+        result["status"] = "STOP"
         try:
             if reserved:
                 publish(args.report, result)
         except OSError:
             pass
     print(result["status"])
-    return 0 if result["status"] == "PASS" else 1
+    return 0 if published and result["status"] == "PASS" else 1
 
 
 if __name__ == "__main__":
