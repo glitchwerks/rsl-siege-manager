@@ -3,12 +3,14 @@
 Production remains on its currently approved image digests. A successful
 connection check grants no permission to replace them. The release path has
 separate candidate, access, staging, backup, migration, promotion, acceptance,
-and recovery phases. Candidate and access checks are automated by
+and recovery phases. The repository has protected manual workflows and
+phase-scoped host commands for these phases, beginning with
 `.github/workflows/vps-release-readiness.yml`. A separate
-`.github/workflows/vps-release-stage.yml` can store the same reviewed candidate
-as private host evidence after another explicit approval. Backup, migration,
-promotion, acceptance and recovery remain unavailable to the GitHub deploy key
-until their reviewed, phase-scoped host implementation and isolated rehearsal.
+`.github/workflows/vps-release-stage.yml` can store the reviewed candidate as
+private host evidence after explicit approval. The current host command must
+be reviewed and installed on the VPS, and the complete path rehearsed on an
+isolated target, before any production release dispatch. Production promotion
+also requires its own approval.
 
 ## Candidate and read-only access
 
@@ -369,7 +371,7 @@ remain on the host. STOP requires operator diagnosis and the separately
 reviewed recovery path. No host update or promotion dispatch has been
 performed for this bridge.
 
-## Promotion phases to implement and rehearse
+## Implemented promotion phases awaiting isolated rehearsal
 
 The read-only `scripts/portable-vps-release-promotion-ready.py` gate now checks
 the exact accepted migration chain and final revisions in both databases. It
@@ -377,9 +379,10 @@ requires the same accepted recovery proof, stopped writers, unchanged installed
 configuration and container identities, and cached candidate image digests.
 For a database with `mode: none`, any migration attempt is a STOP. It records a
 root-private baseline and a separate sanitized pass/fail report. A passing
-report does not switch images or start writers; promotion still needs its own
-confirmed implementation and isolated rehearsal. This script is reviewed code
-only and is not installed on the VPS or callable by the GitHub deploy key.
+report does not switch images or start writers; promotion requires its own
+confirmed phase and isolated rehearsal. The repository's fixed SSH command
+and protected workflow expose this gate; installation of the current host
+command on the VPS has not been accepted.
 
 The separately confirmed `scripts/portable-vps-release-promote.py` phase consumes
 that accepted baseline by exact digest and re-runs its checks immediately before
@@ -400,10 +403,11 @@ two original files. Once activation has started, it leaves the files and stage
 evidence in place for separately confirmed recovery; new writes may already
 have occurred, so it never attempts automatic image or database rollback.
 
-The promotion script is reviewed code only. It is not installed on the VPS or
-exposed by the forced SSH command. It has not switched production images. Its
-operator invocation and rollback rehearsal must be reviewed alongside the
-production acceptance and recovery phases before any live deployment.
+The repository's fixed SSH command and protected manual workflow expose the
+promotion script. Installation of the current host command on the VPS has not
+been accepted, and no production image switch has been performed. Rehearse
+the invocation and recovery boundary with the acceptance and recovery phases
+before any live deployment.
 
 The read-only `scripts/portable-vps-release-accept.py` phase requires an accepted
 promotion report and the exact preserved old configuration. An operator-owned
@@ -447,10 +451,12 @@ An absent or unsafe input causes STOP before the acceptance attempt is reserved.
 
 The private acceptance baseline records the exact installed images, source
 SHAs, versions, container IDs, and configuration hashes. The separate report
-contains fixed pass/fail checks only. This phase is reviewed repository code,
-not installed on the VPS and has not run against production. It does not establish independent monitor notification
-delivery or a full Discord write acceptance. Those remain separate release
-gates, with production Discord writes requiring their own authorization.
+contains fixed pass/fail checks only. The protected workflow and host command
+exist in the repository, but their current VPS installation is unaccepted and
+the phase has not run against production. It does not establish independent
+monitor notification delivery or a full Discord write acceptance. Those remain
+separate release gates, with production Discord writes requiring their own
+authorization.
 
 The confirmed pause records each writer container's Docker `FinishedAt` time
 in root-private stage evidence. Migration, promotion, acceptance, and recovery
@@ -494,39 +500,40 @@ preflight baseline afterward and leaves backend and Mom stopped. It does not
 restart writers, roll back a database, or change images. A partial restore or
 any post-activation failure records STOP for manual reconciliation. Stage and
 external reports contain booleans only, and a project lock prevents a parallel
-promotion. This script is repository code only; it is not installed on the VPS
-or exposed through the GitHub deploy key.
+promotion. The protected workflow and fixed host command expose this script
+in the repository; current VPS installation and an isolated recovery rehearsal
+remain unaccepted.
 
-1. **Preflight integration:** expose the reviewed read-only candidate gate
-   through a phase-scoped host command, bind later phases to its baseline, and
-   rehearse the complete configuration path without activating services.
-2. **Backup:** run the already reviewed production backup job as a distinct
-   confirmed phase. Require a fresh complete local and off-host readback report
-   and the independent restore evidence before migration or promotion. Timer
-   activity alone does not satisfy this gate.
-3. **Migrate:** only if the candidate explicitly names a reviewed compatible
-   migration, run the exact Siege and Mom maintenance services after backup
-   acceptance. Do not infer migration permission from a new image digest.
-4. **Promote:** atomically preserve the old protected `stack.env` and Mom image
-   approval record, switch only the approved image digests, then run targeted
-   Compose activation with one production Mom gateway. Never start the bundled
-   bot on the production identity.
-5. **Accept:** verify public HTTPS health/version/auth, backend and frontend
-   source identities, Mom gateway connection and completed scheduler work,
-   sidecar authentication, backup/monitor status, and unaffected host services.
-   Record exact installed digests/source/configuration and sanitized evidence.
-   Production Discord write tests remain independently authorized.
-6. **Recover:** before new writes or migration, a separately confirmed image
-   and configuration restore can use the preserved baseline. After a migration
-   or new writes, stop and use reviewed database reconciliation and recovery;
-   never automatically roll back the database or reenable Azure deployment.
+The remaining acceptance work is:
 
-The preflight, backup, migration, promote, accept, and recover operations need
-separate phase-scoped host commands, explicit confirmations, bounded input,
-sanitized private reports, and narrow rollback behavior. Review their host
-dependencies and remote-access impact before installing them. Rehearse with an
-isolated Discord identity and target before requesting a distinct production
-release approval. Completion is tracked by [Siege #583](https://github.com/glitchwerks/rsl-siege-manager/issues/583),
+1. Review the current fixed host command, its dependencies, and its impact on
+   remote access. Install and verify it only in an approved host-change window.
+2. Provision the isolated VMware target with its own Discord identity and
+   databases, then add a reviewed CI route for that target. The current Siege
+   phase workflows hard-code the `vps-prod` GitHub environment and read
+   `VPS_TAILSCALE_HOST` from its secrets; they cannot target the rehearsal VM.
+   A separate rehearsal environment must hold its own host address, SSH key,
+   pinned host key, Tailscale OAuth credentials, and repository access secrets.
+   The phase workflows need an explicit, reviewed selector that binds every
+   phase to that environment without changing `vps-prod` secrets or pointing
+   production dispatches at the VM. Until this route exists, use only the
+   disposable CI fixtures; do not dispatch a production phase to rehearse.
+3. Run separate clean rehearsal scenarios. For pre-activation recovery, stage
+   a candidate with no migration or activation marker, trigger an eligible
+   failed promotion, inspect, and restore the original protected files. For a
+   candidate requiring migration, start with a fresh target state, prove backup
+   readback and restore, migrate the reviewed revisions, promote, and run
+   read-only acceptance. The recovery guard stops if any stage on the target
+   has started migration or Compose activation. Keep reports sanitized.
+4. Verify Mom gateway and scheduler behavior, sidecar authentication, public
+   HTTPS, component identities, independent Slack and fallback email delivery,
+   and unaffected host services. Production Discord writes require separate
+   authorization.
+5. Request a distinct full production release approval after those gates pass.
+   A post-migration or post-activation failure requires manual reconciliation;
+   never automatically roll back a database or reenable Azure deployment.
+
+Completion is tracked by [Siege #583](https://github.com/glitchwerks/rsl-siege-manager/issues/583),
 [Mom #387](https://github.com/glitchwerks/rsl-mom-bot/issues/387), and
 [coordination #25](https://github.com/glitchwerks/rsl-mom-apps/issues/25).
 
@@ -619,10 +626,11 @@ database's unchanged revision, no running maintenance container, and the
 still-current paused backup proof. A failure or timeout records STOP and leaves
 the writers stopped; the stage marker prevents an automatic retry. An operator
 must inspect the resulting schema and any remaining maintenance container
-before separately approving recovery or another candidate. This reviewed
-script is not installed in the forced SSH command or invoked by GitHub Actions.
-The CI rehearsal uses disposable services only. No production migration has
-run, and promotion remains a separate phase.
+before separately approving recovery or another candidate. The repository's
+fixed SSH command and protected manual workflow invoke this reviewed script.
+Current VPS installation remains unaccepted. The CI rehearsal uses disposable
+services only. No production migration has run, and promotion remains a
+separate phase.
 
 ## Writer pause and backup ordering gate
 
@@ -644,8 +652,9 @@ The check does not stop a service, run a backup, or inspect other possible
 database writers. Before an actual release, inventory any external writer or
 worker outside this Compose project and include it in the approved pause plan.
 The gate must be rerun immediately before migration, together with the
-same-copy backup and restore evidence gate. No forced SSH command currently
-exposes the writer gate, and it must first be rehearsed on the isolated target.
+same-copy backup and restore evidence gate. The repository's guarded backup
+and proof path invokes this gate; it must still be rehearsed on the isolated
+target.
 
 The `VPS access contract` CI workflow also runs a disposable Docker rehearsal.
 It starts two synthetic containers with a unique Compose project label, verifies
@@ -709,9 +718,8 @@ migration or new writes occurred, recheck database revisions and original
 container identities, then separately approve targeted restart of only the
 stopped original services and verify app, gateway, PostgreSQL, proxy, backup
 timer, and remote access. If the schema or writer state is uncertain, keep the
-writers stopped for coordinated recovery. This branch supplies code and tests
-only; isolated rehearsal and a separately approved production deployment are
-still required.
+writers stopped for coordinated recovery. Isolated rehearsal and a separately
+approved production deployment are still required.
 
 The disposable Docker CI job exercises the pause against four uniquely labeled
 synthetic containers. It verifies that Mom and backend stop while PostgreSQL
