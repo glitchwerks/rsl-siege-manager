@@ -5,6 +5,14 @@ name: VPS release readiness
 on:
   workflow_dispatch:
     inputs:
+      target:
+        description: Protected deployment target
+        required: true
+        default: production
+        type: choice
+        options:
+          - production
+          - rehearsal
       candidate_ref:
         description: Full rsl-mom-apps commit SHA containing the candidate JSON
         required: true
@@ -27,15 +35,15 @@ concurrency:
 
 jobs:
   candidate:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && (inputs.target == 'production' || inputs.target == 'rehearsal')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - name: Require cross-repository read credential
         env:
-          VPS_RELEASE_REPO_READ_TOKEN: ${{ secrets.VPS_RELEASE_REPO_READ_TOKEN }}
-          VPS_RELEASE_PACKAGE_READ_TOKEN: ${{ secrets.VPS_RELEASE_PACKAGE_READ_TOKEN }}
-          VPS_RELEASE_READ_USER: ${{ vars.VPS_RELEASE_READ_USER }}
+          VPS_RELEASE_REPO_READ_TOKEN: ${{ secrets[inputs.target == 'rehearsal' && 'REHEARSAL_VPS_RELEASE_REPO_READ_TOKEN' || 'VPS_RELEASE_REPO_READ_TOKEN'] }}
+          VPS_RELEASE_PACKAGE_READ_TOKEN: ${{ secrets[inputs.target == 'rehearsal' && 'REHEARSAL_VPS_RELEASE_PACKAGE_READ_TOKEN' || 'VPS_RELEASE_PACKAGE_READ_TOKEN'] }}
+          VPS_RELEASE_READ_USER: ${{ vars[inputs.target == 'rehearsal' && 'REHEARSAL_VPS_RELEASE_READ_USER' || 'VPS_RELEASE_READ_USER'] }}
         run: |
           set -euo pipefail
           test -n "$VPS_RELEASE_REPO_READ_TOKEN"
@@ -62,7 +70,7 @@ jobs:
           repository: glitchwerks/rsl-mom-apps
           ref: fb8c0d795e1b06c93058f1cce2ab612491ce4cec
           path: contract
-          token: ${{ secrets.VPS_RELEASE_REPO_READ_TOKEN }}
+          token: ${{ secrets[inputs.target == 'rehearsal' && 'REHEARSAL_VPS_RELEASE_REPO_READ_TOKEN' || 'VPS_RELEASE_REPO_READ_TOKEN'] }}
           persist-credentials: false
 
       - name: Check out data-only candidate
@@ -72,7 +80,7 @@ jobs:
           ref: ${{ inputs.candidate_ref }}
           path: candidate
           fetch-depth: 0
-          token: ${{ secrets.VPS_RELEASE_REPO_READ_TOKEN }}
+          token: ${{ secrets[inputs.target == 'rehearsal' && 'REHEARSAL_VPS_RELEASE_REPO_READ_TOKEN' || 'VPS_RELEASE_REPO_READ_TOKEN'] }}
           persist-credentials: false
 
       - name: Bind candidate to exact file digest
@@ -96,12 +104,12 @@ jobs:
         uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io
-          username: ${{ vars.VPS_RELEASE_READ_USER }}
-          password: ${{ secrets.VPS_RELEASE_PACKAGE_READ_TOKEN }}
+          username: ${{ vars[inputs.target == 'rehearsal' && 'REHEARSAL_VPS_RELEASE_READ_USER' || 'VPS_RELEASE_READ_USER'] }}
+          password: ${{ secrets[inputs.target == 'rehearsal' && 'REHEARSAL_VPS_RELEASE_PACKAGE_READ_TOKEN' || 'VPS_RELEASE_PACKAGE_READ_TOKEN'] }}
 
       - name: Verify CI runs and immutable GHCR image digests
         env:
-          GH_TOKEN: ${{ secrets.VPS_RELEASE_REPO_READ_TOKEN }}
+          GH_TOKEN: ${{ secrets[inputs.target == 'rehearsal' && 'REHEARSAL_VPS_RELEASE_REPO_READ_TOKEN' || 'VPS_RELEASE_REPO_READ_TOKEN'] }}
         run: |
           python3 contract/scripts/verify-vps-candidate.py \
             --manifest '${{ steps.input.outputs.candidate_file }}' \
@@ -118,9 +126,10 @@ jobs:
 
   access:
     needs: candidate
+    if: github.ref == 'refs/heads/main' && (inputs.target == 'production' || inputs.target == 'rehearsal')
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    environment: vps-prod
+    environment: ${{ inputs.target == 'rehearsal' && 'vps-rehearsal' || 'vps-prod' }}
     steps:
       - name: Check out reviewed main
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -130,17 +139,17 @@ jobs:
       - name: Join tailnet as ephemeral deployment runner
         uses: tailscale/github-action@064b10558093f38325e838ddea35486bdc6b1d5c # v4.4.0
         with:
-          oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
-          oauth-secret: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
+          oauth-client-id: ${{ secrets[inputs.target == 'rehearsal' && 'REHEARSAL_TAILSCALE_OAUTH_CLIENT_ID' || 'TAILSCALE_OAUTH_CLIENT_ID'] }}
+          oauth-secret: ${{ secrets[inputs.target == 'rehearsal' && 'REHEARSAL_TAILSCALE_OAUTH_SECRET' || 'TAILSCALE_OAUTH_SECRET'] }}
           tags: tag:github-deploy
 
       - name: Verify pinned SSH host and read-only VPS baseline
         env:
-          VPS_TAILSCALE_HOST: ${{ secrets.VPS_TAILSCALE_HOST }}
-          VPS_SSH_USER: ${{ vars.VPS_SSH_USER }}
-          VPS_SSH_HOST_FINGERPRINT: ${{ secrets.VPS_SSH_HOST_FINGERPRINT }}
-          VPS_DEPLOY_SSH_KEY: ${{ secrets.VPS_DEPLOY_SSH_KEY }}
-          VPS_SSH_KNOWN_HOSTS: ${{ secrets.VPS_SSH_KNOWN_HOSTS }}
+          VPS_TAILSCALE_HOST: ${{ secrets[inputs.target == 'rehearsal' && 'REHEARSAL_VPS_TAILSCALE_HOST' || 'VPS_TAILSCALE_HOST'] }}
+          VPS_SSH_USER: ${{ vars[inputs.target == 'rehearsal' && 'REHEARSAL_VPS_SSH_USER' || 'VPS_SSH_USER'] }}
+          VPS_SSH_HOST_FINGERPRINT: ${{ secrets[inputs.target == 'rehearsal' && 'REHEARSAL_VPS_SSH_HOST_FINGERPRINT' || 'VPS_SSH_HOST_FINGERPRINT'] }}
+          VPS_DEPLOY_SSH_KEY: ${{ secrets[inputs.target == 'rehearsal' && 'REHEARSAL_VPS_DEPLOY_SSH_KEY' || 'VPS_DEPLOY_SSH_KEY'] }}
+          VPS_SSH_KNOWN_HOSTS: ${{ secrets[inputs.target == 'rehearsal' && 'REHEARSAL_VPS_SSH_KNOWN_HOSTS' || 'VPS_SSH_KNOWN_HOSTS'] }}
         run: python3 scripts/portable-vps-access-check.py --report "$RUNNER_TEMP/vps-access-report.json"
 
       - name: Upload sanitized access report

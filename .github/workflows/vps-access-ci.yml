@@ -6,6 +6,7 @@ on:
       - ".github/workflows/vps-release-*.yml"
       - "scripts/portable-vps-*.py"
       - "scripts/tests/test_portable_vps_access.py"
+      - "scripts/tests/test_vps_release_workflow_targets.py"
       - "scripts/tests/test_portable_vps_migration_baseline.py"
       - "scripts/tests/test_portable_vps_backup_evidence.py"
       - "scripts/tests/test_portable_vps_writer_pause_gate.py"
@@ -51,6 +52,7 @@ on:
       - ".github/workflows/vps-release-*.yml"
       - "scripts/portable-vps-*.py"
       - "scripts/tests/test_portable_vps_access.py"
+      - "scripts/tests/test_vps_release_workflow_targets.py"
       - "scripts/tests/test_portable_vps_migration_baseline.py"
       - "scripts/tests/test_portable_vps_backup_evidence.py"
       - "scripts/tests/test_portable_vps_writer_pause_gate.py"
@@ -100,6 +102,8 @@ jobs:
           persist-credentials: false
       - name: Test fixed read-only SSH request and sanitized reporting
         run: python3 -m unittest discover -s scripts/tests -p test_portable_vps_access.py -v
+      - name: Guard VPS release target selection and credential separation
+        run: python3 -m unittest discover -s scripts/tests -p test_vps_release_workflow_targets.py -v
       - name: Test exact live migration revision baseline without Docker writes
         run: python3 -m unittest discover -s scripts/tests -p test_portable_vps_migration_baseline.py -v
       - name: Test fresh same-copy backup and isolated restore evidence
