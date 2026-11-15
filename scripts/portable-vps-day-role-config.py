@@ -258,18 +258,39 @@ def load(project, directory, owner):
     return accepted, baseline, old, candidate, mom, values
 
 
-def proof_snapshot(project, directory, profile_path, backup_path, recover_path,
-                   restore_path, owner=0):
+def proof_snapshot(project, directory, profile_path, maintenance_report,
+                   backup_path, recover_path, restore_path, owner=0):
     """Bind same-copy evidence to this unchanged stage and maintenance pause."""
     accepted, baseline, old, _, mom, _ = load(project, directory, owner)
     ROTATION.require_pause(project, drain=True)
     pause_history = ROTATION.MAINT.history(project)
     if pause_history is None:
         raise ValueError("missing pause history")
-    pause_at = BACKUP_EVIDENCE.moment(pause_history["pause_started_at"])
     resumed_at = BACKUP_EVIDENCE.moment(pause_history["last_resumed_at"])
-    if pause_at is None or (resumed_at is not None and pause_at <= resumed_at):
-        raise ValueError("stale maintenance pause")
+    if pause_history["pause_started_at"] is None:
+        raise ValueError("missing maintenance pause boundary")
+    expected_phase = {"pause-report.json": "maintenance-pause",
+                      "drain-report.json": "maintenance-drain"}.get(maintenance_report.name)
+    if (maintenance_report.parent != directory or expected_phase is None
+            or not maintenance_report.is_absolute() or ".." in maintenance_report.parts):
+        raise ValueError("invalid maintenance report selector")
+    maintenance_raw = GATE.read_private(maintenance_report, owner)
+    maintenance = json.loads(maintenance_raw,
+                             object_pairs_hook=ROTATION.PREFLIGHT.REMOTE.no_duplicate_keys)
+    if (not isinstance(maintenance, dict) or maintenance.get("phase") != expected_phase
+            or maintenance.get("status") != "PASS"
+            or not isinstance(maintenance.get("checks"), dict)
+            or maintenance["checks"].get("drained") is not True
+            or maintenance["checks"].get("paused") is not True
+            or not all(value is True for value in maintenance["checks"].values())):
+        raise ValueError("maintenance drain was not accepted")
+    state_path = project / "control" / "state"
+    state_mtime_ns = state_path.lstat().st_mtime_ns
+    drain_mtime_ns = maintenance_report.lstat().st_mtime_ns
+    drain_mtime = datetime.fromtimestamp(drain_mtime_ns / 1e9, timezone.utc)
+    if (drain_mtime_ns < state_mtime_ns
+            or (resumed_at is not None and drain_mtime <= resumed_at)):
+        raise ValueError("maintenance report predates current pause")
     profile, profile_sha = BACKUP_PROFILE.profile(profile_path)
     if profile["project_directory"] != project:
         raise ValueError("backup profile project mismatch")
@@ -302,28 +323,33 @@ def proof_snapshot(project, directory, profile_path, backup_path, recover_path,
         reader=lambda path: parsed[next(name for name, item in paths.items() if item == path)])
     backup_started = BACKUP_EVIDENCE.moment(parsed["backup"].get("timestamp"))
     if (not checks or not all(value is True for value in checks.values())
-            or backup_started is None or backup_started < pause_at
+            or backup_started is None or backup_started < drain_mtime
             or parsed["backup"].get("run_id") != run_id
             or any(digest(GATE.read_private(path, backup_owner)) != digest(raw[name])
                    for name, path in paths.items())
+            or GATE.read_private(maintenance_report, owner) != maintenance_raw
+            or maintenance_report.lstat().st_mtime_ns != drain_mtime_ns
+            or state_path.lstat().st_mtime_ns != state_mtime_ns
             or ROTATION.MAINT.history(project) != pause_history
             or ROTATION.MAINT.state(project) != "paused"):
         raise ValueError("backup proof or pause changed")
     return {"schema": 1, "stage_id": directory.name,
             "pause_history": pause_history, "profile_sha256": profile_sha,
+            "maintenance": {"path": str(maintenance_report),
+                            "sha256": digest(maintenance_raw)},
             "reports": {name: {"path": str(path), "sha256": digest(raw[name])}
                         for name, path in paths.items()}}
 
 
-def accept_proof(project, directory, profile_path, backup_path, recover_path,
-                 restore_path, owner=0):
+def accept_proof(project, directory, profile_path, maintenance_report,
+                 backup_path, recover_path, restore_path, owner=0):
     with PAUSE.project_lock(project):
         load(project, directory, owner)
         if (directory / "proof-attempt.json").exists() or (directory / "proof-accepted.json").exists():
             raise ValueError("proof already attempted")
         private_json(directory / "proof-attempt.json",
                      {"phase": "day-role-proof", "status": "INCOMPLETE"}, owner)
-        proof = proof_snapshot(project, directory, profile_path, backup_path,
+        proof = proof_snapshot(project, directory, profile_path, maintenance_report, backup_path,
                                recover_path, restore_path, owner)
         private_json(directory / "proof-accepted.json",
                      {"phase": "day-role-proof", "status": "PASS", "proof": proof}, owner)
@@ -337,10 +363,16 @@ def proof_current(project, directory, profile_path, owner=0):
             or record["phase"] != "day-role-proof" or record["status"] != "PASS"
             or not isinstance(record["proof"], dict)
             or set(record["proof"]) != {"schema", "stage_id", "pause_history",
-                                         "profile_sha256", "reports"}
+                                         "profile_sha256", "maintenance", "reports"}
             or record["proof"]["schema"] != 1
             or record["proof"]["stage_id"] != directory.name):
         raise ValueError("invalid accepted proof")
+    maintenance = record["proof"]["maintenance"]
+    if (not isinstance(maintenance, dict) or set(maintenance) != {"path", "sha256"}
+            or not isinstance(maintenance["path"], str)
+            or not isinstance(maintenance["sha256"], str)
+            or not re.fullmatch(r"[0-9a-f]{64}", maintenance["sha256"])):
+        raise ValueError("invalid maintenance selector")
     reports = record["proof"]["reports"]
     if not isinstance(reports, dict) or set(reports) != {"backup", "recover", "restore"}:
         raise ValueError("invalid proof selectors")
@@ -353,7 +385,8 @@ def proof_current(project, directory, profile_path, owner=0):
                 or not re.fullmatch(r"[0-9a-f]{64}", item["sha256"])):
             raise ValueError("invalid proof selector")
         paths.append(Path(item["path"]))
-    return record["proof"] == proof_snapshot(project, directory, profile_path, *paths, owner)
+    return record["proof"] == proof_snapshot(project, directory, profile_path,
+                                             Path(maintenance["path"]), *paths, owner)
 
 
 def replace_backend(project, raw, owner):
@@ -583,6 +616,7 @@ def main(argv=None):
     parser.add_argument("--stage-directory", type=Path)
     parser.add_argument("--public-config", type=Path)
     parser.add_argument("--backup-profile", type=Path)
+    parser.add_argument("--maintenance-report", type=Path)
     parser.add_argument("--backup-report", type=Path)
     parser.add_argument("--recover-report", type=Path)
     parser.add_argument("--restore-report", type=Path)
@@ -606,11 +640,12 @@ def main(argv=None):
         if args.stage_directory is None:
             raise ValueError("missing stage selector")
         if args.phase == "proof":
-            if any(value is None for value in (args.backup_profile, args.backup_report,
-                                               args.recover_report, args.restore_report)):
+            if any(value is None for value in (args.backup_profile, args.maintenance_report,
+                                               args.backup_report, args.recover_report,
+                                               args.restore_report)):
                 raise ValueError("missing proof inputs")
             result = accept_proof(args.project_directory, args.stage_directory,
-                                  args.backup_profile, args.backup_report,
+                                  args.backup_profile, args.maintenance_report, args.backup_report,
                                   args.recover_report, args.restore_report)
             print(json.dumps(result, sort_keys=True))
             return 0

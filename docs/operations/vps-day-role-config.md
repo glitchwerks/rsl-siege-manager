@@ -49,8 +49,12 @@ STOP or baseline drift; never edit an accepted stage in place.
 
 Before activation, complete the separately confirmed maintenance pause and
 two-peer drain, managed encrypted backup, off-host recovery and isolated
-same-copy restore. The backup must start after the current maintenance pause.
-The proof phase checks those private reports, the protected backup profile,
+same-copy restore. Write the successful maintenance `pause` report to the exact
+stage directory as `pause-report.json`. If pause reported STOP because its drain
+timed out, run the separate read-only `drain` phase and write its successful
+report there as `drain-report.json`. The backup must start after the successful
+drain report was written. The proof phase checks that report against the
+current paused state file, the private backup reports, the protected backup profile,
 current installed images and configuration, and unchanged pause history. It
 records one immutable acceptance under the exact stage. A failed proof attempt
 requires a new stage; do not edit evidence in place. Select the exact reports
@@ -61,6 +65,7 @@ python3 scripts/portable-vps-day-role-config.py proof \
   --project-directory /srv/rsl-siege \
   --stage-directory /protected/day-role/evidence/REPLACE-RUN-ID \
   --backup-profile /srv/rsl-siege/runtime/release-backup-profile.json \
+  --maintenance-report /protected/day-role/evidence/REPLACE-RUN-ID/pause-report.json \
   --backup-report /protected/backups/runs/REPLACE-BACKUP-UUID/job.json \
   --recover-report /protected/recovery/recover.json \
   --restore-report /protected/recovery/restore.json \

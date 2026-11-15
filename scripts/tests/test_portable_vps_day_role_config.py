@@ -4,6 +4,7 @@ from contextlib import nullcontext
 from datetime import datetime, timedelta, timezone
 import importlib.util
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -181,15 +182,27 @@ def test_activation_refuses_changed_backup_proof_before_stopping_backend(monkeyp
         RUNNER.activate(project, stage, tmp_path / "public.json", tmp_path / "profile.json")
 
 
-def test_proof_rejects_backup_started_before_current_pause(monkeypatch, tmp_path):
+def test_proof_requires_backup_after_current_completed_drain(monkeypatch, tmp_path):
     project, stage = tmp_path / "project", tmp_path / "stage"
+    (project / "control").mkdir(parents=True)
+    stage.mkdir()
     backup_id = "11111111-1111-4111-8111-111111111111"
     backup_root = tmp_path / "backups"
     backup = backup_root / "runs" / backup_id / "job.json"
     recover, restore = tmp_path / "recover.json", tmp_path / "restore.json"
     pause = datetime.now(timezone.utc) - timedelta(minutes=30)
-    history = {"schema": 1, "pause_started_at": pause.isoformat(), "last_resumed_at": None}
-    reports = {"job.json": {"timestamp": (pause - timedelta(minutes=1)).isoformat(),
+    history = {"schema": 1, "pause_started_at": (pause - timedelta(days=1)).isoformat(),
+               "last_resumed_at": (pause - timedelta(hours=1)).isoformat()}
+    state_file = project / "control" / "state"
+    state_file.write_text("paused\n")
+    maintenance_report = stage / "pause-report.json"
+    maintenance_report.write_text("private test report\n")
+    os.utime(state_file, (pause.timestamp(), pause.timestamp()))
+    drained_at = pause + timedelta(minutes=2)
+    os.utime(maintenance_report, (drained_at.timestamp(), drained_at.timestamp()))
+    reports = {"pause-report.json": {"phase": "maintenance-pause", "status": "PASS",
+                                      "checks": {"paused": True, "drained": True}},
+               "job.json": {"timestamp": (pause + timedelta(minutes=1)).isoformat(),
                             "run_id": backup_id},
                "recover.json": {}, "restore.json": {}}
     baseline = {"project": "test", "installed": {}}
@@ -210,16 +223,28 @@ def test_proof_rejects_backup_started_before_current_pause(monkeypatch, tmp_path
     monkeypatch.setattr(RUNNER.GATE, "read_private", lambda path, *_: json.dumps(reports[path.name]).encode())
     monkeypatch.setattr(RUNNER.BACKUP_EVIDENCE, "inspect", lambda *_, **__: {"valid": True})
     with pytest.raises(ValueError, match="backup proof or pause changed"):
-        RUNNER.proof_snapshot(project, stage, tmp_path / "profile.json", backup, recover, restore)
+        RUNNER.proof_snapshot(project, stage, tmp_path / "profile.json", maintenance_report,
+                              backup, recover, restore)
     with pytest.raises(ValueError, match="backup outside managed run"):
-        RUNNER.proof_snapshot(project, stage, tmp_path / "profile.json", backup.parent / "other.json",
-                              recover, restore)
-    reports["job.json"]["timestamp"] = (pause + timedelta(minutes=1)).isoformat()
-    accepted = RUNNER.proof_snapshot(project, stage, tmp_path / "profile.json",
+        RUNNER.proof_snapshot(project, stage, tmp_path / "profile.json", maintenance_report,
+                              backup.parent / "other.json", recover, restore)
+    reports["job.json"]["timestamp"] = (pause + timedelta(minutes=3)).isoformat()
+    accepted = RUNNER.proof_snapshot(project, stage, tmp_path / "profile.json", maintenance_report,
                                      backup, recover, restore)
     assert accepted["stage_id"] == stage.name
     assert accepted["pause_history"] == history
     assert set(accepted["reports"]) == {"backup", "recover", "restore"}
+    later = drained_at + timedelta(minutes=1)
+    os.utime(state_file, (later.timestamp(), later.timestamp()))
+    with pytest.raises(ValueError, match="predates current pause"):
+        RUNNER.proof_snapshot(project, stage, tmp_path / "profile.json", maintenance_report,
+                              backup, recover, restore)
+    os.utime(state_file, (pause.timestamp(), pause.timestamp()))
+    reports["pause-report.json"]["checks"]["drained"] = False
+    with pytest.raises(ValueError, match="drain was not accepted"):
+        RUNNER.proof_snapshot(project, stage, tmp_path / "profile.json", maintenance_report,
+                              backup, recover, restore)
+    reports["pause-report.json"]["checks"]["drained"] = True
     reads = {"job.json": 0}
     def changed_report(path, *_):
         if path.name == "job.json":
@@ -229,7 +254,7 @@ def test_proof_rejects_backup_started_before_current_pause(monkeypatch, tmp_path
         return json.dumps(reports[path.name]).encode()
     monkeypatch.setattr(RUNNER.GATE, "read_private", changed_report)
     with pytest.raises(ValueError, match="backup proof or pause changed"):
-        RUNNER.proof_snapshot(project, stage, tmp_path / "profile.json",
+        RUNNER.proof_snapshot(project, stage, tmp_path / "profile.json", maintenance_report,
                               backup, recover, restore)
 
 
@@ -239,6 +264,7 @@ def test_accepted_proof_rejects_changed_record(monkeypatch, tmp_path):
     record = {"phase": "day-role-proof", "status": "PASS", "proof": {
         "schema": 1, "stage_id": stage.name, "pause_history": {},
         "profile_sha256": "a" * 64,
+        "maintenance": {"path": str(stage / "pause-report.json"), "sha256": "d" * 64},
         "reports": {name: {"path": path, "sha256": "b" * 64} for name, path in (
             ("backup", backup), ("recover", "/protected/recover.json"),
             ("restore", "/protected/restore.json"))}}}
