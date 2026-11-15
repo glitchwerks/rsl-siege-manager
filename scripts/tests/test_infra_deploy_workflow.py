@@ -154,8 +154,9 @@ def test_retention_activation_and_deletion_are_separately_gated() -> None:
     assert "schedule:" not in workflow
     assert "inputs.phase == 'activate'" in workflow
     assert workflow.count("inputs.phase == 'apply'") == 2
-    assert 'activate --report "$RUNNER_TEMP/registry-retention/report.json" --confirm' in workflow
-    assert 'apply --report "$RUNNER_TEMP/registry-retention/report.json" --confirm' in workflow
+    assert 'activate --report "$RUNNER_TEMP/registry-retention/report.json" --protected-images-file "$RUNNER_TEMP/registry-retention/protected-images.json" --confirm' in workflow
+    assert 'apply --report "$RUNNER_TEMP/registry-retention/report.json" --protected-images-file "$RUNNER_TEMP/registry-retention/protected-images.json" --confirm' in workflow
+    assert "secrets.PROTECTED_IMAGE_REFERENCES_JSON" in workflow
     assert "environment: prod" in workflow
     assert "if: always()" in workflow
 
