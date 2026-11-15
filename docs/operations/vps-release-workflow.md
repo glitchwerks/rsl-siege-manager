@@ -509,15 +509,14 @@ The remaining acceptance work is:
 1. Review the current fixed host command, its dependencies, and its impact on
    remote access. Install and verify it only in an approved host-change window.
 2. Provision the isolated VMware target with its own Discord identity and
-   databases, then add a reviewed CI route for that target. The current Siege
-   phase workflows hard-code the `vps-prod` GitHub environment and read
-   `VPS_TAILSCALE_HOST` from its secrets; they cannot target the rehearsal VM.
-   A separate rehearsal environment must hold its own host address, SSH key,
-   pinned host key, Tailscale OAuth credentials, and repository access secrets.
-   The phase workflows need an explicit, reviewed selector that binds every
-   phase to that environment without changing `vps-prod` secrets or pointing
-   production dispatches at the VM. Until this route exists, use only the
-   disposable CI fixtures; do not dispatch a production phase to rehearse.
+   databases. Each Siege release phase workflow offers a `target` choice:
+   `production` (the default, using `vps-prod`) or `rehearsal` (using
+   `vps-rehearsal`). All phases of one candidate must use the same target;
+   stage evidence is private to that host. The shared release concurrency lock
+   prevents either target's phase dispatch from overlapping another.
+   Configure the distinct rehearsal credentials below and verify the VM's
+   host identity and private CI route before any rehearsal dispatch. Do not
+   change `vps-prod` secrets or point a production dispatch at the VM.
 3. Run separate clean rehearsal scenarios. For pre-activation recovery, stage
    a candidate with no migration or activation marker, trigger an eligible
    failed promotion, inspect, and restore the original protected files. For a
@@ -536,6 +535,38 @@ The remaining acceptance work is:
 Completion is tracked by [Siege #583](https://github.com/glitchwerks/rsl-siege-manager/issues/583),
 [Mom #387](https://github.com/glitchwerks/rsl-mom-bot/issues/387), and
 [coordination #25](https://github.com/glitchwerks/rsl-mom-apps/issues/25).
+
+### Isolated CI target setup
+
+The protected `vps-rehearsal` GitHub environment in Siege requires approval by
+the same reviewer as `vps-prod` and allows deployments only from `main`. It
+currently has no secrets. Store the VM-only host, pinned host key, SSH
+identity, and Tailscale OAuth credentials there under these distinct secret
+names: `REHEARSAL_VPS_TAILSCALE_HOST`,
+`REHEARSAL_VPS_SSH_HOST_FINGERPRINT`, `REHEARSAL_VPS_SSH_KNOWN_HOSTS`,
+`REHEARSAL_VPS_DEPLOY_SSH_KEY`, `REHEARSAL_TAILSCALE_OAUTH_CLIENT_ID`, and
+`REHEARSAL_TAILSCALE_OAUTH_SECRET`. Set the environment variable
+`REHEARSAL_VPS_SSH_USER`. These names must never contain production values.
+The rehearsal VM needs its own reviewed restricted SSH key and host command,
+with console recovery and tailnet routing checked before activation. The
+rehearsal jobs use `tag:github-rehearsal`; grant that tag SSH access only to the
+VM. Keep the existing `tag:github-deploy` grant to production unchanged, and
+do not grant the rehearsal tag access to the production VPS.
+
+The candidate-validation jobs run before their host jobs and do not enter a
+GitHub environment. Grant the selected repository access to separate
+repository or organization Actions secrets `REHEARSAL_VPS_RELEASE_REPO_READ_TOKEN`
+and `REHEARSAL_VPS_RELEASE_PACKAGE_READ_TOKEN`, plus variable
+`REHEARSAL_VPS_RELEASE_READ_USER`. Give these credentials only the same read
+scope required by the existing candidate validator. The rehearsal host jobs
+use the target-specific names too; missing values cause the local access gate
+to STOP before SSH. The `production` choice continues to use the original
+credential names and `vps-prod` approval rules. Do not paste credential values
+into workflow inputs, issues, or evidence.
+
+Until the operator-created VMware VM, host identity, environment rules, and
+private CI route are verified, use only the disposable CI fixtures. The
+`rehearsal` selector is repository capability, not live acceptance evidence.
 
 ## Live migration revision baseline
 

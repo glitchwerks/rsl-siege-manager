@@ -4,6 +4,14 @@ name: VPS release migration readiness
 on:
   workflow_dispatch:
     inputs:
+      target:
+        description: Protected deployment target
+        required: true
+        default: production
+        type: choice
+        options:
+          - production
+          - rehearsal
       manifest_sha256:
         description: SHA-256 of the exact candidate JSON staged on the VPS
         required: true
@@ -26,10 +34,10 @@ concurrency:
 
 jobs:
   ready:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && (inputs.target == 'production' || inputs.target == 'rehearsal')
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    environment: vps-prod
+    environment: ${{ inputs.target == 'rehearsal' && 'vps-rehearsal' || 'vps-prod' }}
     steps:
       - name: Check out reviewed main
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -39,17 +47,17 @@ jobs:
       - name: Join tailnet as ephemeral deployment runner
         uses: tailscale/github-action@064b10558093f38325e838ddea35486bdc6b1d5c # v4.4.0
         with:
-          oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
-          oauth-secret: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
-          tags: tag:github-deploy
+          oauth-client-id: ${{ secrets[inputs.target == 'rehearsal' && 'REHEARSAL_TAILSCALE_OAUTH_CLIENT_ID' || 'TAILSCALE_OAUTH_CLIENT_ID'] }}
+          oauth-secret: ${{ secrets[inputs.target == 'rehearsal' && 'REHEARSAL_TAILSCALE_OAUTH_SECRET' || 'TAILSCALE_OAUTH_SECRET'] }}
+          tags: ${{ inputs.target == 'rehearsal' && 'tag:github-rehearsal' || 'tag:github-deploy' }}
 
       - name: Check reviewed migration readiness
         env:
-          VPS_TAILSCALE_HOST: ${{ secrets.VPS_TAILSCALE_HOST }}
-          VPS_SSH_USER: ${{ vars.VPS_SSH_USER }}
-          VPS_SSH_HOST_FINGERPRINT: ${{ secrets.VPS_SSH_HOST_FINGERPRINT }}
-          VPS_DEPLOY_SSH_KEY: ${{ secrets.VPS_DEPLOY_SSH_KEY }}
-          VPS_SSH_KNOWN_HOSTS: ${{ secrets.VPS_SSH_KNOWN_HOSTS }}
+          VPS_TAILSCALE_HOST: ${{ secrets[inputs.target == 'rehearsal' && 'REHEARSAL_VPS_TAILSCALE_HOST' || 'VPS_TAILSCALE_HOST'] }}
+          VPS_SSH_USER: ${{ vars[inputs.target == 'rehearsal' && 'REHEARSAL_VPS_SSH_USER' || 'VPS_SSH_USER'] }}
+          VPS_SSH_HOST_FINGERPRINT: ${{ secrets[inputs.target == 'rehearsal' && 'REHEARSAL_VPS_SSH_HOST_FINGERPRINT' || 'VPS_SSH_HOST_FINGERPRINT'] }}
+          VPS_DEPLOY_SSH_KEY: ${{ secrets[inputs.target == 'rehearsal' && 'REHEARSAL_VPS_DEPLOY_SSH_KEY' || 'VPS_DEPLOY_SSH_KEY'] }}
+          VPS_SSH_KNOWN_HOSTS: ${{ secrets[inputs.target == 'rehearsal' && 'REHEARSAL_VPS_SSH_KNOWN_HOSTS' || 'VPS_SSH_KNOWN_HOSTS'] }}
           CANDIDATE_SHA256: ${{ inputs.manifest_sha256 }}
           STAGE_RUN_ID: ${{ inputs.stage_run_id }}
           PLAN_SHA256: ${{ inputs.plan_sha256 }}
