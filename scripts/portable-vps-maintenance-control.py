@@ -192,14 +192,17 @@ def replace_state(project: Path, value: str) -> bool:
             os.unlink(temporary)
 
 
-def service_status(project: Path, service: str, *, timeout: float = 10) -> dict | None:
+def service_status(project: Path, service: str, *, deadline: float | None = None) -> dict | None:
     """Query the exact Compose peer using its own secret, without printing it."""
     if service not in {"backend", "mom"}:
         return None
     try:
         name = PAUSE.GATE.project_name(project / "stack.env")
-        container = PAUSE.container(name, service) if name else None
+        container = PAUSE.container(name, service, deadline=deadline) if name else None
         if not container or container["running"] is not True:
+            return None
+        timeout = min(10, deadline - time.monotonic()) if deadline is not None else 10
+        if timeout <= 0:
             return None
         result = subprocess.run(
             [
@@ -240,11 +243,11 @@ def drain(project: Path, *, attempts: int = 20, interval: float = 1,
         remaining = deadline - time.monotonic()
         if state(project) != "paused" or remaining <= 0:
             return False
-        backend = service_status(project, "backend", timeout=min(10, remaining))
+        backend = service_status(project, "backend", deadline=deadline)
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             return False
-        mom = service_status(project, "mom", timeout=min(10, remaining))
+        mom = service_status(project, "mom", deadline=deadline)
         consecutive = (
             consecutive + 1 if backend == mom == {"paused": True, "inflight": 0} else 0
         )

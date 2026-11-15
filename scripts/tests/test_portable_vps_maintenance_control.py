@@ -329,6 +329,16 @@ class MaintenanceControlTests(unittest.TestCase):
             self.assertFalse(CONTROL.drain(Path("/synthetic")))
         status.assert_called_once()
 
+    def test_container_discovery_uses_remaining_drain_budget(self):
+        identifier = "a" * 64
+        with patch.object(CONTROL.PAUSE.time, "monotonic", side_effect=[0.0, 9.0]), patch.object(
+            CONTROL.PAUSE, "command",
+            side_effect=[identifier, json.dumps({"Running": True, "Status": "running"})],
+        ) as command:
+            found = CONTROL.PAUSE.container("synthetic", "backend", deadline=20.0)
+        self.assertEqual(found["id"], identifier)
+        self.assertEqual([call.kwargs["timeout"] for call in command.call_args_list], [20.0, 11.0])
+
     def test_resume_requires_both_directions_and_fresh_monitor(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
