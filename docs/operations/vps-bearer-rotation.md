@@ -35,6 +35,10 @@ The selected pair is either `sidecar` (`DISCORD_BOT_API_KEY` paired with
 paired with `MOM_BOT_SECRET_SIEGE_WEB_BOT_TOKEN`). The other pair and every
 unrelated byte of both runtime files must remain unchanged. The startup
 configuration and exact running images must match the reviewed Compose state.
+Inspection requires exactly one running Compose `mom` container on the host;
+the Mom health probe checks its gateway and scheduler progress. The Discord
+application owner must also confirm that no separately hosted bot uses the
+production token before an isolated rehearsal or live operation.
 The script uses targeted `up --no-deps --no-build --pull never --force-recreate
 --wait backend mom`; a Compose restart would retain old `env_file` values.
 

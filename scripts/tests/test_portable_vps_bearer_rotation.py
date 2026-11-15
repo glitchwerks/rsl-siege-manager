@@ -105,6 +105,12 @@ def test_dirty_source_checkout_is_rejected():
             ROTATE.reviewed_checkout()
 
 
+def test_second_running_mom_refuses_single_bot_topology():
+    with (patch.object(ROTATE.PAUSE, "command", return_value="a" * 64 + "\n" + "b" * 64),
+          patch.object(ROTATE.PAUSE, "identifiers", return_value="a" * 64)):
+        assert not ROTATE.single_mom_container("isolated")
+
+
 def test_public_health_is_bound_to_project_hostname(project):
     root, evidence, _files = project
     stack = root / "stack.env"

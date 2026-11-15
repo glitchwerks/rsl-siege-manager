@@ -124,12 +124,22 @@ def pairs_match(files):
 def reviewed_checkout():
     root = PREFLIGHT.PREFLIGHT.ROOT
     head = PAUSE.command(["git", "-C", str(root), "rev-parse", "HEAD"])
-    changed = PAUSE.command(["git", "-C", str(root), "status", "--porcelain",
-                             "--untracked-files=no"])
+    changed = PAUSE.command(["git", "-C", str(root), "status", "--porcelain"])
     if (head is None or not PREFLIGHT.REMOTE.SOURCE_SHA.fullmatch(head)
             or changed != ""):
         raise ValueError("unreviewed checkout")
     return head
+
+
+def single_mom_container(project_name):
+    """Require one running Compose Mom on this host and in the selected project."""
+    output = PAUSE.command(["docker", "ps", "--no-trunc",
+                            "--filter", "label=com.docker.compose.service=mom",
+                            "--format", "{{.ID}}"])
+    if output is None:
+        return False
+    identities = output.splitlines()
+    return (len(identities) == 1 and identities[0] == PAUSE.identifiers(project_name, "mom"))
 
 
 def project_snapshot(project, owner):
@@ -139,7 +149,7 @@ def project_snapshot(project, owner):
         raise ValueError("bearer pair mismatch")
     stack = project / "stack.env"
     name = GATE.project_name(stack)
-    if not name or not PAUSE.no_extra_writers(name):
+    if not name or not PAUSE.no_extra_writers(name) or not single_mom_container(name):
         raise ValueError("invalid project topology")
     if not all(PREFLIGHT.reviewed_config(project / file, (PREFLIGHT.PREFLIGHT.PORTABLE / file).read_bytes())
                for file in ("compose.yml", "compose.mom.yml")):
