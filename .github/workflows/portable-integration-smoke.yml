@@ -36,6 +36,13 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Join isolated test tailnet as ephemeral runner
+        uses: tailscale/github-action@064b10558093f38325e838ddea35486bdc6b1d5c # v4.4.0
+        with:
+          oauth-client-id: ${{ secrets.INTEGRATION_TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.INTEGRATION_TAILSCALE_OAUTH_SECRET }}
+          tags: tag:integration-smoke
+
       - name: Run isolated integration smoke
         shell: bash
         env:
