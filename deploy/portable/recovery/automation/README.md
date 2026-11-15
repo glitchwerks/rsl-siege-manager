@@ -66,7 +66,13 @@ Before enabling a restored gateway or scheduler, reconcile Siege notification
 batches/results with Mom reminder and member-notification delivery records across
 the capture window and any later source activity. Classify completed, pending,
 failed and externally uncertain sends; investigate uncertain Discord outcomes
-before retrying to avoid duplicate notifications. Keep detailed identifiers,
+before retrying to avoid duplicate notifications. Persist each approved decision
+in application state that the restored scheduler actually honors, then verify
+that state on the target. If the source is available, include approved changes
+in the paused final paired export; if it is lost, make a separately reviewed
+target-side repair before activating the affected producer. If the current
+schema cannot represent a safe decision, keep that producer paused until a
+reviewed suppression or reconciliation mechanism exists. Keep detailed identifiers,
 message content and private ledgers in protected evidence. The published report
 may contain only fixed check labels, aggregate counts, timing and PASS/STOP.
 If the source was lost and a gap cannot be reconciled, keep delivery paused and
