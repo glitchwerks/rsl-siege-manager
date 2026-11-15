@@ -34,6 +34,7 @@ docker compose up postgres
 
 # In a second terminal
 cd backend
+cp ../.env .env
 uv sync --frozen --dev
 uv run alembic upgrade head
 uv run python scripts/seed_demo.py
