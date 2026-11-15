@@ -14,7 +14,7 @@
     "restart_or_oom": "fail-observation",
     "memory": "less-than-85-percent-of-service-limit",
     "disk": "reviewed-database-filesystem-reserve",
-    "watchdog": "not-implemented-separate-restart-approval"
+    "watchdog": "inert-runner-separate-restart-approval-and-independent-escalation-required"
   },
   "notifications": {"operator_channel": "REPLACE-approved-independent-channel", "outage_and_recovery_delivery_test": "separate-approval-required"}
 }
