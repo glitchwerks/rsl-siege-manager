@@ -8,7 +8,7 @@ outage, recovery, and missed-signal alerts. A successful Docker restart is not
 proof of application recovery; the next independent health check must verify it.
 
 Before a separately approved activation, review the actual Compose project,
-service, exact digest-pinned image, Docker access, deployment operations, and
+service, exact digest-pinned image, local Docker socket access, deployment operations, and
 recovery plan. Use a separate 0600 JSON config and state file in a 0700
 operator-owned directory for each service. The example is a template, not a
 ready configuration. Keep the state outside the deployment checkout so a
@@ -17,7 +17,8 @@ release does not reset cooldown history. Use a fresh 0600 report path in a
 
 The only allowed service names are `backend`, `frontend`, `mom`, and `bot`. The
 runner locates exactly one container with the reviewed Compose project and
-service labels, then verifies its exact digest-pinned image. It makes no
+service labels on the local Unix socket, then verifies its exact digest-pinned
+image. It ignores inherited Docker context and host overrides. It makes no
 recovery attempt for a missing, stopped, healthy, starting, or OOM-killed
 container. A stable running `unhealthy` container must be observed twice at
 least 90 seconds apart with the same full container ID and restart count. The

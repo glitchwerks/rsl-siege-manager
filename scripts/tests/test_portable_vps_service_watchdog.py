@@ -132,20 +132,30 @@ class RunnerTests(unittest.TestCase):
 
     def test_snapshot_requires_exact_compose_identity_and_image(self):
         cfg = {"project": "siege", "service": "backend", "image": IMAGE, "enabled": True}
-        details = [{"Id": CID, "Config": {"Image": IMAGE, "Labels": {
-            "com.docker.compose.project": "siege", "com.docker.compose.service": "backend"}},
-            "State": {"Running": True, "Health": {"Status": "unhealthy"}, "OOMKilled": False},
-            "RestartCount": 0}]
-        with patch.object(watchdog, "docker", side_effect=[CID[:12] + "\n", json.dumps(details)]) as docker:
+        details = {"id": CID, "project": "siege", "service": "backend", "image": IMAGE,
+                   "running": True, "health": "unhealthy", "oom": False, "restarts": 0}
+        with patch.object(watchdog, "docker", side_effect=[CID + "\n", json.dumps(details)]) as docker:
             self.assertEqual(watchdog.snapshot(cfg), unhealthy())
         self.assertEqual(docker.call_count, 2)
-        details[0]["Config"]["Image"] = "other.test/image@sha256:" + "c" * 64
-        with patch.object(watchdog, "docker", side_effect=[CID[:12] + "\n", json.dumps(details)]):
+        self.assertIn("--format", docker.call_args.args)
+        details["image"] = "other.test/image@sha256:" + "c" * 64
+        with patch.object(watchdog, "docker", side_effect=[CID + "\n", json.dumps(details)]):
             with self.assertRaises(ValueError):
                 watchdog.snapshot(cfg)
-        with patch.object(watchdog, "docker", return_value=CID[:12] + "\n" + "c" * 12 + "\n") as docker:
+        with patch.object(watchdog, "docker", return_value=CID + "\n" + "c" * 64 + "\n") as docker:
             self.assertIsNone(watchdog.snapshot(cfg))
         docker.assert_called_once()
+
+    def test_docker_client_ignores_inherited_remote_context(self):
+        class Done:
+            stdout = CID + "\n"
+            stderr = ""
+
+        with patch.object(watchdog.subprocess, "run", return_value=Done()) as run:
+            self.assertEqual(watchdog.docker("container", "ls"), CID + "\n")
+        self.assertEqual(run.call_args.args[0][:3], ["docker", "--host", "unix:///var/run/docker.sock"])
+        self.assertEqual(run.call_args.kwargs["env"], watchdog.DOCKER_ENV)
+        self.assertNotIn("DOCKER_CONTEXT", run.call_args.kwargs["env"])
 
 
 if __name__ == "__main__":

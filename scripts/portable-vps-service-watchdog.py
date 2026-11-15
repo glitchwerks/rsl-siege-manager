@@ -25,6 +25,14 @@ MAX_RESTARTS = 2
 IMAGE = re.compile(r"^[^\s]+@sha256:[a-f0-9]{64}$")
 PROJECT = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$")
 CONTAINER_ID = re.compile(r"^[a-f0-9]{64}$")
+DOCKER_ENV = {"PATH": "/usr/bin:/bin:/usr/local/bin", "HOME": "/root", "LANG": "C",
+              "DOCKER_HOST": "unix:///var/run/docker.sock"}
+INSPECT = ('{"id":{{json .Id}},"project":{{json (index .Config.Labels '
+           '"com.docker.compose.project")}},"service":{{json (index .Config.Labels '
+           '"com.docker.compose.service")}},"image":{{json .Config.Image}},'
+           '"running":{{json .State.Running}},"health":{{if .State.Health}}'
+           '{{json .State.Health.Status}}{{else}}"none"{{end}},'
+           '"oom":{{json .State.OOMKilled}},"restarts":{{json .RestartCount}}}')
 
 
 def require_private(path, directory=False):
@@ -67,36 +75,34 @@ def config(path):
 
 
 def docker(*args):
-    result = subprocess.run(["docker", *args], capture_output=True, text=True, timeout=15, check=True)
+    result = subprocess.run(["docker", "--host", "unix:///var/run/docker.sock", *args],
+                            env=DOCKER_ENV, capture_output=True, text=True, timeout=15, check=True)
     if len(result.stdout) > 16384 or result.stderr:
         raise ValueError("unexpected_docker_output")
     return result.stdout
 
 
 def snapshot(cfg):
-    listed = docker("container", "ls", "-aq", "--filter", f"label=com.docker.compose.project={cfg['project']}",
-                    "--filter", f"label=com.docker.compose.service={cfg['service']}")
+    listed = docker("container", "ls", "--all", "--no-trunc",
+                    "--filter", f"label=com.docker.compose.project={cfg['project']}",
+                    "--filter", f"label=com.docker.compose.service={cfg['service']}", "--format", "{{.ID}}")
     ids = listed.splitlines()
-    if len(ids) != 1 or not re.fullmatch(r"[a-f0-9]{12,64}", ids[0]):
+    if len(ids) != 1 or not CONTAINER_ID.fullmatch(ids[0]):
         return None
-    raw = docker("container", "inspect", ids[0])
-    detail = json.loads(raw)
-    if not isinstance(detail, list) or len(detail) != 1 or not isinstance(detail[0], dict):
+    raw = docker("container", "inspect", "--format", INSPECT, ids[0])
+    item = json.loads(raw)
+    if not isinstance(item, dict):
         raise ValueError("invalid_inspect")
-    item = detail[0]
-    labels = item.get("Config", {}).get("Labels", {})
-    state = item.get("State", {})
-    if (not isinstance(labels, dict) or not isinstance(state, dict)
-            or labels.get("com.docker.compose.project") != cfg["project"]
-            or labels.get("com.docker.compose.service") != cfg["service"]
-            or item.get("Config", {}).get("Image") != cfg["image"]
-            or not isinstance(item.get("Id"), str) or not CONTAINER_ID.fullmatch(item["Id"])
-            or not item["Id"].startswith(ids[0])):
+    if (set(item) != {"id", "project", "service", "image", "running", "health", "oom", "restarts"}
+            or item["project"] != cfg["project"] or item["service"] != cfg["service"]
+            or item["image"] != cfg["image"] or item["id"] != ids[0]):
         raise ValueError("container_identity_mismatch")
-    return {"id": item["Id"], "running": state.get("Running") is True,
-            "health": state.get("Health", {}).get("Status"),
-            "oom": state.get("OOMKilled") is True,
-            "restarts": item.get("RestartCount")}
+    if (type(item["running"]) is not bool or type(item["oom"]) is not bool
+            or not isinstance(item["health"], str) or type(item["restarts"]) is not int
+            or item["restarts"] < 0):
+        raise ValueError("invalid_inspect")
+    return {"id": item["id"], "running": item["running"], "health": item["health"],
+            "oom": item["oom"], "restarts": item["restarts"]}
 
 
 def read_state(path):
