@@ -117,6 +117,11 @@ provides a local, read-only PostgreSQL producer and separately confirmed
 private receiver sender for #585/#579. Receiver setup and production activation
 are separate gates.
 
+The [host pressure signal](../../../docs/operations/vps-host-monitoring.md)
+reads memory, swap, OOM and reviewed database/backup filesystem headroom. It is
+an unscheduled local producer; independent receiver delivery and measured
+production thresholds remain separate #579 gates.
+
 `monitor-policy.json.example` is an inert, provider-neutral requirements template,
 not an executable monitor configuration. The chosen external monitoring service
 must implement HTTPS health/identity checks, certificate-expiry alerts, failure
