@@ -27,14 +27,36 @@ def inventory():
 
 
 def baseline(rows):
+    protected = {"active": ["ghcr.io/glitchwerks/siege-api@" + image(100)["digest"]],
+                 "rollback": ["ghcr.io/glitchwerks/siege-api@" + image(101)["digest"]]}
     return {"schema": 1, "registry": r.REGISTRY, "subscription": r.SUBSCRIPTION,
             "days": 7, "keep": 5, "createdAt": AT.isoformat(), "status": "PREFLIGHT_PASS",
             "baseline": {"apps": [], "references": []}, "images": r.plan(rows, [], AT),
+            "protectedImagesHash": r.fingerprint(protected),
             "inventoryHashes": {repo: r.inventory_hash(values) for repo, values in rows.items()},
             "attempted": [], "deleted": []}
 
 
 class RetentionTests(unittest.TestCase):
+    def test_portable_active_and_rollback_digests_are_protected(self):
+        rows = {"siege-api": [image(i, days=10+i) for i in range(1, 9)]}
+        refs = {"active": ["ghcr.io/glitchwerks/siege-api@" + image(7)["digest"]],
+                "rollback": ["ghcr.io/glitchwerks/siege-api@" + image(8)["digest"]]}
+        planned = r.plan(rows, [], AT, r.protected_digests(refs))
+        self.assertEqual(sum(row["candidate"] for row in planned), 1)
+        self.assertTrue(all("protected portable active or rollback image" in row["keepReasons"]
+                            for row in planned if row["digest"] in (image(7)["digest"], image(8)["digest"])))
+
+    def test_protected_inventory_refuses_mutable_or_incomplete_records(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "images.json"
+            for record in ({"schema": 1, "active": [], "rollback": []},
+                           {"schema": 1, "active": ["repo:latest"], "rollback": ["repo@" + image(1)["digest"]]},
+                           {"schema": 1, "active": ["repo@" + image(1)["digest"]], "rollback": []}):
+                path.write_text(json.dumps(record))
+                with self.assertRaises(r.Stop):
+                    r.protected_images(path)
+
     def test_init_container_images_in_current_and_retained_revisions_are_protected(self):
         repo = "siege-api"
         tag_ref = f"{r.REGISTRY}.azurecr.io/{repo}:{image(7)['tags'][0]}"
