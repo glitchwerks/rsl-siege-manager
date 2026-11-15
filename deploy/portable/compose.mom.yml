@@ -6,6 +6,10 @@ x-mom: &mom
     MOM_BOT_ENV: prod
     MOM_BOT_SECRET_SOURCE: environment
     MOM_BOT_DATABASE_AUTH: password
+    MOM_BOT_MAINTENANCE_ENFORCED: "true"
+    MOM_BOT_MAINTENANCE_STATE_FILE: /run/rsl-maintenance/state
+  volumes:
+    - ./control:/run/rsl-maintenance:ro
   networks: [application, database]
   mem_limit: 512m
   cpus: 0.5

@@ -209,6 +209,14 @@ def validate(model, topology, mom_approval=None):
     check("sidecar_auth_matches", lambda: env["DISCORD_BOT_API_KEY"] == bot_env[
         "MOM_BOT_SECRET_DISCORD_BOT_API_KEY" if topology == "mom" else "BOT_API_KEY"])
     if topology == "mom":
+        check("mom_maintenance_control_mounted", lambda: all(
+              services[n]["environment"].get("MOM_BOT_MAINTENANCE_ENFORCED") == "true"
+              and services[n]["environment"].get("MOM_BOT_MAINTENANCE_STATE_FILE") == "/run/rsl-maintenance/state"
+              and any(volume.get("target") == "/run/rsl-maintenance"
+                      and volume.get("read_only") is True
+                      and Path(volume.get("source", "")).name == "control"
+                      for volume in services[n].get("volumes", []))
+              for n in ("mom", "migrate-mom")))
         check("mom_runtime_does_not_auto_migrate", lambda:
               services["mom"].get("entrypoint") == []
               and services["mom"].get("command") == ["/app/.venv/bin/python", "-m", "mom_bot"])

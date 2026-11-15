@@ -132,7 +132,11 @@ def mom_model():
         "MOM_BOT_SECRET_NEW_MEMBERS_CHANNEL_ID": "123456789012345679",
         "MOM_BOT_SECRET_REMINDER_CHANNEL_NAME": "synthetic-reminders",
         "MOM_BOT_SECRET_REMINDER_MENTION_ROLE_NAME": "synthetic-reminder-role",
+        "MOM_BOT_MAINTENANCE_ENFORCED": "true",
+        "MOM_BOT_MAINTENANCE_STATE_FILE": "/run/rsl-maintenance/state",
     }
+    mom["volumes"] = [{"source": "/synthetic/control",
+                        "target": "/run/rsl-maintenance", "read_only": True}]
     services["proxy"]["environment"].update(ROLE_SYNC_UPSTREAM="mom:8001",
         ROLE_SYNC_PATH="/api/internal/role-sync")
     mom.update(entrypoint=[], command=["/app/.venv/bin/python", "-m", "mom_bot"])
