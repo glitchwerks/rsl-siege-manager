@@ -508,15 +508,28 @@ The remaining acceptance work is:
 
 1. Review the current fixed host command, its dependencies, and its impact on
    remote access. Install and verify it only in an approved host-change window.
-2. Rehearse the complete phase sequence on the isolated target with its own
-   Discord identity and databases. Include backup readback and restore proof,
-   migration where the candidate requires it, a failed pre-activation recovery,
-   promotion, and read-only acceptance. Keep reports sanitized.
-3. Verify Mom gateway and scheduler behavior, sidecar authentication, public
+2. Provision the isolated VMware target with its own Discord identity and
+   databases, then add a reviewed CI route for that target. The current Siege
+   phase workflows hard-code the `vps-prod` GitHub environment and read
+   `VPS_TAILSCALE_HOST` from its secrets; they cannot target the rehearsal VM.
+   A separate rehearsal environment must hold its own host address, SSH key,
+   pinned host key, Tailscale OAuth credentials, and repository access secrets.
+   The phase workflows need an explicit, reviewed selector that binds every
+   phase to that environment without changing `vps-prod` secrets or pointing
+   production dispatches at the VM. Until this route exists, use only the
+   disposable CI fixtures; do not dispatch a production phase to rehearse.
+3. Run separate clean rehearsal scenarios. For pre-activation recovery, stage
+   a candidate with no migration or activation marker, trigger an eligible
+   failed promotion, inspect, and restore the original protected files. For a
+   candidate requiring migration, start with a fresh target state, prove backup
+   readback and restore, migrate the reviewed revisions, promote, and run
+   read-only acceptance. The recovery guard stops if any stage on the target
+   has started migration or Compose activation. Keep reports sanitized.
+4. Verify Mom gateway and scheduler behavior, sidecar authentication, public
    HTTPS, component identities, independent Slack and fallback email delivery,
    and unaffected host services. Production Discord writes require separate
    authorization.
-4. Request a distinct full production release approval after those gates pass.
+5. Request a distinct full production release approval after those gates pass.
    A post-migration or post-activation failure requires manual reconciliation;
    never automatically roll back a database or reenable Azure deployment.
 
