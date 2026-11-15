@@ -109,7 +109,7 @@ class EffectiveTests(unittest.TestCase):
                   patch.object(effective.PREFLIGHT, "private_report_directory", return_value=True),
                   patch.object(effective.PREFLIGHT, "private_runtime_files", return_value=True),
                   patch.object(effective.PREFLIGHT, "deployment_bind_sources_current", return_value=True),
-                  patch.object(effective.PREFLIGHT, "render", return_value=model_value),
+                  patch.object(effective.PREFLIGHT, "render", return_value=model_value) as render,
                   patch.object(effective.PREFLIGHT, "read_mom_approval", return_value={}),
                   patch.object(effective.PREFLIGHT, "validate", return_value={"valid": True}),
                   patch.object(effective, "inspect", return_value=dict.fromkeys(effective.CHECKS, True))):
@@ -119,6 +119,7 @@ class EffectiveTests(unittest.TestCase):
                         "--confirm-readonly"]), 0)
                 result = report.read_text()
                 self.assertEqual(json.loads(result)["status"], "PASS")
+                render.assert_called_once_with("mom", project / "stack.env", project, {})
                 self.assertNotIn(SECRET, result)
                 self.assertNotIn("123456789012345678", result)
                 with redirect_stdout(io.StringIO()):

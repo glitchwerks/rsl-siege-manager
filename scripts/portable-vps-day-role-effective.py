@@ -183,7 +183,7 @@ def main(argv=None):
         stack = project / "stack.env"
         if (PREFLIGHT.private_runtime_files("mom", stack, project)
                 and PREFLIGHT.deployment_bind_sources_current(project)):
-            model = PREFLIGHT.render("mom", stack, project)
+            model = PREFLIGHT.render("mom", stack, project, {})
             approval = PREFLIGHT.read_mom_approval(project / "runtime/mom-image.json")
             if all(PREFLIGHT.validate(model, "mom", approval, project).values()):
                 result["checks"] = inspect(model, args.expected_enabled)
