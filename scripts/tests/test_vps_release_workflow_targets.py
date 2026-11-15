@@ -41,7 +41,7 @@ class ReleaseTargetContract(unittest.TestCase):
                 self.assertIn(TAILSCALE_TAG, raw)
                 self.assertNotIn("environment: vps-prod", raw)
                 job_count = len(re.findall(r"^  [a-z][a-z_-]*:\s*$", raw.split("jobs:\n", 1)[1], re.M))
-                self.assertEqual(raw.count(GUARD), job_count)
+                self.assertEqual(raw.count(GUARD), job_count - (phase == "accept"))
                 for name in HOST_SECRETS | READ_SECRETS:
                     self.assertNotIn(f"secrets.{name}", raw)
                     if f"'{name}'" in raw:
@@ -63,6 +63,24 @@ class ReleaseTargetContract(unittest.TestCase):
                     for name in READ_SECRETS:
                         self.assertIn(f"'REHEARSAL_{name}'", raw)
                     self.assertIn("'REHEARSAL_VPS_RELEASE_READ_USER'", raw)
+
+    def test_rehearsal_acceptance_runs_only_readonly_isolated_smoke(self):
+        raw = (WORKFLOWS / "vps-release-accept.yml").read_text()
+        self.assertEqual(raw.count("  isolated_readonly_smoke:\n"), 1)
+        self.assertNotIn("\nconcurrency:\n", raw.split("jobs:\n", 1)[0])
+        accept = raw.split("  accept:\n", 1)[1].split("  isolated_readonly_smoke:\n", 1)[0]
+        self.assertIn("    concurrency:\n      group: vps-production-promotion\n", accept)
+        smoke = raw.split("  isolated_readonly_smoke:\n", 1)[1]
+        self.assertIn("    needs: accept\n", smoke)
+        self.assertIn("inputs.target == 'rehearsal'", smoke)
+        self.assertNotIn("inputs.target == 'production'", smoke)
+        self.assertIn("    environment: integration-smoke\n", smoke)
+        self.assertIn("      group: portable-integration-smoke\n", smoke)
+        self.assertIn("tags: tag:integration-smoke", smoke)
+        self.assertIn("python3 scripts/portable-integration.py readonly", smoke)
+        self.assertIn("--confirm-isolated-target", smoke)
+        self.assertNotIn("--confirm-discord-writes", smoke)
+        self.assertNotIn("tag:github-deploy", smoke)
 
 
 if __name__ == "__main__":

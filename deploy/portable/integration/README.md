@@ -134,8 +134,9 @@ part of implementation or disposable fixture CI.
 
 The [Portable integration smoke workflow](../../../.github/workflows/portable-integration-smoke.yml)
 runs the same runner from reviewed `main` under the protected
-`integration-smoke` environment. Its repository-wide concurrency group keeps
-read-only and full **workflow dispatches** from overlapping. Local operator
+`integration-smoke` environment. Its repository-wide concurrency group also
+serializes the rehearsal release hook with read-only and full **workflow
+dispatches**. Local operator
 runs use a different lock and are not serialized with GitHub dispatches; check
 for an active local or GitHub run and do not start the other until it finishes.
 The environment must require an
@@ -170,5 +171,10 @@ approval of the exact test recipient and channel, with `confirm_discord_writes` 
 `send-test-discord-messages`. The protected environment approval and this
 literal confirmation are separate gates. Do not dispatch against production
 recipients or channels. A PASS report still requires a separate delivery and
-cleanup receipt as described above. This workflow does not create the isolated
-target or automatically run after deployment; those remain #430 acceptance.
+cleanup receipt as described above. The `VPS release read-only acceptance`
+workflow also runs the same read-only runner after a successful
+`target=rehearsal` host acceptance. It uses the protected `integration-smoke`
+environment and its own approval; production acceptance skips it. Keep
+`INTEGRATION_SMOKE_CONFIG_JSON` pinned to the exact isolated candidate versions
+before dispatch. Neither workflow creates the VM, and live delivery and cleanup
+evidence remain #430 acceptance.
