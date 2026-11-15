@@ -42,6 +42,16 @@ production token before an isolated rehearsal or live operation.
 The script uses targeted `up --no-deps --no-build --pull never --force-recreate
 --wait backend mom`; a Compose restart would retain old `env_file` values.
 
+Before `activate`, run the separately confirmed maintenance `pause` phase
+from `scripts/portable-vps-maintenance-control.py` and retain its PASS report.
+The rotation runner checks the shared root-owned state and repeats the
+authenticated two-peer drain under the release lock immediately before it
+stops either writer. Routine and fresh recovery also require that state to
+remain paused. Do not resume from a rotation report alone: the maintenance
+controller requires successful activation evidence for both bearer directions
+and a later independent monitor report. If activation or recovery stops,
+keep the control state paused and follow the separate recovery phase.
+
 Activation probes the Mom sidecar with a read-only member-list request and
 the Siege protected API with an invalid acting ID that distinguishes an
 accepted service token from an unauthenticated request. It discards response

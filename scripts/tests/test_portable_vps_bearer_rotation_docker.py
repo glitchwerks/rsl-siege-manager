@@ -17,10 +17,19 @@ ROTATE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(ROTATE)
 
 SERVER = '''import os
+import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        if self.path == "/api/health":
+        body = b""
+        if self.path == "/api/maintenance/status":
+            token = (os.environ["BOT_SERVICE_TOKEN"] if os.environ["ROLE"] == "backend"
+                     else os.environ["MOM_BOT_SECRET_DISCORD_BOT_API_KEY"])
+            code = 200 if self.headers.get("Authorization") == "Bearer " + token else 401
+            if code == 200:
+                state = open("/run/rsl-maintenance/state", encoding="ascii").read().strip()
+                body = json.dumps({"paused": state == "paused", "inflight": 0}).encode()
+        elif self.path == "/api/health":
             code = 200
         elif os.environ["ROLE"] == "mom" and self.path == "/api/members":
             code = 200 if self.headers.get("Authorization") == "Bearer " + os.environ["MOM_BOT_SECRET_DISCORD_BOT_API_KEY"] else 401
@@ -30,6 +39,7 @@ class Handler(BaseHTTPRequestHandler):
             code = 404
         self.send_response(code)
         self.end_headers()
+        self.wfile.write(body)
     def log_message(self, *args):
         pass
 ThreadingHTTPServer(("0.0.0.0", 8001 if os.environ["ROLE"] == "mom" else 8000), Handler).serve_forever()
@@ -47,6 +57,13 @@ class DisposableBearerRotationTests(unittest.TestCase):
             project = Path(temporary)
             runtime = project / "runtime"
             runtime.mkdir(mode=0o700)
+            control = project / "control"
+            control.mkdir(mode=0o755)
+            (control / "state").write_text("active\n")
+            (control / "state").chmod(0o644)
+            (control / "history.json").write_text(
+                '{"schema":1,"pause_started_at":null,"last_resumed_at":null}\n')
+            (control / "history.json").chmod(0o644)
             evidence = project / "evidence"
             evidence.mkdir(mode=0o700)
             (project / "server.py").write_text(SERVER)
@@ -77,10 +94,12 @@ class DisposableBearerRotationTests(unittest.TestCase):
                 f"  proxy:\n    image: {tag}\n    command: [sleep, '900']\n" + simple_health +
                 f"  frontend:\n    image: {tag}\n    command: [sleep, '900']\n" + simple_health +
                 f"  backend:\n    image: {tag}\n    command: [python, /app/server.py]\n"
-                "    environment: {ROLE: backend}\n    env_file: ./runtime/backend.env\n" + health)
+                "    environment: {ROLE: backend}\n    env_file: ./runtime/backend.env\n"
+                "    volumes: [./control:/run/rsl-maintenance:ro]\n" + health)
             (project / "compose.mom.yml").write_text(
                 f"services:\n  mom:\n    image: {tag}\n    command: [python, /app/server.py]\n"
-                "    environment: {ROLE: mom}\n    env_file: ./runtime/mom.env\n" + mom_health)
+                "    environment: {ROLE: mom}\n    env_file: ./runtime/mom.env\n"
+                "    volumes: [./control:/run/rsl-maintenance:ro]\n" + mom_health)
             compose = ["docker", "compose", "--env-file", str(project / "stack.env"),
                        "--project-directory", str(project), "-f", str(project / "compose.yml"),
                        "-f", str(project / "compose.mom.yml")]
@@ -105,6 +124,11 @@ class DisposableBearerRotationTests(unittest.TestCase):
                                check=True, capture_output=True, timeout=180)
                 subprocess.run(compose + ["up", "-d", "--wait", "--wait-timeout", "60"],
                                check=True, capture_output=True, timeout=90)
+                boundary = {"schema": 1, "pause_started_at": "2026-11-15T00:00:00+00:00",
+                            "last_resumed_at": None}
+                self.assertTrue(ROTATE.MAINT.replace_history(project, boundary))
+                self.assertTrue(ROTATE.MAINT.replace_state(project, "paused"))
+                self.assertTrue(ROTATE.MAINT.drain(project, attempts=3, interval=0))
                 with (patch.object(ROTATE, "project_snapshot", side_effect=snapshot),
                       patch.object(ROTATE, "public_healthy", return_value=True)):
                     for pair in ("sidecar", "reverse-api"):

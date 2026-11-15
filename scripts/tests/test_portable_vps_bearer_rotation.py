@@ -15,6 +15,14 @@ ROTATE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(ROTATE)
 
 
+@pytest.fixture(autouse=True)
+def paused_peer_contract():
+    with patch.object(ROTATE.MAINT, "state", return_value="paused"), patch.object(
+        ROTATE.MAINT, "history", return_value={"schema": 1}
+    ), patch.object(ROTATE.MAINT, "drain", return_value=True):
+        yield
+
+
 @pytest.fixture
 def project(tmp_path):
     root = tmp_path / "project"
@@ -182,6 +190,21 @@ def test_activate_refuses_drift_before_mutation(project):
           patch.object(ROTATE, "project_snapshot", return_value=(candidate, baseline)),
           patch.object(ROTATE, "stop_pair") as stop):
         with pytest.raises(ValueError, match="baseline drift"):
+            ROTATE.activate(root, directory, owner=os.geteuid())
+    stop.assert_not_called()
+    assert not (directory / "activation-incomplete.json").exists()
+
+
+@pytest.mark.parametrize("state,drained", [("active", True), ("paused", False)])
+def test_activate_requires_paused_and_drained_peers(project, state, drained):
+    root, directory, rollback, candidate, baseline = _activation_fixture(project)
+    with (patch.object(ROTATE, "staged", return_value=("sidecar", rollback, candidate, baseline)),
+          patch.object(ROTATE.PAUSE, "project_lock", side_effect=_lock),
+          patch.object(ROTATE, "project_snapshot", return_value=(rollback, baseline)),
+          patch.object(ROTATE.MAINT, "state", return_value=state),
+          patch.object(ROTATE.MAINT, "drain", return_value=drained),
+          patch.object(ROTATE, "stop_pair") as stop):
+        with pytest.raises(ValueError, match="maintenance"):
             ROTATE.activate(root, directory, owner=os.geteuid())
     stop.assert_not_called()
     assert not (directory / "activation-incomplete.json").exists()

@@ -25,6 +25,9 @@ SPEC.loader.exec_module(PREFLIGHT)
 SPEC = importlib.util.spec_from_file_location("rotation_public_signal", HERE / "portable-vps-public-signal.py")
 PUBLIC = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(PUBLIC)
+SPEC = importlib.util.spec_from_file_location("rotation_maintenance_control", HERE / "portable-vps-maintenance-control.py")
+MAINT = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(MAINT)
 GATE = PREFLIGHT.GATE
 PAUSE = PREFLIGHT.PAUSE
 
@@ -212,6 +215,14 @@ def public_healthy(project, config_path, owner):
         return set(checks) == set(PUBLIC.CHECKS) and all(checks.values())
     except (OSError, ValueError, TypeError, KeyError, UnicodeError, PUBLIC.DeadlineExpired):
         return False
+
+
+def require_pause(project, *, drain=False):
+    """Refuse bearer changes unless both application writers are paused."""
+    if MAINT.state(project) != "paused" or MAINT.history(project) is None:
+        raise ValueError("maintenance pause missing")
+    if drain and not MAINT.drain(project):
+        raise ValueError("maintenance drain incomplete")
 
 
 def write_private(path, raw, owner):
@@ -477,6 +488,7 @@ def activate(project, directory, public_config=None, owner=0):
         result["checks"]["baseline_current"] = current == rollback and actual_baseline == baseline
         if not result["checks"]["baseline_current"]:
             raise ValueError("activation baseline drift")
+        require_pause(project, drain=True)
         write_private(directory / "activation-incomplete.json",
                       (json.dumps(result, sort_keys=True) + "\n").encode(), owner)
         try:
@@ -534,6 +546,7 @@ def recover_routine(project, directory, old_bearer_safe=False, public_config=Non
                                       "public_health": False,
                                       "path_isolated_after_failure": False}}
     with PAUSE.project_lock(project):
+        require_pause(project)
         result["checks"]["expected_project"] = (
             configuration_current(project, baseline)
             and PAUSE.no_extra_writers(baseline["project"]))
@@ -596,6 +609,7 @@ def stage_fresh(project, directory, owner=0):
               "pair": pair, "checks": {"expected_project": False, "known_files": False,
                                       "writers_isolated": False, "fresh_pair_distinct": False}}
     with PAUSE.project_lock(project):
+        require_pause(project)
         result["checks"]["expected_project"] = (
             configuration_current(project, baseline)
             and PAUSE.no_extra_writers(baseline["project"]))
@@ -661,6 +675,7 @@ def activate_fresh(project, directory, public_config=None, owner=0):
                                       "public_health": False,
                                       "path_isolated_after_failure": False}}
     with PAUSE.project_lock(project):
+        require_pause(project)
         result["checks"]["baseline_current"] = (
             configuration_current(project, baseline)
             and PAUSE.no_extra_writers(baseline["project"])
