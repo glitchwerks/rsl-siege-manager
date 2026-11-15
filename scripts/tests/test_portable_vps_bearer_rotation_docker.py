@@ -73,9 +73,9 @@ class DisposableBearerRotationTests(unittest.TestCase):
                              "      interval: 1s\n      retries: 5\n")
             (project / "compose.yml").write_text(
                 "services:\n"
-                f"  postgres:\n    image: {tag}\n    command: [sleep, '300']\n" + simple_health +
-                f"  proxy:\n    image: {tag}\n    command: [sleep, '300']\n" + simple_health +
-                f"  frontend:\n    image: {tag}\n    command: [sleep, '300']\n" + simple_health +
+                f"  postgres:\n    image: {tag}\n    command: [sleep, '900']\n" + simple_health +
+                f"  proxy:\n    image: {tag}\n    command: [sleep, '900']\n" + simple_health +
+                f"  frontend:\n    image: {tag}\n    command: [sleep, '900']\n" + simple_health +
                 f"  backend:\n    image: {tag}\n    command: [python, /app/server.py]\n"
                 "    environment: {ROLE: backend}\n    env_file: ./runtime/backend.env\n" + health)
             (project / "compose.mom.yml").write_text(
