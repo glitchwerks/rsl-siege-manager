@@ -2,7 +2,11 @@
 
 This is the read-only signal producer for #585, with an optional sender for the
 private missed-signal receiver contract in #579. No monitoring schedule,
-receiver configuration, restart or production query is enabled.
+restart or production query is enabled. As of 2026-11-15, Healthchecks.io has
+a paused `RSL database readiness/pressure` check. A separate disposable check
+proved failure, recovery and missed-signal delivery to Slack `#alerts` and
+fallback email. That delivery test does not prove database-signal delivery,
+and the production check has not been activated.
 Run it on the reviewed VPS only after a separate target and read-only
 activation approval. The independent receiver in #579 must deliver down,
 recovery and missed-signal alerts even when this host is unavailable.
@@ -94,8 +98,9 @@ After a separately approved PostgreSQL restart, apply a five-minute startup
 grace at the receiver without treating an unhealthy database as PASS. Record
 the incident owner and correlate this signal with the public API check in #584;
 an API outage alone
-does not establish a database outage. Configure the eventual receiver to send
-Slack as primary and email as fallback.
+does not establish a database outage. The paused receiver check is assigned
+to infrastructure Slack as primary and email as fallback; its actual database
+sender and live delivery remain unaccepted under #579.
 
 Before activation, choose the free-space floor and each maximum database size
 from representative measured usage plus an explicit growth budget. The
