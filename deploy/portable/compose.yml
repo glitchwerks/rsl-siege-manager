@@ -18,6 +18,10 @@ x-backend: &backend
   environment:
     ENVIRONMENT: production
     AUTH_DISABLED: "false"
+    MAINTENANCE_ENFORCED: "true"
+    MAINTENANCE_STATE_FILE: /run/rsl-maintenance/state
+  volumes:
+    - ./control:/run/rsl-maintenance:ro
   networks: [application, database, proxy]
   mem_limit: 1280m
   cpus: 1.5
@@ -59,7 +63,7 @@ services:
       application: {}
       database: {}
       proxy: {aliases: [api-proxy]}
-    command: [uvicorn, app.main:app, --no-access-log, --host, 0.0.0.0, --port, "8000", --proxy-headers, --forwarded-allow-ips, "${PROXY_IP:?Set the proxy's fixed private IP}"]
+    command: [uvicorn, app.main:app, --no-access-log, --host, 0.0.0.0, --port, "8000", --workers, "1", --proxy-headers, --forwarded-allow-ips, "${PROXY_IP:?Set the proxy's fixed private IP}"]
     depends_on:
       postgres: {condition: service_healthy}
     healthcheck:
