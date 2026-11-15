@@ -49,6 +49,10 @@ change; an arbitrary local edit remains a STOP:
   visible without recreating the container. The host-side phase-scoped control
   runner and Mom writer gate are tracked in #640 and #395; preparing this file
   does not authorize a live pause or resume.
+- `control/history.json`: a nonsecret, root-owned 0644 regular file initially
+  containing `{"schema":1,"pause_started_at":null,"last_resumed_at":null}`.
+  The host control runner updates it atomically at each pause and resume so
+  Mom can quarantine member activity whose gateway events may be incomplete.
 
 The invoking deployment operator must own all deployment/runtime directories and
 credential files. Restrict directories to 0700 and credential files to 0600. These paths are ignored by Git. Never publish rendered `compose config`

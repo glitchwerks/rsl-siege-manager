@@ -28,6 +28,9 @@ def fixture(directory):
     control.mkdir(mode=0o755)
     (control / "state").write_bytes(b"active\n")
     (control / "state").chmod(0o644)
+    (control / "history.json").write_text(
+        '{"schema":1,"pause_started_at":null,"last_resumed_at":null}\n')
+    (control / "history.json").chmod(0o644)
     for name in ("Caddyfile", "init-databases.sql"):
         (directory / name).write_bytes((preflight.PORTABLE / name).read_bytes())
         (directory / name).chmod(0o644)
@@ -663,6 +666,26 @@ class RuntimePermissionTests(unittest.TestCase):
             state.write_bytes(b"paused\n")
             self.assertTrue(preflight.deployment_bind_sources_current(root))
             state.unlink()
+            self.assertFalse(preflight.deployment_bind_sources_current(root))
+
+    def test_invalid_pause_history_stops_before_render(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            fixture(root)
+            history = root / "control/history.json"
+            initial = history.read_text()
+            for content in (
+                "{}",
+                '{"schema":1,"pause_started_at":"invalid","last_resumed_at":null}',
+                '{"schema":1,"pause_started_at":null,"last_resumed_at":"2026-11-15T00:00:00+00:00"}',
+                '{"schema":1,"pause_started_at":42,"last_resumed_at":null}',
+            ):
+                with self.subTest(content=content):
+                    history.write_text(content)
+                    self.assertFalse(preflight.deployment_bind_sources_current(root))
+            history.write_text(initial)
+            self.assertTrue(preflight.deployment_bind_sources_current(root))
+            history.unlink()
             self.assertFalse(preflight.deployment_bind_sources_current(root))
 
     def test_reviewed_www_redirect_is_accepted_without_accepting_other_edits(self):

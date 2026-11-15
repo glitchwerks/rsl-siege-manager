@@ -316,6 +316,28 @@ def deployment_bind_sources_current(project_directory):
                     or info.st_mode & 0o022 or not info.st_mode & 0o004
                     or source.read(17) not in (b"active\n", b"paused\n")):
                 return False
+        history = control / "history.json"
+        fd = os.open(history, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
+        with os.fdopen(fd, "rb") as source:
+            info = os.fstat(source.fileno())
+            if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid()
+                    or info.st_mode & 0o022 or not info.st_mode & 0o004
+                    or info.st_size > 256):
+                return False
+            value = json.load(source)
+            if (not isinstance(value, dict) or set(value) !=
+                    {"schema", "pause_started_at", "last_resumed_at"}
+                    or value["schema"] != 1
+                    or any(item is not None and not isinstance(item, str)
+                           for item in (value["pause_started_at"], value["last_resumed_at"]))):
+                return False
+            for field in ("pause_started_at", "last_resumed_at"):
+                if value[field] is not None:
+                    parsed = datetime.fromisoformat(value[field])
+                    if parsed.tzinfo != timezone.utc:
+                        return False
+            if value["last_resumed_at"] is not None and value["pause_started_at"] is None:
+                return False
         for name in ("Caddyfile", "init-databases.sql"):
             path = project_directory / name
             fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
@@ -332,7 +354,7 @@ def deployment_bind_sources_current(project_directory):
                 if content not in reviewed:
                     return False
         return True
-    except OSError:
+    except (OSError, ValueError, TypeError):
         return False
 
 

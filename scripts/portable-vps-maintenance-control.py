@@ -90,6 +90,84 @@ def state(project: Path) -> str | None:
         return None
 
 
+def history(project: Path) -> dict | None:
+    """Read the nonsecret pause interval used to quarantine uncertain events."""
+    path = project / "control" / "history.json"
+    if not root_owned(path.parent, directory=True, readable=True) or not root_owned(
+        path, readable=True
+    ):
+        return None
+    try:
+        with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW), "rb") as source:
+            info = os.fstat(source.fileno())
+            if (
+                not stat.S_ISREG(info.st_mode)
+                or info.st_size > 256
+                or info.st_uid != 0
+                or info.st_mode & 0o022
+            ):
+                return None
+            value = json.load(source)
+        if (
+            not isinstance(value, dict)
+            or set(value) != {"schema", "pause_started_at", "last_resumed_at"}
+            or value["schema"] != 1
+        ):
+            return None
+        for field in ("pause_started_at", "last_resumed_at"):
+            if value[field] is not None:
+                if not isinstance(value[field], str):
+                    return None
+                parsed = datetime.fromisoformat(value[field])
+                if parsed.tzinfo != timezone.utc:
+                    return None
+        if value["last_resumed_at"] is not None and value["pause_started_at"] is None:
+            return None
+        return value
+    except (OSError, ValueError, TypeError):
+        return None
+
+
+def replace_history(project: Path, value: dict) -> bool:
+    """Atomically persist the pause boundary before any resume is allowed."""
+    if (
+        history(project) is None
+        or not isinstance(value, dict)
+        or set(value) != {"schema", "pause_started_at", "last_resumed_at"}
+        or value["schema"] != 1
+    ):
+        return False
+    for field in ("pause_started_at", "last_resumed_at"):
+        if value[field] is not None:
+            if not isinstance(value[field], str):
+                return False
+            try:
+                if datetime.fromisoformat(value[field]).tzinfo != timezone.utc:
+                    return False
+            except ValueError:
+                return False
+    if value["last_resumed_at"] is not None and value["pause_started_at"] is None:
+        return False
+    directory = project / "control"
+    descriptor, temporary = tempfile.mkstemp(prefix=".history.", dir=directory)
+    try:
+        with os.fdopen(descriptor, "wb") as output:
+            os.fchmod(output.fileno(), 0o644)
+            output.write((json.dumps(value, sort_keys=True) + "\n").encode())
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(temporary, directory / "history.json")
+        control = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            os.fsync(control)
+        finally:
+            os.close(control)
+        return history(project) == value
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
 def replace_state(project: Path, value: str) -> bool:
     """Atomically update the nonsecret state through the mounted directory."""
     if value not in {"active", "paused"} or state(project) is None:
@@ -270,6 +348,7 @@ def run(args: argparse.Namespace) -> dict:
             args.project_directory, 0, directory=True
         ),
         "control_state_valid": state(args.project_directory) is not None,
+        "pause_history_valid": history(args.project_directory) is not None,
     }
     report = {
         "phase": f"maintenance-{args.phase}",
@@ -289,7 +368,22 @@ def run(args: argparse.Namespace) -> dict:
             checks["currently_active"] = state(args.project_directory) == "active"
             if all(checks.values()):
                 checks["paused"] = replace_state(args.project_directory, "paused")
-                checks["drained"] = checks["paused"] and drain(args.project_directory)
+                prior = history(args.project_directory)
+                checks["pause_boundary_recorded"] = (
+                    checks["paused"]
+                    and prior is not None
+                    and replace_history(
+                        args.project_directory,
+                        {
+                            "schema": 1,
+                            "pause_started_at": datetime.now(timezone.utc).isoformat(),
+                            "last_resumed_at": prior["last_resumed_at"],
+                        },
+                    )
+                )
+                checks["drained"] = checks["pause_boundary_recorded"] and drain(
+                    args.project_directory
+                )
             report["status"] = "PASS" if all(checks.values()) else "STOP"
         elif args.phase == "drain":
             checks["paused"] = state(args.project_directory) == "paused"
@@ -307,7 +401,22 @@ def run(args: argparse.Namespace) -> dict:
                 (args.project_directory / "control/state").stat().st_mtime,
             )
             if all(checks.values()):
-                checks["resumed"] = replace_state(args.project_directory, "active")
+                prior = history(args.project_directory)
+                checks["resume_boundary_recorded"] = (
+                    prior is not None
+                    and prior["pause_started_at"] is not None
+                    and replace_history(
+                        args.project_directory,
+                        {
+                            "schema": 1,
+                            "pause_started_at": prior["pause_started_at"],
+                            "last_resumed_at": datetime.now(timezone.utc).isoformat(),
+                        },
+                    )
+                )
+                checks["resumed"] = checks[
+                    "resume_boundary_recorded"
+                ] and replace_state(args.project_directory, "active")
             report["status"] = "PASS" if all(checks.values()) else "STOP"
     return report
 

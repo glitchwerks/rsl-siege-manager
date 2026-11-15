@@ -3,6 +3,7 @@
 from argparse import Namespace
 from contextlib import nullcontext
 import importlib.util
+import json
 import os
 from pathlib import Path
 import tempfile
@@ -41,6 +42,16 @@ class MaintenanceControlTests(unittest.TestCase):
             CONTROL, "replace_state", side_effect=replace
         ), patch.object(
             CONTROL, "drain", return_value=False
+        ), patch.object(
+            CONTROL,
+            "history",
+            return_value={
+                "schema": 1,
+                "pause_started_at": None,
+                "last_resumed_at": None,
+            },
+        ), patch.object(
+            CONTROL, "replace_history", return_value=True
         ):
             result = CONTROL.run(args)
         self.assertEqual(result["status"], "STOP")
@@ -65,6 +76,14 @@ class MaintenanceControlTests(unittest.TestCase):
         ), patch.object(
             CONTROL, "resume_evidence", return_value=False
         ), patch.object(
+            CONTROL,
+            "history",
+            return_value={
+                "schema": 1,
+                "pause_started_at": "2026-11-15T00:00:00+00:00",
+                "last_resumed_at": None,
+            },
+        ), patch.object(
             CONTROL, "replace_state"
         ) as replace, patch.object(
             Path, "stat"
@@ -73,6 +92,48 @@ class MaintenanceControlTests(unittest.TestCase):
             result = CONTROL.run(args)
         self.assertEqual(result["status"], "STOP")
         replace.assert_not_called()
+
+    def test_resume_records_boundary_before_reopening_admission(self):
+        args = Namespace(
+            phase="resume",
+            confirm="resume",
+            project_directory=Path("/synthetic"),
+            bearer_report=[],
+            monitor_report=None,
+        )
+        calls = []
+        prior = {
+            "schema": 1,
+            "pause_started_at": "2026-11-15T00:00:00+00:00",
+            "last_resumed_at": None,
+        }
+        with patch.object(CONTROL.os, "geteuid", return_value=0), patch.object(
+            CONTROL.PAUSE.GATE, "protected", return_value=True
+        ), patch.object(
+            CONTROL.PAUSE, "project_lock", return_value=nullcontext()
+        ), patch.object(
+            CONTROL, "state", return_value="paused"
+        ), patch.object(
+            CONTROL, "drain", return_value=True
+        ), patch.object(
+            CONTROL, "resume_evidence", return_value=True
+        ), patch.object(
+            CONTROL, "history", return_value=prior
+        ), patch.object(
+            CONTROL,
+            "replace_history",
+            side_effect=lambda _p, _v: calls.append("history") or True,
+        ), patch.object(
+            CONTROL,
+            "replace_state",
+            side_effect=lambda _p, _v: calls.append("state") or True,
+        ), patch.object(
+            Path, "stat"
+        ) as metadata:
+            metadata.return_value.st_mtime = 100.0
+            result = CONTROL.run(args)
+        self.assertEqual(result["status"], "PASS")
+        self.assertEqual(calls, ["history", "state"])
 
     def test_pause_replace_is_atomic_and_survives_new_reader(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -97,6 +158,39 @@ class MaintenanceControlTests(unittest.TestCase):
                 self.assertEqual(CONTROL.state(project), "paused")
                 self.assertNotEqual(original_inode, state.stat().st_ino)
                 self.assertEqual(list(control.iterdir()), [state])
+
+    def test_pause_history_is_atomic_and_rejects_invalid_shape(self):
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory)
+            control = project / "control"
+            control.mkdir()
+            path = control / "history.json"
+            initial = {"schema": 1, "pause_started_at": None, "last_resumed_at": None}
+            path.write_text(json.dumps(initial) + "\n")
+            path.chmod(0o644)
+            real_fstat = os.fstat
+
+            def root_fstat(fd):
+                info = real_fstat(fd)
+                return SimpleNamespace(
+                    st_mode=info.st_mode, st_uid=0, st_size=info.st_size
+                )
+
+            with patch.object(CONTROL, "root_owned", return_value=True), patch.object(
+                CONTROL.os, "fstat", side_effect=root_fstat
+            ):
+                self.assertEqual(CONTROL.history(project), initial)
+                paused = {
+                    "schema": 1,
+                    "pause_started_at": "2026-11-15T00:00:00+00:00",
+                    "last_resumed_at": None,
+                }
+                old_inode = path.stat().st_ino
+                self.assertTrue(CONTROL.replace_history(project, paused))
+                self.assertEqual(CONTROL.history(project), paused)
+                self.assertNotEqual(path.stat().st_ino, old_inode)
+                path.write_text('{"schema":2}\n')
+                self.assertIsNone(CONTROL.history(project))
 
     def test_invalid_or_missing_state_fails_closed(self):
         with tempfile.TemporaryDirectory() as directory:
