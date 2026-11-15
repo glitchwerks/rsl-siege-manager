@@ -43,6 +43,39 @@ preserved for diagnosis and can consume storage. A failed backup never authorize
 cleanup. Keep disk pressure monitoring and capacity alerts independent of this
 job; separately approve precise failed-run cleanup after preserving evidence.
 
+## Recovery consistency and delivery boundary
+
+The hourly job captures each application database with its own exported snapshot:
+the dump and control totals for that database agree. Siege and Mom are captured
+sequentially while normal writers may continue. Their capture windows are in the
+private manifest; a successful job is **not** an atomic snapshot across both
+applications and does not prove that every Discord delivery is represented in
+both restored databases. An hourly schedule also does not establish a one-hour
+RPO when a job fails or completes late.
+
+For a replacement host, first independently recover the selected encrypted NAS
+copy, its trusted receipt, the age key, and the separately sealed configuration
+package. Verify both database restores and their controls on an isolated target
+with production delivery disabled. Record the chosen job's completion time,
+both capture windows, the last known successful production write/delivery and
+the resulting candidate data-loss interval. If the source is still available,
+pause **all** writers and producers and take a new paired final export instead
+of silently promoting the earlier hourly copy.
+
+Before enabling a restored gateway or scheduler, reconcile Siege notification
+batches/results with Mom reminder and member-notification delivery records across
+the capture window and any later source activity. Classify completed, pending,
+failed and externally uncertain sends; investigate uncertain Discord outcomes
+before retrying to avoid duplicate notifications. Keep detailed identifiers,
+message content and private ledgers in protected evidence. The published report
+may contain only fixed check labels, aggregate counts, timing and PASS/STOP.
+If the source was lost and a gap cannot be reconciled, keep delivery paused and
+require a separate operator decision on data loss and individual recovery
+actions. A database restore PASS alone never authorizes gateway activation.
+
+The [post-write Azure return plan](https://github.com/glitchwerks/rsl-mom-apps/blob/main/docs/post-write-azure-return.md)
+uses the same paired-export and delivery boundary for a later reverse migration.
+
 ## Independent receipt catalog
 
 The job additionally uploads `<copy-UUID>.receipt.json` beside the encrypted object
