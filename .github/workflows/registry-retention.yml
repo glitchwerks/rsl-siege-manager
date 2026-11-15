@@ -48,18 +48,29 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
+      - name: Stage approved portable image inventory
+        shell: bash
+        env:
+          PROTECTED_IMAGE_REFERENCES_JSON: ${{ secrets.PROTECTED_IMAGE_REFERENCES_JSON }}
+        run: |
+          set -euo pipefail
+          test -n "$PROTECTED_IMAGE_REFERENCES_JSON"
+          umask 077
+          mkdir -p "$RUNNER_TEMP/registry-retention"
+          printf '%s' "$PROTECTED_IMAGE_REFERENCES_JSON" > "$RUNNER_TEMP/registry-retention/protected-images.json"
+
       - name: Preflight and preserve evidence
-        run: python3 scripts/registry-retention.py preflight --report "$RUNNER_TEMP/registry-retention/report.json"
+        run: python3 scripts/registry-retention.py preflight --report "$RUNNER_TEMP/registry-retention/report.json" --protected-images-file "$RUNNER_TEMP/registry-retention/protected-images.json"
 
       # Activation is separate from deletion and only an explicit manual choice
       # disables the legacy task.
       - name: Activate guarded replacement
         if: inputs.phase == 'activate'
-        run: python3 scripts/registry-retention.py activate --report "$RUNNER_TEMP/registry-retention/report.json" --confirm
+        run: python3 scripts/registry-retention.py activate --report "$RUNNER_TEMP/registry-retention/report.json" --protected-images-file "$RUNNER_TEMP/registry-retention/protected-images.json" --confirm
 
       - name: Apply seven-day policy
         if: inputs.phase == 'apply'
-        run: python3 scripts/registry-retention.py apply --report "$RUNNER_TEMP/registry-retention/report.json" --confirm
+        run: python3 scripts/registry-retention.py apply --report "$RUNNER_TEMP/registry-retention/report.json" --protected-images-file "$RUNNER_TEMP/registry-retention/protected-images.json" --confirm
 
       - name: Verify cleanup separately
         if: inputs.phase == 'apply'
@@ -70,6 +81,6 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: registry-retention-${{ github.run_id }}
-          path: ${{ runner.temp }}/registry-retention/*.json
+          path: ${{ runner.temp }}/registry-retention/report.json
           if-no-files-found: warn
           retention-days: 30

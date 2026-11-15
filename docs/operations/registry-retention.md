@@ -20,6 +20,14 @@ replacement runner can authenticate and pull each exact digest. Docker's VPS
 cache is not replacement-host recovery. The release candidate verifier proves
 candidate registry access; it does not establish the installed/rollback set.
 
+The Azure cleanup also requires an explicit immutable-image inventory for the
+portable **active** and **approved rollback** sets. This is a conservative
+cross-registry guard: any ACR manifest with a digest in that inventory is kept,
+even if the ACR repository name differs. An inventory entry does not itself
+prove a replacement host can pull the corresponding GHCR image. Record that
+proof separately before approving cleanup. A missing or changed inventory
+stops preflight or activation; never fill it from mutable tags or Docker cache.
+
 ## Retention policy
 
 The scope is exactly `siege-api`, `siege-bot`, and `siege-frontend` in the existing
@@ -32,6 +40,7 @@ seven days ago and none of these protections apply:
 - It is among the newest five manifests in its repository or the newest five
   release-tagged (`v*`) manifests.
 - The manifest is locked against deletion or writing.
+- Its digest is declared in the reviewed portable active or rollback inventory.
 
 Age is based on the precise last-updated timestamp, not calendar dates. At the
 seven-day boundary the image stays. Shared layers mean manifest sizes cannot
@@ -54,6 +63,25 @@ This proves the existing production environment's `AZURE_CREDENTIALS` can read
 all relevant applications/revisions and registry metadata. Do not broaden
 permissions silently if this fails.
 
+Before any dispatch, inspect the protected live deployment record and approved
+rollback record outside Git. Put their exact `repository@sha256:<64 hex>`
+references in the production environment secret
+`PROTECTED_IMAGE_REFERENCES_JSON` using this shape (replace every placeholder):
+
+```json
+{"schema":1,"active":["ghcr.io/owner/api@sha256:..."],"rollback":["ghcr.io/owner/api@sha256:..."]}
+```
+
+Include all images needed by the portable Compose stack, including Mom,
+PostgreSQL and Caddy, even when they have no ACR counterpart. The example is
+illustrative and deliberately invalid. Each array must be nonempty, all entries
+must be immutable references, and duplicate entries stop the job. Review the
+record against the actual installed digests and the approved rollback set; the
+workflow cannot infer them from a stopped Azure application. The input is
+written to a private temporary file, compared again before mutation, and
+excluded from the uploaded report. Do not dispatch `activate` or `apply` until
+the clean replacement-host pull check and separate cleanup approval pass.
+
 Next run the workflow with `phase=activate`. This takes a fresh baseline,
 checks that no legacy cleanup is running, disables only the legacy task status,
 and verifies its other configuration. Activation does not delete images.
@@ -74,9 +102,9 @@ unauthenticated endpoint and bounded retries for transport failures.
 For a local operator, use distinct report paths and the same phases:
 
 ```sh
-python3 scripts/registry-retention.py preflight --report /tmp/retention-report.json
-python3 scripts/registry-retention.py activate --report /tmp/retention-report.json --confirm
-python3 scripts/registry-retention.py apply --report /tmp/retention-report.json --confirm
+python3 scripts/registry-retention.py preflight --report /tmp/retention-report.json --protected-images-file /protected/portable-images.json
+python3 scripts/registry-retention.py activate --report /tmp/retention-report.json --protected-images-file /protected/portable-images.json --confirm
+python3 scripts/registry-retention.py apply --report /tmp/retention-report.json --protected-images-file /protected/portable-images.json --confirm
 python3 scripts/registry-retention.py verify --report /tmp/retention-report.json
 ```
 

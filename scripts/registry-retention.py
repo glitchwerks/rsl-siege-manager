@@ -23,6 +23,7 @@ DAYS = 7
 KEEP = 5
 MAX_DELETE = 100
 MANIFEST_TYPES = {"application/vnd.docker.distribution.manifest.v2+json", "application/vnd.oci.image.manifest.v1+json"}
+IMAGE_REF = re.compile(r"^[a-z0-9][a-z0-9./_-]+@sha256:[a-f0-9]{64}$")
 
 
 class Stop(RuntimeError):
@@ -31,6 +32,29 @@ class Stop(RuntimeError):
 
 def fingerprint(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
+
+
+def protected_images(path):
+    """Read operator-approved active and rollback image identities, never credentials."""
+    try:
+        data = json.loads(Path(path).read_text())
+    except (OSError, ValueError) as error:
+        raise Stop("Protected image inventory unavailable or invalid") from error
+    if not isinstance(data, dict) or set(data) != {"schema", "active", "rollback"} or data["schema"] != 1:
+        raise Stop("Protected image inventory schema mismatch")
+    result = {}
+    for group in ("active", "rollback"):
+        refs = data[group]
+        if not isinstance(refs, list) or not refs or any(not isinstance(ref, str) or not IMAGE_REF.fullmatch(ref) for ref in refs):
+            raise Stop("Protected image inventory must have immutable active and rollback references")
+        if len(refs) != len(set(refs)):
+            raise Stop("Duplicate protected image reference")
+        result[group] = sorted(refs)
+    return result
+
+
+def protected_digests(images):
+    return {ref.rsplit("@", 1)[1] for group in ("active", "rollback") for ref in images[group]}
 
 
 def azure(*args):
@@ -160,7 +184,7 @@ def usage():
     return next(row["currentValue"] for row in result["value"] if row["name"] == "Size")
 
 
-def plan(rows_by_repo, refs, at):
+def plan(rows_by_repo, refs, at, protected=frozenset()):
     cutoff = at - timedelta(days=DAYS)
     result = []
     for repo, rows in sorted(rows_by_repo.items()):
@@ -178,6 +202,8 @@ def plan(rows_by_repo, refs, at):
             reasons = []
             if identities.intersection(refs):
                 reasons.append("referenced by current template or retained revision")
+            if row["digest"] in protected:
+                reasons.append("protected portable active or rollback image")
             if row["digest"] in keep:
                 reasons.append("latest five builds or latest five release manifests")
             if timestamp(row["lastUpdateTime"]) >= cutoff:
@@ -191,14 +217,15 @@ def plan(rows_by_repo, refs, at):
     return result
 
 
-def preflight():
+def preflight(protected):
     refs = applications()
     rows = image_rows()
     at = now()
     result = {"schema": 1, "registry": REGISTRY, "subscription": SUBSCRIPTION,
               "days": DAYS, "keep": KEEP, "createdAt": at.isoformat(),
               "status": "PREFLIGHT_PASS", "baseline": refs, "health": health(),
-              "images": plan(rows, refs["references"], at),
+              "images": plan(rows, refs["references"], at, protected_digests(protected)),
+              "protectedImagesHash": fingerprint(protected),
               "inventoryHashes": {repo: inventory_hash(values) for repo, values in rows.items()},
               "beforeBytes": usage(), "attempted": [], "deleted": [],
               "legacyTask": rest(TASK_URL)["properties"]["status"]}
@@ -213,10 +240,12 @@ def load(path):
         raise Stop("Fresh preflight required")
     if report["status"] not in ("PREFLIGHT_PASS", "ACTIVATE_PASS"):
         raise Stop("Passed preflight required")
+    if not re.fullmatch(r"[a-f0-9]{64}", report.get("protectedImagesHash", "")):
+        raise Stop("Protected image inventory hash missing")
     return report
 
 
-def unchanged(report):
+def unchanged(report, protected=None):
     current = applications()
     if current != report["baseline"]:
         raise Stop("Application drift; stop before deletion")
@@ -224,15 +253,16 @@ def unchanged(report):
     if {repo: inventory_hash(values) for repo, values in rows.items()} != report["inventoryHashes"]:
         raise Stop("Registry drift; stop before deletion")
     # Recompute at the original cutoff; report editing cannot expand the candidates.
-    expected = plan(rows, current["references"], timestamp(report["createdAt"]))
+    expected = plan(rows, current["references"], timestamp(report["createdAt"]),
+                    protected_digests(protected) if protected else frozenset())
     if expected != report["images"]:
         raise Stop("Candidate plan changed or report was modified")
     health()
     return rows
 
 
-def activate(report, path):
-    unchanged(report)
+def activate(report, path, protected=None):
+    unchanged(report, protected)
     task = rest(TASK_URL)
     if task["properties"]["status"] not in ("Enabled", "Disabled"):
         raise Stop("Unknown legacy task state")
@@ -248,7 +278,7 @@ def activate(report, path):
     after = rest(TASK_URL)
     if after["properties"]["status"] != "Disabled" or task_config(after) != report["legacyConfigHash"]:
         raise Stop("Legacy task activation verification failed")
-    unchanged(report)  # task-only update must not affect workloads or registry contents
+    unchanged(report, protected)  # task-only update must not affect workloads or registry contents
     report["status"] = "ACTIVATE_PASS"
     write(path, report)
 
@@ -261,10 +291,10 @@ def task_config(task):
                         "tags": task.get("tags"), "location": task.get("location")})
 
 
-def apply(report, path):
+def apply(report, path, protected=None):
     if rest(TASK_URL)["properties"]["status"] != "Disabled":
         raise Stop("Activate replacement first; legacy task must be disabled")
-    rows = unchanged(report)
+    rows = unchanged(report, protected)
     approved = [row for row in report["images"] if row["candidate"]]
     report["status"] = "APPLY_RUNNING"
     write(path, report)
@@ -328,17 +358,20 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("phase", choices=("preflight", "activate", "apply", "verify", "rollback-task"))
     parser.add_argument("--report", required=True)
+    parser.add_argument("--protected-images-file")
     parser.add_argument("--confirm", action="store_true")
     args = parser.parse_args()
     if args.phase in ("activate", "apply", "rollback-task") and not args.confirm:
         parser.error("State changes require --confirm")
+    if args.phase in ("preflight", "activate", "apply") and not args.protected_images_file:
+        parser.error("Preflight and cleanup require --protected-images-file")
     report = None
     try:
         require_account()
         if args.phase == "preflight":
             if Path(args.report).exists():
                 raise Stop("Do not overwrite existing report")
-            report = preflight()
+            report = preflight(protected_images(args.protected_images_file))
             write(args.report, report)
         elif args.phase in ("verify", "rollback-task"):
             report = json.loads(Path(args.report).read_text())
@@ -352,10 +385,13 @@ def main():
                 rollback_task(report, args.report)
         else:
             report = load(args.report)
+            protected = protected_images(args.protected_images_file)
+            if fingerprint(protected) != report["protectedImagesHash"]:
+                raise Stop("Protected image inventory changed since preflight")
             if args.phase == "activate":
-                activate(report, args.report)
+                activate(report, args.report, protected)
             else:
-                apply(report, args.report)
+                apply(report, args.report, protected)
         print(report["status"], flush=True)
     except Exception as error:
         reason = str(error) if isinstance(error, Stop) else type(error).__name__
