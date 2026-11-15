@@ -2,12 +2,15 @@
 """Phase-gated installation of the restricted GitHub VPS access key."""
 
 import argparse
+import gzip
 import hashlib
+import io
 import json
 import os
 import stat
 import subprocess
 import tempfile
+import zlib
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -34,7 +37,7 @@ OLD_REMOTE_SHA256S = (
     "e634b0eb9a8e01518b78e3dfc72d44cf4a2174c75ee36f858a678293cddaf30e",
 )
 NEW_REMOTE_SHA256 = "a223e74a4ecd2b285a47bd6e695fd437d8dc68f3cbe8093243b26dd6c0447e00"
-RELEASE_SOURCE_COMMIT = "67d61df5cb6ac0b1d739cec486d9d9493590b92e"
+RELEASE_SOURCE_ARCHIVE = SOURCE_SCRIPT.with_name("portable-vps-remote-release.py.gz")
 DAY_ROLE_REMOTE_OLD_SHA256 = NEW_REMOTE_SHA256
 DAY_ROLE_REMOTE_NEW_SHA256 = "b5b8518a0a8a83cd3655e5a4da79df81f1582647e6ec166a9723fe42c8304e64"
 
@@ -52,18 +55,21 @@ def digest(data):
 
 
 def release_script_bytes():
-    """Read the pinned earlier script from the reviewed checkout history."""
+    """Read the pinned earlier script from the reviewed repository archive."""
     current = SOURCE_SCRIPT.read_bytes()
     if digest(current) == NEW_REMOTE_SHA256:
         return current
-    result = subprocess.run(
-        ["git", "-C", str(SOURCE_SCRIPT.parent.parent), "show",
-         f"{RELEASE_SOURCE_COMMIT}:scripts/portable-vps-remote.py"],
-        capture_output=True, timeout=15, check=False,
-    )
-    if result.returncode or len(result.stdout) > 200_000 or digest(result.stdout) != NEW_REMOTE_SHA256:
+    archive = RELEASE_SOURCE_ARCHIVE.read_bytes()
+    if len(archive) > 30_000:
+        raise ValueError("reviewed release archive too large")
+    try:
+        with gzip.GzipFile(fileobj=io.BytesIO(archive)) as stream:
+            source = stream.read(200_001)
+    except (OSError, EOFError, zlib.error) as error:
+        raise ValueError("reviewed release archive unreadable") from error
+    if len(source) > 200_000 or digest(source) != NEW_REMOTE_SHA256:
         raise ValueError("reviewed release source unavailable")
-    return result.stdout
+    return source
 
 
 def checked_file(path, uid=0):
