@@ -42,8 +42,12 @@ async def test_paused_requests_reject_writes_and_keep_read_only_probes(gate):
         assert blocked.status_code == 503
         assert blocked.headers["Retry-After"] == "30"
         assert (await client.get("/api/health")).status_code == 200
-        assert (await client.get("/api/members/me/preferences", headers={
-            "Authorization": "Bearer synthetic", "X-Acting-Discord-Id": "invalid"})).status_code == 200
+        assert (
+            await client.get(
+                "/api/members/me/preferences",
+                headers={"Authorization": "Bearer synthetic", "X-Acting-Discord-Id": "invalid"},
+            )
+        ).status_code == 200
         assert (await client.get("/api/members/me/preferences")).status_code == 503
         assert gate.snapshot() == {"paused": True, "inflight": 0}
 

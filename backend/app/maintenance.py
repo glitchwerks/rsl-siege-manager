@@ -42,8 +42,12 @@ class MaintenanceGate:
             fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
             with os.fdopen(fd, "rb") as source:
                 info = os.fstat(source.fileno())
-                if (not stat.S_ISREG(info.st_mode) or info.st_uid != self.owner_uid
-                        or info.st_mode & 0o022 or info.st_size > 16):
+                if (
+                    not stat.S_ISREG(info.st_mode)
+                    or info.st_uid != self.owner_uid
+                    or info.st_mode & 0o022
+                    or info.st_size > 16
+                ):
                     return "paused"
                 raw = source.read(17)
             return "active" if raw == b"active\n" else "paused"
@@ -84,8 +88,9 @@ def _probe_allowed(scope: Scope) -> bool:
     if path != "/api/members/me/preferences":
         return False
     headers = dict(scope.get("headers", []))
-    return (headers.get(b"x-acting-discord-id") == b"invalid"
-            and headers.get(b"authorization", b"").lower().startswith(b"bearer "))
+    return headers.get(b"x-acting-discord-id") == b"invalid" and headers.get(
+        b"authorization", b""
+    ).lower().startswith(b"bearer ")
 
 
 class MaintenancePauseMiddleware:
@@ -100,8 +105,11 @@ class MaintenancePauseMiddleware:
             await self.app(scope, receive, send)
             return
         if not self.gate.begin():
-            response = JSONResponse({"detail": "Maintenance pause active"}, status_code=503,
-                                    headers={"Retry-After": "30"})
+            response = JSONResponse(
+                {"detail": "Maintenance pause active"},
+                status_code=503,
+                headers={"Retry-After": "30"},
+            )
             await response(scope, receive, send)
             return
         try:
@@ -110,5 +118,6 @@ class MaintenancePauseMiddleware:
             self.gate.end()
 
 
-gate = MaintenanceGate(enabled=settings.maintenance_enforced,
-                       state_file=settings.maintenance_state_file)
+gate = MaintenanceGate(
+    enabled=settings.maintenance_enforced, state_file=settings.maintenance_state_file
+)

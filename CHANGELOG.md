@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### siege-api 1.6.2
+
+- Added an opt-in portable maintenance gate that rejects backend work during paired bearer rotation and reports in-flight requests for a bounded drain. Azure deployments remain unaffected. (#640)
+
 ## [1.6.0] - 2026-10-25
 
 Public planner guides, a private mom-bot officer reference, and developer guide preview. Includes portable-hosting preparation; pilot activation and production cutover remain separately gated.
