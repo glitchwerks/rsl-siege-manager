@@ -140,7 +140,11 @@ must match Mom's inbound `MOM_BOT_SECRET_DISCORD_BOT_API_KEY`. Siege's inbound
 `MOM_BOT_SECRET_SIEGE_WEB_BOT_TOKEN`. Neither bearer accepts an overlap token,
 so rotate one pair at a time with a reviewed write/notification pause, protected
 copies of both files, final drift checks, a project lock, targeted service
-restarts and verification in both directions. Acquire the lock before the final
+recreation and verification in both directions. The phase-scoped runner must
+use the reviewed project and overlay with
+`docker compose up --no-deps --no-build --pull never --force-recreate --wait backend mom`;
+`docker compose restart`
+does not reload changed `env_file` values. Acquire the lock before the final
 drift check and hold it through activation and verification. Do not treat a single changed
 environment file or one healthy endpoint as a complete rotation. A failed
 paired routine activation keeps the path paused until both old files and both affected
