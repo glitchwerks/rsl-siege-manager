@@ -193,9 +193,10 @@ the Azure-only `migrate.sh` script. `migrate-siege` and
 normal service activation. Migrations do not start Discord. Apply them only to the
 intended reviewed database, with verified backup/recovery first.
 
-Day-role sync is disabled in the example until conforming receiver acceptance.
-For production cutover preserve today's enabled state, role IDs, and recipient
-settings rather than silently adopting pilot defaults. Set `DAY_ROLE_SYNC_URL` to
+Day-role sync is disabled in the example and remains disabled on the current
+portable production stack. A later approved enablement must use two distinct,
+reviewed Day 1/Day 2 role IDs and a conforming receiver; preflight rejects an
+enabled configuration with either ID absent or both IDs equal. Set `DAY_ROLE_SYNC_URL` to
 `https://PUBLIC_HOST/api/internal/role-sync` with the mom topology. Caddy terminates
 public TLS and forwards only this POST to the selected receiver on the application
 network. The receiver verifies

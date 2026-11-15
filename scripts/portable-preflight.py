@@ -148,6 +148,12 @@ def validate(model, topology, mom_approval=None, project_directory=None):
     check("optional_day_role_ids_valid", lambda: all(
           k not in env or snowflake(env[k])
           for k in ("DISCORD_DAY_1_ROLE_ID", "DISCORD_DAY_2_ROLE_ID")))
+    check("enabled_day_role_mapping_complete", lambda:
+          env.get("DAY_ROLE_SYNC_ENABLED", "false") != "true"
+          or (topology == "mom"
+              and all(snowflake(env.get(k)) for k in
+                      ("DISCORD_DAY_1_ROLE_ID", "DISCORD_DAY_2_ROLE_ID"))
+              and int(env["DISCORD_DAY_1_ROLE_ID"]) != int(env["DISCORD_DAY_2_ROLE_ID"])))
     check("role_sync_receiver_route", lambda:
           proxy_env["ROLE_SYNC_UPSTREAM"] ==
               ("mom:8001" if topology == "mom" else "api-proxy:8000")

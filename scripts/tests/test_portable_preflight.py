@@ -409,6 +409,28 @@ class SafetyTests(unittest.TestCase):
                         self.assertEqual(preflight.validate(data, topology)["optional_day_role_ids_valid"],
                                          value == "123456789012345678")
 
+    def test_enabled_day_role_mapping_requires_two_distinct_ids(self):
+        for topology, factory in (("bundled", model), ("mom", mom_model)):
+            for first, second, expected in (
+                    (None, None, False),
+                    ("123456789012345678", None, False),
+                    ("123456789012345678", "123456789012345678", False),
+                    ("123456789012345678", "0123456789012345678", False),
+                    ("123456789012345678", "123456789012345679", True)):
+                with self.subTest(topology=topology, first=first, second=second):
+                    data = factory()
+                    env = data["services"]["backend"]["environment"]
+                    env["DAY_ROLE_SYNC_ENABLED"] = "true"
+                    if first is not None:
+                        env["DISCORD_DAY_1_ROLE_ID"] = first
+                    if second is not None:
+                        env["DISCORD_DAY_2_ROLE_ID"] = second
+                    self.assertEqual(
+                        preflight.validate(data, topology)["enabled_day_role_mapping_complete"],
+                        expected and topology == "mom")
+                    env["DAY_ROLE_SYNC_ENABLED"] = "false"
+                    self.assertTrue(preflight.validate(data, topology)["enabled_day_role_mapping_complete"])
+
     def test_rejects_ambiguous_proxy_alias(self):
         for topology, factory in (("bundled", model), ("mom", mom_model)):
             for name, network in (("backend", "application"), ("migrate-siege", "proxy")):
@@ -890,6 +912,8 @@ class ComposeTests(unittest.TestCase):
                     if topology == "mom":
                         content = content.replace("DAY_ROLE_SYNC_ENABLED=false", "DAY_ROLE_SYNC_ENABLED=true")
                         content = content.replace("# DAY_ROLE_SYNC_URL=", "DAY_ROLE_SYNC_URL=")
+                        content += ("\nDISCORD_DAY_1_ROLE_ID=123456789012345678"
+                                    "\nDISCORD_DAY_2_ROLE_ID=123456789012345679\n")
                         backend_file.write_text(content)
                     data = preflight.render(topology, stack, Path(directory))
                     approval = preflight.read_mom_approval(Path(directory) / "runtime/mom-image.json")
