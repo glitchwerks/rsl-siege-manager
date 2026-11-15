@@ -230,7 +230,9 @@ def stage(project, decision_path, evidence, owner=0):
 
 
 def load(project, directory, owner):
-    if (not ROTATION.private(directory, owner, directory=True)
+    if (not directory.is_absolute() or ".." in directory.parts
+            or not ROTATION.private(directory.parent, owner, directory=True)
+            or not ROTATION.private(directory, owner, directory=True)
             or str(uuid.UUID(directory.name)) != directory.name):
         raise ValueError("unsafe stage")
     accepted = json.loads(GATE.read_private(directory / "accepted.json", owner),

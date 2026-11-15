@@ -290,6 +290,16 @@ def test_accepted_proof_rejects_changed_record(monkeypatch, tmp_path):
         RUNNER.proof_current(tmp_path, stage, tmp_path / "profile.json")
 
 
+def test_stage_load_refuses_symlinked_evidence_parent(tmp_path):
+    evidence = tmp_path / "evidence"
+    evidence.mkdir(mode=0o700)
+    stage_id = "11111111-1111-4111-8111-111111111111"
+    (evidence / stage_id).mkdir(mode=0o700)
+    (tmp_path / "linked-evidence").symlink_to(evidence, target_is_directory=True)
+    with pytest.raises(ValueError, match="unsafe stage"):
+        RUNNER.load(tmp_path, tmp_path / "linked-evidence" / stage_id, owner=tmp_path.stat().st_uid)
+
+
 def test_failed_recovery_verification_stops_backend_again(monkeypatch, tmp_path):
     project, stage = tmp_path / "project", tmp_path / "stage"
     baseline = {"project": "test", "installed": {"backend": {"id": "old-id"},
