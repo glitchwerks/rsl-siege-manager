@@ -21,7 +21,8 @@ service labels on the local Unix socket, then verifies its exact digest-pinned
 image. It ignores inherited Docker context and host overrides. It makes no
 recovery attempt for a missing, stopped, healthy, starting, or OOM-killed
 container. A stable running `unhealthy` container must be observed twice at
-least 90 seconds apart with the same full container ID and restart count. The
+least 90 seconds apart with the same full container ID, process start time,
+and restart count. The
 runner rechecks immediately before the targeted `docker container restart`.
 It consumes the allowance before invoking Docker so a failed or interrupted
 restart cannot cause a rapid retry. A service gets at most one attempt per six

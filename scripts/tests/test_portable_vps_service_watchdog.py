@@ -17,12 +17,15 @@ IMAGE = "example.test/backend@sha256:" + "a" * 64
 CID = "b" * 64
 
 
-def unhealthy(*, cid=CID, oom=False, restarts=0, health="unhealthy", running=True):
-    return {"id": cid, "running": running, "health": health, "oom": oom, "restarts": restarts}
+def unhealthy(*, cid=CID, oom=False, restarts=0, health="unhealthy", running=True,
+              started_at="2026-11-15T00:00:00Z"):
+    return {"id": cid, "running": running, "health": health, "oom": oom,
+            "restarts": restarts, "started_at": started_at}
 
 
 def initial():
-    return {"first_unhealthy": None, "container_id": None, "restart_count": None, "attempts": []}
+    return {"first_unhealthy": None, "container_id": None, "restart_count": None,
+            "started_at": None, "attempts": []}
 
 
 class PolicyTests(unittest.TestCase):
@@ -32,7 +35,8 @@ class PolicyTests(unittest.TestCase):
         self.assertEqual(watchdog.decide(unhealthy(), state, 1089), "OBSERVING")
         self.assertEqual(watchdog.decide(unhealthy(), state, 1090), "ELIGIBLE")
         state["attempts"] = [1090]
-        state.update(first_unhealthy=1100, container_id=CID, restart_count=1)
+        state.update(first_unhealthy=1100, container_id=CID, restart_count=1,
+                     started_at="2026-11-15T00:00:00Z")
         self.assertEqual(watchdog.decide(unhealthy(restarts=1), state, 1190), "ESCALATE")
         state["attempts"] = [1090, 1090 + watchdog.COOLDOWN_SECONDS]
         self.assertEqual(watchdog.decide(unhealthy(restarts=1), state, 1090 + watchdog.COOLDOWN_SECONDS + 1), "ESCALATE")
@@ -47,6 +51,14 @@ class PolicyTests(unittest.TestCase):
         watchdog.decide(unhealthy(), state, 1000)
         self.assertEqual(watchdog.decide(unhealthy(cid="c" * 64), state, 2000), "OBSERVING")
         self.assertEqual(state["first_unhealthy"], 2000)
+
+    def test_manual_restart_resets_observation_even_with_same_id_and_count(self):
+        state = initial()
+        self.assertEqual(watchdog.decide(unhealthy(), state, 1000), "OBSERVING")
+        new_process = unhealthy(started_at="2026-11-15T00:01:00Z")
+        self.assertEqual(watchdog.decide(new_process, state, 1090), "OBSERVING")
+        self.assertEqual(state["first_unhealthy"], 1090)
+        self.assertEqual(watchdog.decide(new_process, state, 1180), "ELIGIBLE")
 
     def test_stale_observation_restarts_window_without_erasing_allowances(self):
         state = initial()
@@ -133,7 +145,8 @@ class RunnerTests(unittest.TestCase):
     def test_snapshot_requires_exact_compose_identity_and_image(self):
         cfg = {"project": "siege", "service": "backend", "image": IMAGE, "enabled": True}
         details = {"id": CID, "project": "siege", "service": "backend", "image": IMAGE,
-                   "running": True, "health": "unhealthy", "oom": False, "restarts": 0}
+                   "running": True, "health": "unhealthy", "oom": False, "restarts": 0,
+                   "started_at": "2026-11-15T00:00:00Z"}
         with patch.object(watchdog, "docker", side_effect=[CID + "\n", json.dumps(details)]) as docker:
             self.assertEqual(watchdog.snapshot(cfg), unhealthy())
         self.assertEqual(docker.call_count, 2)

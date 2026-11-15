@@ -32,7 +32,8 @@ INSPECT = ('{"id":{{json .Id}},"project":{{json (index .Config.Labels '
            '"com.docker.compose.service")}},"image":{{json .Config.Image}},'
            '"running":{{json .State.Running}},"health":{{if .State.Health}}'
            '{{json .State.Health.Status}}{{else}}"none"{{end}},'
-           '"oom":{{json .State.OOMKilled}},"restarts":{{json .RestartCount}}}')
+           '"oom":{{json .State.OOMKilled}},"restarts":{{json .RestartCount}},'
+           '"started_at":{{json .State.StartedAt}}}')
 
 
 def require_private(path, directory=False):
@@ -93,24 +94,26 @@ def snapshot(cfg):
     item = json.loads(raw)
     if not isinstance(item, dict):
         raise ValueError("invalid_inspect")
-    if (set(item) != {"id", "project", "service", "image", "running", "health", "oom", "restarts"}
+    if (set(item) != {"id", "project", "service", "image", "running", "health", "oom", "restarts", "started_at"}
             or item["project"] != cfg["project"] or item["service"] != cfg["service"]
             or item["image"] != cfg["image"] or item["id"] != ids[0]):
         raise ValueError("container_identity_mismatch")
     if (type(item["running"]) is not bool or type(item["oom"]) is not bool
             or not isinstance(item["health"], str) or type(item["restarts"]) is not int
+            or not isinstance(item["started_at"], str) or not 1 <= len(item["started_at"]) <= 64
             or item["restarts"] < 0):
         raise ValueError("invalid_inspect")
     return {"id": item["id"], "running": item["running"], "health": item["health"],
-            "oom": item["oom"], "restarts": item["restarts"]}
+            "oom": item["oom"], "restarts": item["restarts"], "started_at": item["started_at"]}
 
 
 def read_state(path):
     if not path.exists():
-        return {"first_unhealthy": None, "container_id": None, "restart_count": None, "attempts": []}
+        return {"first_unhealthy": None, "container_id": None, "restart_count": None,
+                "started_at": None, "attempts": []}
     value = exact_json(path)
     if (not isinstance(value, dict)
-            or set(value) != {"first_unhealthy", "container_id", "restart_count", "attempts"}
+            or set(value) != {"first_unhealthy", "container_id", "restart_count", "started_at", "attempts"}
             or not isinstance(value["attempts"], list)
             or any(type(x) not in (int, float) or x < 0 for x in value["attempts"])
             or value["attempts"] != sorted(value["attempts"])
@@ -119,7 +122,9 @@ def read_state(path):
             or value["container_id"] is not None and (not isinstance(value["container_id"], str)
                                                    or not CONTAINER_ID.fullmatch(value["container_id"]))
             or value["restart_count"] is not None and (type(value["restart_count"]) is not int
-                                                    or value["restart_count"] < 0)):
+                                                    or value["restart_count"] < 0)
+            or value["started_at"] is not None and (not isinstance(value["started_at"], str)
+                                                 or not 1 <= len(value["started_at"]) <= 64)):
         raise ValueError("invalid_state")
     return value
 
@@ -150,15 +155,17 @@ def decide(current, state, now):
     attempts = [x for x in state["attempts"] if now - WINDOW_SECONDS <= x <= now]
     state["attempts"] = attempts
     if current is None or not current["running"] or current["oom"]:
-        state.update(first_unhealthy=None, container_id=None, restart_count=None)
+        state.update(first_unhealthy=None, container_id=None, restart_count=None, started_at=None)
         return "ESCALATE"
     if current["health"] != "unhealthy":
-        state.update(first_unhealthy=None, container_id=None, restart_count=None)
+        state.update(first_unhealthy=None, container_id=None, restart_count=None, started_at=None)
         return "NO_RECOVERY" if current["health"] == "healthy" else "ESCALATE"
     if type(current["restarts"]) is not int or current["restarts"] < 0:
         raise ValueError("invalid_restart_count")
-    if state["container_id"] != current["id"] or state["restart_count"] != current["restarts"]:
-        state.update(first_unhealthy=now, container_id=current["id"], restart_count=current["restarts"])
+    if (state["container_id"] != current["id"] or state["restart_count"] != current["restarts"]
+            or state["started_at"] != current["started_at"]):
+        state.update(first_unhealthy=now, container_id=current["id"], restart_count=current["restarts"],
+                     started_at=current["started_at"])
         return "OBSERVING"
     if state["first_unhealthy"] is not None and state["first_unhealthy"] > now:
         return "ESCALATE"
@@ -207,12 +214,12 @@ def main(argv=None):
             if decision == "ELIGIBLE":
                 latest = snapshot(cfg)
                 if latest != current:
-                    state.update(first_unhealthy=None, container_id=None, restart_count=None)
+                    state.update(first_unhealthy=None, container_id=None, restart_count=None, started_at=None)
                     atomic(args.state, state)
                     report["decision"] = "CHANGED_BEFORE_RESTART"
                 else:
                     state["attempts"].append(now)
-                    state.update(first_unhealthy=None, container_id=None, restart_count=None)
+                    state.update(first_unhealthy=None, container_id=None, restart_count=None, started_at=None)
                     atomic(args.state, state)  # consume allowance before a targeted Docker mutation
                     report["restart_attempted"] = True
                     docker("container", "restart", "--time", "10", current["id"])
