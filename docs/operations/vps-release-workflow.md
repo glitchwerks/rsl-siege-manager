@@ -548,7 +548,10 @@ names: `REHEARSAL_VPS_TAILSCALE_HOST`,
 `REHEARSAL_TAILSCALE_OAUTH_SECRET`. Set the environment variable
 `REHEARSAL_VPS_SSH_USER`. These names must never contain production values.
 The rehearsal VM needs its own reviewed restricted SSH key and host command,
-with console recovery and tailnet routing checked before activation.
+with console recovery and tailnet routing checked before activation. The
+rehearsal jobs use `tag:github-rehearsal`; grant that tag SSH access only to the
+VM. Keep the existing `tag:github-deploy` grant to production unchanged, and
+do not grant the rehearsal tag access to the production VPS.
 
 The candidate-validation jobs run before their host jobs and do not enter a
 GitHub environment. Grant the selected repository access to separate

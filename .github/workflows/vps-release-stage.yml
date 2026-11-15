@@ -159,7 +159,7 @@ jobs:
         with:
           oauth-client-id: ${{ secrets[inputs.target == 'rehearsal' && 'REHEARSAL_TAILSCALE_OAUTH_CLIENT_ID' || 'TAILSCALE_OAUTH_CLIENT_ID'] }}
           oauth-secret: ${{ secrets[inputs.target == 'rehearsal' && 'REHEARSAL_TAILSCALE_OAUTH_SECRET' || 'TAILSCALE_OAUTH_SECRET'] }}
-          tags: tag:github-deploy
+          tags: ${{ inputs.target == 'rehearsal' && 'tag:github-rehearsal' || 'tag:github-deploy' }}
 
       - name: Stage exact candidate through restricted SSH command
         env:

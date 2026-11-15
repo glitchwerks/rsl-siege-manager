@@ -12,6 +12,7 @@ PHASES = {
     "recovery-inspect", "recovery-restore", "stage",
 }
 ENVIRONMENT = "environment: ${{ inputs.target == 'rehearsal' && 'vps-rehearsal' || 'vps-prod' }}"
+TAILSCALE_TAG = "tags: ${{ inputs.target == 'rehearsal' && 'tag:github-rehearsal' || 'tag:github-deploy' }}"
 GUARD = "inputs.target == 'production' || inputs.target == 'rehearsal'"
 HOST_SECRETS = {
     "TAILSCALE_OAUTH_CLIENT_ID", "TAILSCALE_OAUTH_SECRET",
@@ -37,6 +38,7 @@ class ReleaseTargetContract(unittest.TestCase):
                 self.assertIn("          - production\n          - rehearsal\n", raw)
                 self.assertIn("group: vps-production-promotion", raw)
                 self.assertIn(ENVIRONMENT, raw)
+                self.assertIn(TAILSCALE_TAG, raw)
                 self.assertNotIn("environment: vps-prod", raw)
                 job_count = len(re.findall(r"^  [a-z][a-z_-]*:\s*$", raw.split("jobs:\n", 1)[1], re.M))
                 self.assertEqual(raw.count(GUARD), job_count)
