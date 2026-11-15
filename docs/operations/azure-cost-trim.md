@@ -1,9 +1,16 @@
 # Reduce Azure registry and advisory monitoring costs
 
-This change reduces recurring costs without changing application deployments,
-database servers, Discord bot topology, credentials, or public access. Keep the
-Azure templates and normal release pipeline available for continued Azure use
-and a future return from portable hosting.
+> **Historical Azure procedure:** This records the earlier cost-trim plan.
+> Azure production apps are retained as stopped recovery sources and the Azure
+> deploy workflows are disabled. Do not run the apply phase against the frozen
+> source without a fresh state inspection, reviewed rollback plan, and separate
+> approval. See [current release guidance](../../RELEASING.md) and
+> [registry retention](registry-retention.md).
+
+This change reduced recurring costs without changing application deployments,
+database servers, Discord bot topology, credentials, or public access. The
+original plan kept Azure templates available for a possible future return from
+portable hosting; the former Azure release pipeline is now disabled.
 
 ## Changes and expected impact
 
