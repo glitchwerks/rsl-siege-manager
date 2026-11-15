@@ -1,6 +1,7 @@
 """Disposable file tests for portable bearer staging; no Docker or VPS access."""
 
 import importlib.util
+from contextlib import contextmanager
 import os
 from pathlib import Path
 from unittest.mock import patch
@@ -95,3 +96,123 @@ def test_stage_refuses_drift_without_accepted_candidate(project):
 def test_ambiguous_bearer_assignment_stops(invalid):
     with pytest.raises(ValueError):
         ROTATE.parse_env(invalid, {"DISCORD_BOT_API_KEY", "BOT_SERVICE_TOKEN"})
+
+
+@contextmanager
+def _lock(_project):
+    yield
+
+
+def _activation_fixture(project):
+    root, evidence, rollback = project
+    directory = evidence / "00000000-0000-4000-8000-000000000001"
+    directory.mkdir(mode=0o700)
+    candidate = {
+        "backend.env": ROTATE.replace_assignment(
+            rollback["backend.env"], "DISCORD_BOT_API_KEY", b"sidecar-new"),
+        "mom.env": ROTATE.replace_assignment(
+            rollback["mom.env"], "MOM_BOT_SECRET_DISCORD_BOT_API_KEY", b"sidecar-new"),
+    }
+    baseline = {"project": "isolated", "installed": {"backend": {"id": "old-backend", "image": "exact"},
+                                                     "mom": {"id": "old-mom", "image": "exact"}}}
+    return root, directory, rollback, candidate, baseline
+
+
+def test_activate_recreates_both_under_project_lock(project):
+    root, directory, rollback, candidate, baseline = _activation_fixture(project)
+    current = dict(rollback)
+    actions = []
+
+    def replace(_project, files, _owner):
+        actions.append("replace")
+        current.update(files)
+
+    with (patch.object(ROTATE, "staged", return_value=("sidecar", rollback, candidate, baseline)),
+          patch.object(ROTATE.PAUSE, "project_lock", side_effect=_lock),
+          patch.object(ROTATE, "project_snapshot", return_value=(rollback, baseline)),
+          patch.object(ROTATE, "stop_pair", side_effect=lambda _name: actions.append("stop") or True),
+          patch.object(ROTATE, "stopped", return_value=True),
+          patch.object(ROTATE, "replace_runtime", side_effect=replace),
+          patch.object(ROTATE, "read_runtime", side_effect=lambda *_args: dict(current)),
+          patch.object(ROTATE, "compose_up", side_effect=lambda _project: actions.append("up") or True),
+          patch.object(ROTATE, "verified", return_value=True)):
+        result = ROTATE.activate(root, directory, owner=os.geteuid())
+    assert result["status"] == "PASS"
+    assert actions == ["stop", "replace", "up"]
+    assert current == candidate
+
+
+def test_activate_refuses_drift_before_mutation(project):
+    root, directory, rollback, candidate, baseline = _activation_fixture(project)
+    with (patch.object(ROTATE, "staged", return_value=("sidecar", rollback, candidate, baseline)),
+          patch.object(ROTATE.PAUSE, "project_lock", side_effect=_lock),
+          patch.object(ROTATE, "project_snapshot", return_value=(candidate, baseline)),
+          patch.object(ROTATE, "stop_pair") as stop):
+        with pytest.raises(ValueError, match="baseline drift"):
+            ROTATE.activate(root, directory, owner=os.geteuid())
+    stop.assert_not_called()
+    assert not (directory / "activation-incomplete.json").exists()
+
+
+def test_partial_activation_keeps_path_isolated_for_separate_recovery(project):
+    root, directory, rollback, candidate, baseline = _activation_fixture(project)
+    current = dict(rollback)
+    writes = []
+
+    def replace(_project, files, _owner):
+        writes.append(files)
+        current.update(files)
+        if files is candidate:
+            raise ValueError("synthetic partial failure")
+
+    with (patch.object(ROTATE, "staged", return_value=("sidecar", rollback, candidate, baseline)),
+          patch.object(ROTATE.PAUSE, "project_lock", side_effect=_lock),
+          patch.object(ROTATE, "project_snapshot", return_value=(rollback, baseline)),
+          patch.object(ROTATE, "stop_pair", return_value=True),
+          patch.object(ROTATE, "stopped", return_value=True),
+          patch.object(ROTATE, "replace_runtime", side_effect=replace),
+          patch.object(ROTATE, "read_runtime", side_effect=lambda *_args: dict(current)),
+          patch.object(ROTATE, "compose_up", return_value=True),
+          patch.object(ROTATE, "verified", return_value=True)):
+        result = ROTATE.activate(root, directory, owner=os.geteuid())
+    assert result["status"] == "STOP"
+    assert result["checks"]["path_isolated_after_failure"] is True
+    assert writes == [candidate]
+    assert current == candidate
+
+
+def test_routine_recovery_restores_both_files_after_failed_activation(project):
+    root, directory, rollback, candidate, baseline = _activation_fixture(project)
+    ROTATE.write_private(directory / "activation-incomplete.json",
+                         b'{"phase":"bearer-activate","status":"STOP"}\n', os.geteuid())
+    current = dict(candidate)
+    replacements = []
+
+    def replace(_project, files, _owner):
+        replacements.append(files)
+        current.update(files)
+
+    with (patch.object(ROTATE, "staged", return_value=("sidecar", rollback, candidate, baseline)),
+          patch.object(ROTATE.PAUSE, "project_lock", side_effect=_lock),
+          patch.object(ROTATE.GATE, "project_name", return_value="isolated"),
+          patch.object(ROTATE.PAUSE, "no_extra_writers", return_value=True),
+          patch.object(ROTATE, "read_runtime", side_effect=lambda *_args: dict(current)),
+          patch.object(ROTATE, "stop_pair", return_value=True),
+          patch.object(ROTATE, "isolated", return_value=True),
+          patch.object(ROTATE, "replace_runtime", side_effect=replace),
+          patch.object(ROTATE, "compose_up", return_value=True),
+          patch.object(ROTATE, "verified", return_value=True)):
+        result = ROTATE.recover_routine(root, directory, old_bearer_safe=True,
+                                        owner=os.geteuid())
+    assert result["status"] == "PASS"
+    assert replacements == [rollback]
+    assert current == rollback
+
+
+def test_exposed_old_bearer_cannot_enter_routine_recovery(project):
+    root, directory, _rollback, _candidate, _baseline = _activation_fixture(project)
+    with patch.object(ROTATE, "staged") as staged:
+        with pytest.raises(ValueError, match="safety not confirmed"):
+            ROTATE.recover_routine(root, directory, old_bearer_safe=False,
+                                   owner=os.geteuid())
+    staged.assert_not_called()
