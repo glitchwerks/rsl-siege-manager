@@ -261,7 +261,7 @@ def load(project, directory, owner):
 def proof_snapshot(project, directory, profile_path, maintenance_report,
                    backup_path, recover_path, restore_path, owner=0):
     """Bind same-copy evidence to this unchanged stage and maintenance pause."""
-    accepted, baseline, old, _, mom, _ = load(project, directory, owner)
+    accepted, baseline, old, candidate, mom, _ = load(project, directory, owner)
     ROTATION.require_pause(project, drain=True)
     pause_history = ROTATION.MAINT.history(project)
     if pause_history is None:
@@ -334,6 +334,7 @@ def proof_snapshot(project, directory, profile_path, maintenance_report,
             or ROTATION.MAINT.state(project) != "paused"):
         raise ValueError("backup proof or pause changed")
     return {"schema": 1, "stage_id": directory.name,
+            "candidate_sha256": digest(candidate),
             "pause_history": pause_history, "profile_sha256": profile_sha,
             "maintenance": {"path": str(maintenance_report),
                             "sha256": digest(maintenance_raw)},
@@ -362,10 +363,12 @@ def proof_current(project, directory, profile_path, owner=0):
     if (not isinstance(record, dict) or set(record) != {"phase", "status", "proof"}
             or record["phase"] != "day-role-proof" or record["status"] != "PASS"
             or not isinstance(record["proof"], dict)
-            or set(record["proof"]) != {"schema", "stage_id", "pause_history",
-                                         "profile_sha256", "maintenance", "reports"}
+            or set(record["proof"]) != {"schema", "stage_id", "candidate_sha256",
+                                         "pause_history", "profile_sha256", "maintenance", "reports"}
             or record["proof"]["schema"] != 1
-            or record["proof"]["stage_id"] != directory.name):
+            or record["proof"]["stage_id"] != directory.name
+            or not isinstance(record["proof"]["candidate_sha256"], str)
+            or not re.fullmatch(r"[0-9a-f]{64}", record["proof"]["candidate_sha256"])):
         raise ValueError("invalid accepted proof")
     maintenance = record["proof"]["maintenance"]
     if (not isinstance(maintenance, dict) or set(maintenance) != {"path", "sha256"}

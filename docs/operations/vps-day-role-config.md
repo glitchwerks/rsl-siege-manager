@@ -55,7 +55,7 @@ timed out, run the separate read-only `drain` phase and write its successful
 report there as `drain-report.json`. The backup must start after the successful
 drain report was written. The proof phase checks that report against the
 current paused state file, the private backup reports, the protected backup profile,
-current installed images and configuration, and unchanged pause history. It
+current installed images and configuration, exact staged candidate digest, and unchanged pause history. It
 records one immutable acceptance under the exact stage. A failed proof attempt
 requires a new stage; do not edit evidence in place. Select the exact reports
 without putting their contents in command arguments or logs:

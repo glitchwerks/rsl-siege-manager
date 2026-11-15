@@ -206,8 +206,9 @@ def test_proof_requires_backup_after_current_completed_drain(monkeypatch, tmp_pa
                             "run_id": backup_id},
                "recover.json": {}, "restore.json": {}}
     baseline = {"project": "test", "installed": {}}
+    candidate_bytes = {"value": b"candidate-role-1"}
     monkeypatch.setattr(RUNNER, "load", lambda *_: (
-        {"old_enabled": "false"}, baseline, DISABLED, b"candidate", b"mom", {}))
+        {"old_enabled": "false"}, baseline, DISABLED, candidate_bytes["value"], b"mom", {}))
     monkeypatch.setattr(RUNNER.ROTATION, "require_pause", lambda *_, **__: None)
     monkeypatch.setattr(RUNNER.ROTATION.MAINT, "history", lambda *_: history)
     monkeypatch.setattr(RUNNER.ROTATION.MAINT, "state", lambda *_: "paused")
@@ -234,6 +235,11 @@ def test_proof_requires_backup_after_current_completed_drain(monkeypatch, tmp_pa
     assert accepted["stage_id"] == stage.name
     assert accepted["pause_history"] == history
     assert set(accepted["reports"]) == {"backup", "recover", "restore"}
+    candidate_bytes["value"] = b"candidate-role-2"
+    changed_candidate = RUNNER.proof_snapshot(project, stage, tmp_path / "profile.json",
+                                              maintenance_report, backup, recover, restore)
+    assert changed_candidate["candidate_sha256"] != accepted["candidate_sha256"]
+    candidate_bytes["value"] = b"candidate-role-1"
     later = drained_at + timedelta(minutes=1)
     os.utime(state_file, (later.timestamp(), later.timestamp()))
     with pytest.raises(ValueError, match="predates current pause"):
@@ -264,6 +270,7 @@ def test_accepted_proof_rejects_changed_record(monkeypatch, tmp_path):
     record = {"phase": "day-role-proof", "status": "PASS", "proof": {
         "schema": 1, "stage_id": stage.name, "pause_history": {},
         "profile_sha256": "a" * 64,
+        "candidate_sha256": "e" * 64,
         "maintenance": {"path": str(stage / "pause-report.json"), "sha256": "d" * 64},
         "reports": {name: {"path": path, "sha256": "b" * 64} for name, path in (
             ("backup", backup), ("recover", "/protected/recover.json"),
@@ -271,6 +278,9 @@ def test_accepted_proof_rejects_changed_record(monkeypatch, tmp_path):
     monkeypatch.setattr(RUNNER.GATE, "read_private", lambda *args: json.dumps(record).encode())
     monkeypatch.setattr(RUNNER, "proof_snapshot", lambda *args: record["proof"])
     assert RUNNER.proof_current(tmp_path, stage, tmp_path / "profile.json")
+    monkeypatch.setattr(RUNNER, "proof_snapshot", lambda *args: {**record["proof"],
+        "candidate_sha256": "f" * 64})
+    assert not RUNNER.proof_current(tmp_path, stage, tmp_path / "profile.json")
     record["proof"]["profile_sha256"] = "c" * 64
     monkeypatch.setattr(RUNNER, "proof_snapshot", lambda *args: {**record["proof"],
         "profile_sha256": "a" * 64})
