@@ -7,6 +7,7 @@ import os
 import subprocess
 from pathlib import Path
 import tempfile
+from types import SimpleNamespace
 import unittest
 from contextlib import redirect_stdout
 from unittest.mock import patch
@@ -156,6 +157,9 @@ class SafetyTests(unittest.TestCase):
         reader = patch.object(preflight, "read_secret_file", return_value="synthetic-admin-password-long-enough")
         reader.start()
         self.addCleanup(reader.stop)
+        owner = patch.object(preflight, "CONTROL_OWNER_UID", os.geteuid())
+        owner.start()
+        self.addCleanup(owner.stop)
 
     def test_role_sync_requires_public_https_and_connected_selected_receiver(self):
         for topology, factory in (("bundled", model), ("mom", mom_model)):
@@ -591,6 +595,39 @@ class ReportTests(unittest.TestCase):
 
 
 class RuntimePermissionTests(unittest.TestCase):
+    def setUp(self):
+        # Disposable fixtures are owned by the test user; production requires UID 0.
+        owner = patch.object(preflight, "CONTROL_OWNER_UID", os.geteuid())
+        owner.start()
+        self.addCleanup(owner.stop)
+
+    def test_root_owned_control_accepts_nonroot_operator_bind_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory)
+            fixture(project)
+            control = project / "control"
+            owned = {str(control / "state"), str(control / "history.json")}
+            original_lstat = Path.lstat
+            original_fstat = os.fstat
+
+            def lstat(path):
+                info = original_lstat(path)
+                if path == control:
+                    return SimpleNamespace(st_mode=info.st_mode, st_uid=0)
+                return info
+
+            def fstat(fd):
+                info = original_fstat(fd)
+                if os.readlink(f"/proc/self/fd/{fd}") in owned:
+                    return SimpleNamespace(st_mode=info.st_mode, st_uid=0,
+                                           st_size=info.st_size)
+                return info
+
+            with patch.object(Path, "lstat", lstat), patch.object(
+                preflight.os, "fstat", side_effect=fstat
+            ), patch.object(preflight, "CONTROL_OWNER_UID", 0):
+                self.assertTrue(preflight.deployment_bind_sources_current(project))
+
     def test_runtime_permissions_reject_exposed_or_nonregular_credentials(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -763,6 +800,11 @@ class AdministratorSecretTests(unittest.TestCase):
 
 @unittest.skipUnless(os.environ.get("PORTABLE_COMPOSE_TEST") == "1", "Compose rendering runs in CI")
 class ComposeTests(unittest.TestCase):
+    def setUp(self):
+        owner = patch.object(preflight, "CONTROL_OWNER_UID", os.geteuid())
+        owner.start()
+        self.addCleanup(owner.stop)
+
     def test_reviewed_www_redirect_adapts_to_canonical_host(self):
         result = subprocess.run([
             "docker", "run", "--rm", "--network", "none",

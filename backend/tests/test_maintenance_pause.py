@@ -49,6 +49,15 @@ async def test_paused_requests_reject_writes_and_keep_read_only_probes(gate):
             )
         ).status_code == 200
         assert (await client.get("/api/members/me/preferences")).status_code == 503
+        for acting in (
+            [("X-Acting-Discord-Id", "123"), ("X-Acting-Discord-Id", "invalid")],
+            [("X-Acting-Discord-Id", "invalid"), ("X-Acting-Discord-Id", "123")],
+        ):
+            duplicate = await client.get(
+                "/api/members/me/preferences",
+                headers=[("Authorization", "Bearer synthetic"), *acting],
+            )
+            assert duplicate.status_code == 503
         assert gate.snapshot() == {"paused": True, "inflight": 0}
 
 

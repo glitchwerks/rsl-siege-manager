@@ -17,6 +17,7 @@ from urllib.parse import unquote, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 PORTABLE = ROOT / "deploy" / "portable"
+CONTROL_OWNER_UID = 0
 
 
 def read_secret_file(path):
@@ -305,14 +306,14 @@ def deployment_bind_sources_current(project_directory):
     try:
         control = project_directory / "control"
         info = control.lstat()
-        if (not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid()
+        if (not stat.S_ISDIR(info.st_mode) or info.st_uid != CONTROL_OWNER_UID
                 or info.st_mode & 0o022 or not info.st_mode & 0o005):
             return False
         state = control / "state"
         fd = os.open(state, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
         with os.fdopen(fd, "rb") as source:
             info = os.fstat(source.fileno())
-            if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid()
+            if (not stat.S_ISREG(info.st_mode) or info.st_uid != CONTROL_OWNER_UID
                     or info.st_mode & 0o022 or not info.st_mode & 0o004
                     or source.read(17) not in (b"active\n", b"paused\n")):
                 return False
@@ -320,7 +321,7 @@ def deployment_bind_sources_current(project_directory):
         fd = os.open(history, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
         with os.fdopen(fd, "rb") as source:
             info = os.fstat(source.fileno())
-            if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid()
+            if (not stat.S_ISREG(info.st_mode) or info.st_uid != CONTROL_OWNER_UID
                     or info.st_mode & 0o022 or not info.st_mode & 0o004
                     or info.st_size > 256):
                 return False

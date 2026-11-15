@@ -87,10 +87,15 @@ def _probe_allowed(scope: Scope) -> bool:
         return True
     if path != "/api/members/me/preferences":
         return False
-    headers = dict(scope.get("headers", []))
-    return headers.get(b"x-acting-discord-id") == b"invalid" and headers.get(
-        b"authorization", b""
-    ).lower().startswith(b"bearer ")
+    headers = scope.get("headers", [])
+    acting_ids = [value for name, value in headers if name.lower() == b"x-acting-discord-id"]
+    bearers = [value for name, value in headers if name.lower() == b"authorization"]
+    return (
+        len(acting_ids) == 1
+        and acting_ids[0] == b"invalid"
+        and len(bearers) == 1
+        and bearers[0].lower().startswith(b"bearer ")
+    )
 
 
 class MaintenancePauseMiddleware:
