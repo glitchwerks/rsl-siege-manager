@@ -1,9 +1,15 @@
 # Repeat the portable pilot on another VM
 
+> **Pre-cutover context:** The production site now runs on the VPS; retained
+> Azure apps are stopped. For the new isolated VMware rehearsal, use a distinct
+> test Discord identity and the current [VPS release runbook](vps-release-workflow.md).
+> Do not restart Azure or the developer bot as a rehearsal prerequisite.
+
 This runbook describes a repeatable deployment and recovery process. A successful
-experiment on a temporary VM does not approve a production cutover. Track
+experiment on a temporary VM does not approve a production release. Track
 acceptance evidence in issue #557; keep credentials and workload evidence outside
-Git. Existing Azure services remain in place until a separate cutover decision.
+Git. The original procedure kept Azure services in place until a separate
+cutover decision; a new rehearsal does not change their retained stopped state.
 
 ## What moves, and what must be configured again
 
@@ -29,7 +35,8 @@ recovery access. Review address/subnet conflicts and persistence separately.
 
 The VMware test host is not a template for provider provisioning. Do not use
 Incus tooling for a VMware VM. Select provisioning only for the actual target.
-Keep the developer bot off and Azure running throughout preparation and rehearsal.
+For the original cutover, the developer bot stayed off and Azure stayed
+running. Keep both in their currently approved state for the new rehearsal.
 
 See [portable stack requirements](../../deploy/portable/README.md) and
 [bounded observation](../../deploy/portable/monitoring/README.md). Size the real
