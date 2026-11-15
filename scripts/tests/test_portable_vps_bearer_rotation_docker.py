@@ -128,6 +128,18 @@ class DisposableBearerRotationTests(unittest.TestCase):
                             project, evidence / stage["run_id"], old_bearer_safe=True)
                     self.assertEqual(recovered["status"], "PASS")
                     self.assertEqual(ROTATE.read_runtime(project, 0), old)
+
+                    stage = ROTATE.stage(project, "reverse-api", evidence)
+                    with patch.object(ROTATE, "verified", return_value=False):
+                        failed = ROTATE.activate(project, evidence / stage["run_id"])
+                    self.assertEqual(failed["status"], "STOP")
+                    self.assertTrue(ROTATE.isolated(name))
+                    with patch.object(ROTATE, "configuration_current", return_value=True):
+                        fresh_stage = ROTATE.stage_fresh(project, evidence / stage["run_id"])
+                        self.assertEqual(fresh_stage["status"], "PASS")
+                        fresh = ROTATE.activate_fresh(project, evidence / stage["run_id"])
+                    self.assertEqual(fresh["status"], "PASS", fresh["checks"])
+                    self.assertTrue(ROTATE.pairs_match(ROTATE.read_runtime(project, 0)))
             finally:
                 subprocess.run(compose + ["down", "--remove-orphans"],
                                capture_output=True, timeout=60, check=False)

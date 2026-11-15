@@ -313,7 +313,7 @@ def stop_pair(project_name, expected=None):
             success = False
             continue
         if state["running"] is True and PAUSE.command(
-                ["docker", "stop", "--time", "30", identifier], timeout=50) != identifier:
+                ["docker", "stop", "--time", "30", identifier], timeout=50) is None:
             success = False
     return success
 
@@ -432,7 +432,8 @@ def activate(project, directory, owner=0):
             result["status"] = "PASS"
         except Exception:
             # Recovery has its own confirmation and phase. Leave both peers stopped.
-            result["checks"]["path_isolated_after_failure"] = stop_pair(baseline["project"])
+            result["checks"]["path_isolated_after_failure"] = (
+                stop_pair(baseline["project"]) and isolated(baseline["project"]))
         write_private(directory / "activation-result.json",
                       (json.dumps(result, sort_keys=True) + "\n").encode(), owner)
     return result
@@ -442,6 +443,9 @@ def recover_routine(project, directory, old_bearer_safe=False, owner=0):
     """Separately confirmed paired rollback when the previous bearer remains safe."""
     if not old_bearer_safe:
         raise ValueError("old bearer safety not confirmed")
+    if ((directory / "fresh-accepted.json").exists()
+            or (directory / "fresh-activation-incomplete.json").exists()):
+        raise ValueError("fresh recovery path already selected")
     pair, rollback, candidate, baseline = staged(project, directory, owner)
     marker = json.loads(GATE.read_private(directory / "activation-incomplete.json", owner),
                         object_pairs_hook=PREFLIGHT.REMOTE.no_duplicate_keys)
@@ -458,7 +462,8 @@ def recover_routine(project, directory, old_bearer_safe=False, owner=0):
     result = {"phase": "bearer-recover", "status": "STOP", "run_id": directory.name,
               "pair": pair, "checks": {"expected_project": False, "known_files": False,
                                       "writers_isolated": False, "rollback_installed": False,
-                                      "paired_verification": False}}
+                                      "paired_verification": False,
+                                      "path_isolated_after_failure": False}}
     with PAUSE.project_lock(project):
         result["checks"]["expected_project"] = (
             configuration_current(project, baseline)
@@ -487,7 +492,8 @@ def recover_routine(project, directory, old_bearer_safe=False, owner=0):
                 raise ValueError("routine rollback verification failed")
             result["status"] = "PASS"
         except Exception:
-            stop_pair(baseline["project"])
+            result["checks"]["path_isolated_after_failure"] = (
+                stop_pair(baseline["project"]) and isolated(baseline["project"]))
         write_private(directory / "recovery-result.json",
                       (json.dumps(result, sort_keys=True) + "\n").encode(), owner)
     return result
@@ -554,7 +560,9 @@ def activate_fresh(project, directory, owner=0):
     failed_activation(directory, owner)
     accepted = json.loads(GATE.read_private(directory / "fresh-accepted.json", owner),
                           object_pairs_hook=PREFLIGHT.REMOTE.no_duplicate_keys)
-    if not isinstance(accepted, dict) or accepted.get("phase") != "bearer-stage-fresh" or accepted.get("status") != "PASS":
+    if (not isinstance(accepted, dict) or accepted.get("phase") != "bearer-stage-fresh"
+            or accepted.get("status") != "PASS" or accepted.get("run_id") != directory.name
+            or accepted.get("pair") != pair):
         raise ValueError("fresh stage not accepted")
     if (directory / "fresh-activation-incomplete.json").exists():
         raise ValueError("fresh activation already attempted")
@@ -575,7 +583,8 @@ def activate_fresh(project, directory, owner=0):
     result = {"phase": "bearer-activate-fresh", "status": "STOP", "run_id": directory.name,
               "pair": pair, "checks": {"baseline_current": False, "writers_isolated": False,
                                       "fresh_installed": False, "paired_verification": False,
-                                      "both_prior_bearers_rejected": False}}
+                                      "both_prior_bearers_rejected": False,
+                                      "path_isolated_after_failure": False}}
     with PAUSE.project_lock(project):
         result["checks"]["baseline_current"] = (
             configuration_current(project, baseline)
@@ -609,7 +618,8 @@ def activate_fresh(project, directory, owner=0):
                 raise ValueError("prior candidate still accepted")
             result["status"] = "PASS"
         except Exception:
-            stop_pair(baseline["project"])
+            result["checks"]["path_isolated_after_failure"] = (
+                stop_pair(baseline["project"]) and isolated(baseline["project"]))
         write_private(directory / "fresh-activation-result.json",
                       (json.dumps(result, sort_keys=True) + "\n").encode(), owner)
     return result

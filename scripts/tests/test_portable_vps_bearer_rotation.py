@@ -155,6 +155,15 @@ def test_activate_refuses_drift_before_mutation(project):
     assert not (directory / "activation-incomplete.json").exists()
 
 
+def test_interrupted_activation_cannot_be_replayed(project):
+    root, directory, rollback, candidate, baseline = _activation_fixture(project)
+    ROTATE.write_private(directory / "activation-incomplete.json",
+                         b'{"phase":"bearer-activate","status":"STOP"}\n', os.geteuid())
+    with patch.object(ROTATE, "staged", return_value=("sidecar", rollback, candidate, baseline)):
+        with pytest.raises(ValueError, match="already attempted"):
+            ROTATE.activate(root, directory, owner=os.geteuid())
+
+
 def test_partial_activation_keeps_path_isolated_for_separate_recovery(project):
     root, directory, rollback, candidate, baseline = _activation_fixture(project)
     current = dict(rollback)
@@ -170,6 +179,7 @@ def test_partial_activation_keeps_path_isolated_for_separate_recovery(project):
           patch.object(ROTATE.PAUSE, "project_lock", side_effect=_lock),
           patch.object(ROTATE, "project_snapshot", return_value=(rollback, baseline)),
           patch.object(ROTATE, "stop_pair", return_value=True),
+          patch.object(ROTATE, "isolated", return_value=True),
           patch.object(ROTATE, "stopped", return_value=True),
           patch.object(ROTATE, "replace_runtime", side_effect=replace),
           patch.object(ROTATE, "read_runtime", side_effect=lambda *_args: dict(current)),
@@ -278,6 +288,9 @@ def test_exposed_path_stages_and_activates_only_a_fresh_pair(project):
     fresh = {name: (directory / f"fresh-candidate-{name}").read_bytes() for name in ROTATE.FILES}
     assert ROTATE.pairs_match(fresh)
     assert ROTATE.pair_values(fresh)["sidecar"][0] == b"sidecar-fresh"
+    with pytest.raises(ValueError, match="fresh recovery path"):
+        ROTATE.recover_routine(root, directory, old_bearer_safe=True,
+                               owner=os.geteuid())
 
     with (patch.object(ROTATE, "staged", return_value=("sidecar", rollback, candidate, baseline)),
           patch.object(ROTATE.PAUSE, "project_lock", side_effect=_lock),
