@@ -1,8 +1,11 @@
 # Independent public web signal contract
 
 This is the read-only signal producer for #584. Its optional sender uses the
-private missed-signal receiver contract in #579. There is no scheduled job,
-monitor account, receiver configuration or production activation.
+private missed-signal receiver contract in #579. As of 2026-11-15, the
+Healthchecks.io project has a paused `RSL public web/API/TLS` check. A separate
+disposable check proved failure, recovery and missed-signal delivery to Slack
+`#alerts` and fallback email. There is no scheduled public-signal job, live
+production probe or production-check activation.
 Run it only from a separately approved machine outside the production VPS.
 Its exit status and one private JSON report can feed the independent receiver
 tracked by #579. That receiver must send down, recovery and missed-signal
@@ -85,17 +88,22 @@ resolve it after a successful check. The sender's `/fail` is immediate;
 receiver grace applies to missing signals. A 14-day certificate threshold is
 an incident even when HTTPS still works. A missing signal after 15 minutes
 requires an independent missed-signal alert. These are proposed initial
-thresholds to validate with the selected receiver before activation. The receiver must
-preserve the distinct labels and provide both Slack and fallback email.
+thresholds to validate before activation. The current paused Healthchecks
+check represents the combined public signal: its up/down notification does
+not identify which route failed. The private fixed-label observation report
+distinguishes site, API, identity, redirect and certificate failures during
+triage. Separately accepted off-host checks for these surfaces remain open
+under #584. Slack and email delivery of the disposable check does not
+establish live public-signal delivery.
 
 Use disposable monitor-side responses to exercise PASS, site-only failure,
 API-only failure, wrong redirect, version drift and near-expiry TLS. Test down,
 recovery and missed-signal delivery at the receiver without changing DNS,
 certificate or services on the production VPS. Document the alert owner and
-record sanitized delivery evidence. If false positives occur, disable only
-the affected external check while preserving the others and inspect the
+record sanitized delivery evidence. If false positives occur, pause only the
+public receiver check, preserve the other signal checks, and inspect the
 fixed-label report; do not restart the VPS stack as an alert response.
 
-Scheduling, receiver setup, destination connection and live production probes
+Scheduling, receiver assignment for this producer and live production probes
 need separate approval. This change can be rolled back by reverting the
 repository PR; it creates no live monitor or host state.
