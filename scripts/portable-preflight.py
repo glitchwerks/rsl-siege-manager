@@ -80,6 +80,14 @@ def validate(model, topology, mom_approval=None):
 
     backend = services.get("backend", {})
     env = backend.get("environment", {})
+    check("backend_maintenance_control_mounted", lambda:
+          all(services[n]["environment"].get("MAINTENANCE_ENFORCED") == "true"
+              and services[n]["environment"].get("MAINTENANCE_STATE_FILE") == "/run/rsl-maintenance/state"
+              and any(volume.get("target") == "/run/rsl-maintenance"
+                      and volume.get("read_only") is True
+                      and Path(volume.get("source", "")).name == "control"
+                      for volume in services[n].get("volumes", []))
+              for n in ("backend", "migrate-siege")))
     proxy_env = services.get("proxy", {}).get("environment", {})
     host = proxy_env.get("PUBLIC_HOST", "")
     def public_hostname():
@@ -287,6 +295,19 @@ def private_runtime_files(topology, stack_env, project_directory):
 def deployment_bind_sources_current(project_directory):
     """Require reviewed non-secret bind files, never container-created directories."""
     try:
+        control = project_directory / "control"
+        info = control.lstat()
+        if (not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid()
+                or info.st_mode & 0o022 or not info.st_mode & 0o005):
+            return False
+        state = control / "state"
+        fd = os.open(state, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
+        with os.fdopen(fd, "rb") as source:
+            info = os.fstat(source.fileno())
+            if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid()
+                    or info.st_mode & 0o022 or not info.st_mode & 0o004
+                    or source.read(17) not in (b"active\n", b"paused\n")):
+                return False
         for name in ("Caddyfile", "init-databases.sql"):
             path = project_directory / name
             fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)

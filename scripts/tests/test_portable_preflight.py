@@ -24,6 +24,10 @@ def mom_approval(image="registry.example/app@sha256:" + "a" * 64):
 
 def fixture(directory):
     directory = Path(directory)
+    control = directory / "control"
+    control.mkdir(mode=0o755)
+    (control / "state").write_bytes(b"active\n")
+    (control / "state").chmod(0o644)
     for name in ("Caddyfile", "init-databases.sql"):
         (directory / name).write_bytes((preflight.PORTABLE / name).read_bytes())
         (directory / name).chmod(0o644)
@@ -89,6 +93,11 @@ def model():
     services["backend"]["networks"] = {"application": {}, "database": {}, "proxy": {"aliases": ["api-proxy"]}}
     services["backend"].update(environment=env, entrypoint=[], command=["--proxy-headers", "--forwarded-allow-ips", "172.30.60.2"])
     services["migrate-siege"].update(environment=copy.deepcopy(env), entrypoint=[], command=["alembic", "upgrade", "head"], profiles=["maintenance"], restart="no")
+    for name in ("backend", "migrate-siege"):
+        services[name]["environment"].update(MAINTENANCE_ENFORCED="true",
+                                               MAINTENANCE_STATE_FILE="/run/rsl-maintenance/state")
+        services[name]["volumes"] = [{"source": "/synthetic/control",
+                                       "target": "/run/rsl-maintenance", "read_only": True}]
     services["proxy"].update(environment={"PUBLIC_HOST": "pilot.fixture-domain.net",
         "ROLE_SYNC_UPSTREAM": "api-proxy:8000", "ROLE_SYNC_PATH": "/api/internal/role-sync"},
         networks={"application": {}, "proxy": {"ipv4_address": "172.30.60.2"}}, ports=[

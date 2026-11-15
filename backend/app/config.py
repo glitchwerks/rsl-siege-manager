@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     # Bearer token for bot→backend calls; empty string disables the check.
     bot_service_token: str = ""
 
+    # Opt-in portable maintenance pause. Azure keeps its current behavior.
+    maintenance_enforced: bool = False
+    maintenance_state_file: str = ""
+
     # Day-role sync webhook feature gate and receiver URL.
     # DAY_ROLE_SYNC_ENABLED defaults to False; set to True only after a
     # conforming receiver is deployed and smoke-tested (see docs/webhooks/

@@ -18,6 +18,10 @@ x-backend: &backend
   environment:
     ENVIRONMENT: production
     AUTH_DISABLED: "false"
+    MAINTENANCE_ENFORCED: "true"
+    MAINTENANCE_STATE_FILE: /run/rsl-maintenance/state
+  volumes:
+    - ./control:/run/rsl-maintenance:ro
   networks: [application, database, proxy]
   mem_limit: 1280m
   cpus: 1.5
