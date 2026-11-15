@@ -105,6 +105,24 @@ def test_dirty_source_checkout_is_rejected():
             ROTATE.reviewed_checkout()
 
 
+def test_public_health_is_bound_to_project_hostname(project):
+    root, evidence, _files = project
+    stack = root / "stack.env"
+    stack.write_text("PUBLIC_HOST=siege.example.net\n")
+    stack.chmod(0o600)
+    config = evidence / "public.json"
+    config.write_text("{}")
+    config.chmod(0o600)
+    checks = dict.fromkeys(ROTATE.PUBLIC.CHECKS, True)
+    with (patch.object(ROTATE.PUBLIC, "config", return_value={"host": "other.example.net"}),
+          patch.object(ROTATE.PUBLIC, "inspect") as inspect):
+        assert not ROTATE.public_healthy(root, config, os.geteuid())
+    inspect.assert_not_called()
+    with (patch.object(ROTATE.PUBLIC, "config", return_value={"host": "siege.example.net"}),
+          patch.object(ROTATE.PUBLIC, "inspect", return_value=checks)):
+        assert ROTATE.public_healthy(root, config, os.geteuid())
+
+
 @contextmanager
 def _lock(_project):
     yield
@@ -143,7 +161,8 @@ def test_activate_recreates_both_under_project_lock(project):
           patch.object(ROTATE, "replace_runtime", side_effect=replace),
           patch.object(ROTATE, "read_runtime", side_effect=lambda *_args: dict(current)),
           patch.object(ROTATE, "compose_up", side_effect=lambda _project: actions.append("up") or True),
-          patch.object(ROTATE, "verified", return_value=True)):
+          patch.object(ROTATE, "verified", return_value=True),
+          patch.object(ROTATE, "public_healthy", return_value=True)):
         result = ROTATE.activate(root, directory, owner=os.geteuid())
     assert result["status"] == "PASS"
     assert actions == ["stop", "replace", "up"]
@@ -191,7 +210,8 @@ def test_partial_activation_keeps_path_isolated_for_separate_recovery(project):
           patch.object(ROTATE, "replace_runtime", side_effect=replace),
           patch.object(ROTATE, "read_runtime", side_effect=lambda *_args: dict(current)),
           patch.object(ROTATE, "compose_up", return_value=True),
-          patch.object(ROTATE, "verified", return_value=True)):
+          patch.object(ROTATE, "verified", return_value=True),
+          patch.object(ROTATE, "public_healthy", return_value=True)):
         result = ROTATE.activate(root, directory, owner=os.geteuid())
     assert result["status"] == "STOP"
     assert result["checks"]["path_isolated_after_failure"] is True
@@ -219,7 +239,8 @@ def test_routine_recovery_restores_both_files_after_failed_activation(project):
           patch.object(ROTATE, "isolated", return_value=True),
           patch.object(ROTATE, "replace_runtime", side_effect=replace),
           patch.object(ROTATE, "compose_up", return_value=True),
-          patch.object(ROTATE, "verified", return_value=True)):
+          patch.object(ROTATE, "verified", return_value=True),
+          patch.object(ROTATE, "public_healthy", return_value=True)):
         result = ROTATE.recover_routine(root, directory, old_bearer_safe=True,
                                         owner=os.geteuid())
     assert result["status"] == "PASS"
@@ -310,7 +331,8 @@ def test_exposed_path_stages_and_activates_only_a_fresh_pair(project):
           patch.object(ROTATE, "verified", return_value=True),
           patch.object(ROTATE, "project_snapshot", side_effect=lambda *_args:
                        (dict(current), {"installed": {"backend": {"id": "fresh-backend"}}})),
-          patch.object(ROTATE, "probe", return_value=401)):
+          patch.object(ROTATE, "probe", return_value=401),
+          patch.object(ROTATE, "public_healthy", return_value=True)):
         activated = ROTATE.activate_fresh(root, directory, owner=os.geteuid())
     assert activated["status"] == "PASS"
     assert activated["checks"]["both_prior_bearers_rejected"]

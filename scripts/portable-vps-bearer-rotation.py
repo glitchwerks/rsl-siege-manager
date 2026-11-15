@@ -22,6 +22,9 @@ HERE = Path(__file__).resolve().parent
 SPEC = importlib.util.spec_from_file_location("rotation_release_preflight", HERE / "portable-vps-release-preflight.py")
 PREFLIGHT = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(PREFLIGHT)
+SPEC = importlib.util.spec_from_file_location("rotation_public_signal", HERE / "portable-vps-public-signal.py")
+PUBLIC = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(PUBLIC)
 GATE = PREFLIGHT.GATE
 PAUSE = PREFLIGHT.PAUSE
 
@@ -181,6 +184,23 @@ def configuration_current(project, baseline):
                 return False
         return True
     except (OSError, ValueError, TypeError, KeyError):
+        return False
+
+
+def public_healthy(project, config_path, owner):
+    """Check reviewed public hostname, TLS, health and exact version identity."""
+    if (config_path is None or not private(config_path.parent, owner, directory=True)
+            or not private(config_path, owner)):
+        return False
+    try:
+        host = parse_env(GATE.read_private(project / "stack.env", owner), {"PUBLIC_HOST"})[
+            "PUBLIC_HOST"].decode("ascii")
+        settings = PUBLIC.config(config_path)
+        if settings["host"] != host:
+            return False
+        checks = PUBLIC.inspect(settings)
+        return set(checks) == set(PUBLIC.CHECKS) and all(checks.values())
+    except (OSError, ValueError, TypeError, KeyError, UnicodeError, PUBLIC.DeadlineExpired):
         return False
 
 
@@ -432,7 +452,7 @@ def verified(project, pair, active, stale, baseline, owner, details=None):
     return True
 
 
-def activate(project, directory, owner=0):
+def activate(project, directory, public_config=None, owner=0):
     """Lock, stop both writers, replace both inputs, recreate and verify them."""
     pair, rollback, candidate, baseline = staged(project, directory, owner)
     if (directory / "activation-incomplete.json").exists():
@@ -440,6 +460,7 @@ def activate(project, directory, owner=0):
     result = {"phase": "bearer-activate", "status": "STOP", "run_id": directory.name,
               "pair": pair, "checks": {"baseline_current": False, "writers_stopped": False,
                                       "candidate_installed": False, "paired_verification": False,
+                                      "public_health": False,
                                       "path_isolated_after_failure": False}}
     with PAUSE.project_lock(project):
         current, actual_baseline = project_snapshot(project, owner)
@@ -463,6 +484,9 @@ def activate(project, directory, owner=0):
             result["verification"] = detail
             if not result["checks"]["paired_verification"]:
                 raise ValueError("paired verification failed")
+            result["checks"]["public_health"] = public_healthy(project, public_config, owner)
+            if not result["checks"]["public_health"]:
+                raise ValueError("public health failed")
             result["status"] = "PASS"
         except Exception:
             # Recovery has its own confirmation and phase. Leave both peers stopped.
@@ -473,7 +497,7 @@ def activate(project, directory, owner=0):
     return result
 
 
-def recover_routine(project, directory, old_bearer_safe=False, owner=0):
+def recover_routine(project, directory, old_bearer_safe=False, public_config=None, owner=0):
     """Separately confirmed paired rollback when the previous bearer remains safe."""
     if not old_bearer_safe:
         raise ValueError("old bearer safety not confirmed")
@@ -497,6 +521,7 @@ def recover_routine(project, directory, old_bearer_safe=False, owner=0):
               "pair": pair, "checks": {"expected_project": False, "known_files": False,
                                       "writers_isolated": False, "rollback_installed": False,
                                       "paired_verification": False,
+                                      "public_health": False,
                                       "path_isolated_after_failure": False}}
     with PAUSE.project_lock(project):
         result["checks"]["expected_project"] = (
@@ -526,6 +551,9 @@ def recover_routine(project, directory, old_bearer_safe=False, owner=0):
             result["verification"] = detail
             if not result["checks"]["paired_verification"]:
                 raise ValueError("routine rollback verification failed")
+            result["checks"]["public_health"] = public_healthy(project, public_config, owner)
+            if not result["checks"]["public_health"]:
+                raise ValueError("public health failed")
             result["status"] = "PASS"
         except Exception:
             result["checks"]["path_isolated_after_failure"] = (
@@ -590,7 +618,7 @@ def stage_fresh(project, directory, owner=0):
     return result
 
 
-def activate_fresh(project, directory, owner=0):
+def activate_fresh(project, directory, public_config=None, owner=0):
     """Use only a fresh pair after exposure; failure leaves both peers stopped."""
     pair, rollback, candidate, baseline = staged(project, directory, owner)
     failed_activation(directory, owner)
@@ -620,6 +648,7 @@ def activate_fresh(project, directory, owner=0):
               "pair": pair, "checks": {"baseline_current": False, "writers_isolated": False,
                                       "fresh_installed": False, "paired_verification": False,
                                       "both_prior_bearers_rejected": False,
+                                      "public_health": False,
                                       "path_isolated_after_failure": False}}
     with PAUSE.project_lock(project):
         result["checks"]["baseline_current"] = (
@@ -654,6 +683,9 @@ def activate_fresh(project, directory, owner=0):
                 container, url, pair_values(candidate)[pair][0]) == 401
             if not result["checks"]["both_prior_bearers_rejected"]:
                 raise ValueError("prior candidate still accepted")
+            result["checks"]["public_health"] = public_healthy(project, public_config, owner)
+            if not result["checks"]["public_health"]:
+                raise ValueError("public health failed")
             result["status"] = "PASS"
         except Exception:
             result["checks"]["path_isolated_after_failure"] = (
@@ -678,6 +710,7 @@ def main(argv=None):
     parser.add_argument("--confirm-stage-fresh")
     parser.add_argument("--confirm-activate-fresh")
     parser.add_argument("--old-bearer-safe", action="store_true")
+    parser.add_argument("--public-config", type=Path)
     args = parser.parse_args(argv)
     if os.geteuid() != 0:
         print("STOP root_required")
@@ -687,14 +720,14 @@ def main(argv=None):
             if (args.report is None or args.pair or args.evidence_directory or args.confirm_stage
                     or args.run_id or args.confirm_activate or args.confirm_recover_routine
                     or args.old_bearer_safe or args.confirm_stage_fresh
-                    or args.confirm_activate_fresh):
+                    or args.confirm_activate_fresh or args.public_config):
                 raise ValueError("invalid inspect arguments")
             result = inspect(args.project_directory, args.report)
         elif args.phase == "stage":
             if (not args.pair or not args.evidence_directory or not args.confirm_stage or args.report
                     or args.run_id or args.confirm_activate or args.confirm_recover_routine
                     or args.old_bearer_safe or args.confirm_stage_fresh
-                    or args.confirm_activate_fresh):
+                    or args.confirm_activate_fresh or args.public_config):
                 raise ValueError("invalid stage arguments")
             result = stage(args.project_directory, args.pair, args.evidence_directory)
         else:
@@ -703,30 +736,36 @@ def main(argv=None):
                 raise ValueError("invalid operation selector")
             directory = args.evidence_directory / args.run_id
             if args.phase == "activate":
-                if (args.confirm_activate != args.run_id or args.confirm_recover_routine
+                if (args.confirm_activate != args.run_id or not args.public_config
+                        or args.confirm_recover_routine
                         or args.old_bearer_safe or args.confirm_stage_fresh
                         or args.confirm_activate_fresh):
                     raise ValueError("activation not confirmed")
-                result = activate(args.project_directory, directory)
+                result = activate(args.project_directory, directory,
+                                  public_config=args.public_config)
             elif args.phase == "recover-routine":
                 if (args.confirm_recover_routine != args.run_id or args.confirm_activate
-                        or not args.old_bearer_safe or args.confirm_stage_fresh
+                        or not args.old_bearer_safe or not args.public_config
+                        or args.confirm_stage_fresh
                         or args.confirm_activate_fresh):
                     raise ValueError("routine recovery not confirmed")
                 result = recover_routine(args.project_directory, directory,
-                                         old_bearer_safe=args.old_bearer_safe)
+                                         old_bearer_safe=args.old_bearer_safe,
+                                         public_config=args.public_config)
             elif args.phase == "stage-fresh":
                 if (args.confirm_stage_fresh != args.run_id or args.confirm_activate
                         or args.confirm_recover_routine or args.confirm_activate_fresh
-                        or args.old_bearer_safe):
+                        or args.old_bearer_safe or args.public_config):
                     raise ValueError("fresh staging not confirmed")
                 result = stage_fresh(args.project_directory, directory)
             else:
-                if (args.confirm_activate_fresh != args.run_id or args.confirm_activate
+                if (args.confirm_activate_fresh != args.run_id or not args.public_config
+                        or args.confirm_activate
                         or args.confirm_recover_routine or args.confirm_stage_fresh
                         or args.old_bearer_safe):
                     raise ValueError("fresh activation not confirmed")
-                result = activate_fresh(args.project_directory, directory)
+                result = activate_fresh(args.project_directory, directory,
+                                        public_config=args.public_config)
     except (OSError, ValueError, TypeError, KeyError, UnicodeError):
         print("STOP")
         return 1

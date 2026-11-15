@@ -44,6 +44,11 @@ accepted service token from an unauthenticated request. It discards response
 bodies, checks the replacement and unchanged direction, and requires the old
 selected bearer to be rejected. It does not send a Discord message or write
 database state. A healthy container alone does not satisfy this gate.
+The three phases that start containers also require a private public-signal
+configuration. Its HTTPS host must equal the selected project's `PUBLIC_HOST`;
+the bounded public signal checks TLS, frontend, API health and exact component
+versions before the operation reports PASS. The disposable CI rehearsal
+substitutes a fixed public check because it has no public DNS or certificate.
 
 Routine recovery is only valid if the old bearer was not exposed. If it was
 exposed, do not declare it safe or invoke `recover-routine`; keep both peers
@@ -53,8 +58,8 @@ stopped for operator diagnosis.
 
 ## Required before production use
 
-The draft still needs disposable Docker rehearsal for normal, drift, partial,
-interrupted, routine rollback, and exposed-value paths. It also needs explicit
-public-health, one-bot, and independent alerting acceptance, plus the final
+The draft still needs completed disposable Docker rehearsal for normal, drift,
+partial, interrupted, routine rollback, and exposed-value paths. It also needs
+one-bot and independent alerting acceptance, plus the final
 operator procedure and rollback review. Production activation is a separate
 gate after the full deployment window is approved.

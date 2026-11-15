@@ -105,7 +105,8 @@ class DisposableBearerRotationTests(unittest.TestCase):
                                check=True, capture_output=True, timeout=180)
                 subprocess.run(compose + ["up", "-d", "--wait", "--wait-timeout", "60"],
                                check=True, capture_output=True, timeout=90)
-                with patch.object(ROTATE, "project_snapshot", side_effect=snapshot):
+                with (patch.object(ROTATE, "project_snapshot", side_effect=snapshot),
+                      patch.object(ROTATE, "public_healthy", return_value=True)):
                     for pair in ("sidecar", "reverse-api"):
                         print(f"rehearsal normal {pair}", flush=True)
                         before, baseline = snapshot(project, 0)
