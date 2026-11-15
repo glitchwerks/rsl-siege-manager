@@ -357,7 +357,7 @@ def stopped(project_name, baseline):
 def isolated(project_name):
     """Both application writers must be stopped before restoring files."""
     return all((state := PAUSE.container(project_name, service)) is not None
-               and state["running"] is False and state["status"] == "exited"
+               and state["running"] is False and state["status"] in {"exited", "created"}
                for service in ("backend", "mom"))
 
 

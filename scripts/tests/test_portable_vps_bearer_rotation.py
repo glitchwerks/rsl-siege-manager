@@ -296,6 +296,17 @@ def test_exposed_old_bearer_cannot_enter_routine_recovery(project):
     staged.assert_not_called()
 
 
+def test_created_but_nonrunning_writer_is_safe_for_recovery_isolation():
+    states = {
+        "backend": {"running": False, "status": "created"},
+        "mom": {"running": False, "status": "exited"},
+    }
+    with patch.object(ROTATE.PAUSE, "container", side_effect=lambda _p, s: states[s]):
+        assert ROTATE.isolated("isolated")
+        states["backend"]["running"] = True
+        assert not ROTATE.isolated("isolated")
+
+
 @pytest.mark.parametrize("pair", sorted(ROTATE.PAIRS))
 def test_verified_probes_both_directions_and_rejects_selected_old_token(project, pair):
     root, _evidence, rollback = project
