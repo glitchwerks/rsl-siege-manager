@@ -2,6 +2,7 @@
 
 from contextlib import nullcontext
 from datetime import datetime, timedelta, timezone
+import hashlib
 import importlib.util
 import json
 import os
@@ -270,24 +271,25 @@ def test_accepted_proof_rejects_changed_record(monkeypatch, tmp_path):
     record = {"phase": "day-role-proof", "status": "PASS", "proof": {
         "schema": 1, "stage_id": stage.name, "pause_history": {},
         "profile_sha256": "a" * 64,
-        "candidate_sha256": "e" * 64,
+        "candidate_sha256": hashlib.sha256(b"candidate-role-1").hexdigest(),
         "maintenance": {"path": str(stage / "pause-report.json"), "sha256": "d" * 64},
         "reports": {name: {"path": path, "sha256": "b" * 64} for name, path in (
             ("backup", backup), ("recover", "/protected/recover.json"),
             ("restore", "/protected/restore.json"))}}}
     monkeypatch.setattr(RUNNER.GATE, "read_private", lambda *args: json.dumps(record).encode())
     monkeypatch.setattr(RUNNER, "proof_snapshot", lambda *args: record["proof"])
-    assert RUNNER.proof_current(tmp_path, stage, tmp_path / "profile.json")
+    assert RUNNER.proof_current(tmp_path, stage, tmp_path / "profile.json", b"candidate-role-1")
+    assert not RUNNER.proof_current(tmp_path, stage, tmp_path / "profile.json", b"candidate-role-2")
     monkeypatch.setattr(RUNNER, "proof_snapshot", lambda *args: {**record["proof"],
         "candidate_sha256": "f" * 64})
-    assert not RUNNER.proof_current(tmp_path, stage, tmp_path / "profile.json")
+    assert not RUNNER.proof_current(tmp_path, stage, tmp_path / "profile.json", b"candidate-role-1")
     record["proof"]["profile_sha256"] = "c" * 64
     monkeypatch.setattr(RUNNER, "proof_snapshot", lambda *args: {**record["proof"],
         "profile_sha256": "a" * 64})
-    assert not RUNNER.proof_current(tmp_path, stage, tmp_path / "profile.json")
+    assert not RUNNER.proof_current(tmp_path, stage, tmp_path / "profile.json", b"candidate-role-1")
     record["proof"]["reports"]["backup"]["sha256"] = "invalid"
     with pytest.raises(ValueError, match="invalid proof selector"):
-        RUNNER.proof_current(tmp_path, stage, tmp_path / "profile.json")
+        RUNNER.proof_current(tmp_path, stage, tmp_path / "profile.json", b"candidate-role-1")
 
 
 def test_stage_load_refuses_symlinked_evidence_parent(tmp_path):

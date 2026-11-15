@@ -359,7 +359,7 @@ def accept_proof(project, directory, profile_path, maintenance_report,
     return {"phase": "day-role-proof", "status": "PASS", "stage_id": directory.name}
 
 
-def proof_current(project, directory, profile_path, owner=0):
+def proof_current(project, directory, profile_path, held_candidate, owner=0):
     record = json.loads(GATE.read_private(directory / "proof-accepted.json", owner),
                         object_pairs_hook=ROTATION.PREFLIGHT.REMOTE.no_duplicate_keys)
     if (not isinstance(record, dict) or set(record) != {"phase", "status", "proof"}
@@ -372,6 +372,8 @@ def proof_current(project, directory, profile_path, owner=0):
             or not isinstance(record["proof"]["candidate_sha256"], str)
             or not re.fullmatch(r"[0-9a-f]{64}", record["proof"]["candidate_sha256"])):
         raise ValueError("invalid accepted proof")
+    if not isinstance(held_candidate, bytes) or digest(held_candidate) != record["proof"]["candidate_sha256"]:
+        return False
     maintenance = record["proof"]["maintenance"]
     if (not isinstance(maintenance, dict) or set(maintenance) != {"path", "sha256"}
             or not isinstance(maintenance["path"], str)
@@ -508,7 +510,7 @@ def activate(project, directory, public_config, backup_profile, owner=0):
         ROTATION.require_pause(project, drain=True)
         result["checks"]["writers_paused"] = True
         result["checks"]["backup_proof_current"] = proof_current(
-            project, directory, backup_profile, owner)
+            project, directory, backup_profile, candidate, owner)
         if not result["checks"]["backup_proof_current"]:
             raise ValueError("backup proof changed")
         result["checks"]["public_baseline_healthy"] = ROTATION.public_healthy(
