@@ -24,7 +24,6 @@ CHECKS = ("database_backup", "encrypted_bundle", "encrypted_remote_readback",
           "remote_receipt_readback", "independent_monitor_acknowledged",
           "independent_failure_acknowledged")
 CODE = re.compile(r"[a-z][a-z0-9_]{0,63}\Z")
-MAX_RUNS = 2000
 
 
 def private_regular(path, limit):
@@ -89,12 +88,10 @@ def summarize(path):
 
 
 def reports(runs):
-    entries = list(runs.iterdir())
-    if len(entries) > MAX_RUNS:
-        raise ValueError("too_many_runs")
     result = []
     unreadable = 0
-    for entry in entries:
+    # Failed and interrupted run directories are retained; their count has no fixed ceiling.
+    for entry in runs.iterdir():
         try:
             if str(uuid.UUID(entry.name)) != entry.name or not stat.S_ISDIR(entry.lstat().st_mode):
                 continue
@@ -116,6 +113,9 @@ def phase_reports(directory):
         path = directory / f"{phase}.json"
         try:
             value = json.loads(private_regular(path, 8192))
+            if value == {"result": "INCOMPLETE"}:
+                outcome[phase] = {"result": "INCOMPLETE", "error_code": None}
+                continue
             if not isinstance(value, dict) or value.get("phase") != phase:
                 raise ValueError("invalid_phase_report")
             error = value.get("error")

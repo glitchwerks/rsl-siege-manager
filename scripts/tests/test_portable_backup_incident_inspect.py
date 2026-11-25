@@ -96,6 +96,9 @@ class IncidentInspectTests(unittest.TestCase):
         phase = directory / "backup.json"
         phase.write_text(json.dumps({"phase": "backup", "result": "STOP", "error": "source_unavailable"}))
         phase.chmod(0o600)
+        pending = directory / "seal.json"
+        pending.write_text('{"result":"INCOMPLETE"}')
+        pending.chmod(0o600)
         with patch.object(inspector.subprocess, "run", return_value=SimpleNamespace(
                 returncode=0, stdout=b"LoadState=loaded\nActiveState=active\n")):
             result = inspector.inspect()
@@ -103,6 +106,7 @@ class IncidentInspectTests(unittest.TestCase):
         self.assertEqual(result["backup_status"], "INCOMPLETE")
         self.assertIsNone(result["latest"]["started_at"])
         self.assertEqual(result["latest"]["phase_reports"]["backup"]["error_code"], "source_unavailable")
+        self.assertEqual(result["latest"]["phase_reports"]["seal"]["result"], "INCOMPLETE")
         self.assertEqual(result["last_success"]["result"], "PASS")
 
     def test_unreadable_selected_phase_stops_inspection(self):
@@ -118,6 +122,14 @@ class IncidentInspectTests(unittest.TestCase):
         self.assertEqual(result["backup_status"], "STOP")
         self.assertFalse(result["checks"]["phase_reports_readable"])
         self.assertEqual(result["latest"]["phase_reports"]["backup"]["result"], "UNREADABLE")
+
+    def test_more_than_two_thousand_retained_runs_remain_inspectable(self):
+        for number in range(2001):
+            run_id = f"00000000-0000-4000-8000-{number:012d}"
+            self.write_run(run_id, "2026-11-25T20:01:00+00:00", "STOP", "backup_phase_failed")
+        entries, unreadable = inspector.reports(self.state / "runs")
+        self.assertEqual(len(entries), 2001)
+        self.assertEqual(unreadable, 0)
 
 
 if __name__ == "__main__":
