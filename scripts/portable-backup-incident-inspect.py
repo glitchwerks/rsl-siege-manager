@@ -168,12 +168,18 @@ def inspect():
                               if item[0]["result"] != "PASS"
                               and (item[0]["started_at"] or item[0]["evidence_time"])
                               >= "2026-11-15T18:00:00+00:00"), None)
+        selected = {"latest": detailed(latest),
+                    "first_failure_since_nov_15": detailed(first_failure),
+                    "last_success": detailed(last_success)}
         result.update(inspection_status="PASS", backup_status=latest[0]["result"] if latest else "UNKNOWN",
                       total_reports=len(entries), unreadable_reports=unreadable,
-                      latest=detailed(latest), first_failure_since_nov_15=detailed(first_failure),
-                      last_success=detailed(last_success),
+                      **selected,
                       disk={"total_bytes": usage.total, "free_bytes": usage.free}, units=units)
         result["checks"] = {"reports_complete": bool(entries) and unreadable == 0,
+                            "phase_reports_readable": all(
+                                phase["result"] != "UNREADABLE"
+                                for item in selected.values() if item is not None
+                                for phase in item["phase_reports"].values()),
                             "timer_query": units[UNITS[0]]["query_ok"],
                             "service_query": units[UNITS[1]]["query_ok"]}
         if not all(result["checks"].values()):
