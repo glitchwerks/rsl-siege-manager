@@ -9,7 +9,6 @@ from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
-import pwd
 import re
 import shutil
 import stat
@@ -17,8 +16,8 @@ import subprocess
 import uuid
 
 
-PROFILE = Path("/etc/rsl-backup/job.json")
-STATE = Path("/var/lib/rsl-backup")
+PROFILE = Path("/srv/rsl-siege/backup-candidate/job.json")
+OWNER_UID = 0
 UNITS = ("rsl-production-backup.timer", "rsl-production-backup.service")
 CHECKS = ("database_backup", "encrypted_bundle", "encrypted_remote_readback",
           "remote_receipt_readback", "independent_monitor_acknowledged",
@@ -28,8 +27,7 @@ CODE = re.compile(r"[a-z][a-z0-9_]{0,63}\Z")
 
 def private_regular(path, limit):
     meta = path.lstat()
-    job_uid = pwd.getpwnam("rsl-backup").pw_uid
-    if not stat.S_ISREG(meta.st_mode) or meta.st_uid not in (0, job_uid):
+    if not stat.S_ISREG(meta.st_mode) or meta.st_uid != OWNER_UID:
         raise ValueError("unsafe_file")
     if meta.st_mode & 0o077 or meta.st_size > limit:
         raise ValueError("unsafe_file")
@@ -47,17 +45,21 @@ def private_regular(path, limit):
 
 def job_root():
     value = json.loads(private_regular(PROFILE, 4096))
-    if not isinstance(value, dict) or value.get("root") != str(STATE):
+    if (not isinstance(value, dict) or not isinstance(value.get("root"), str)
+            or not 1 <= len(value["root"]) <= 256):
         raise ValueError("unexpected_job_root")
-    meta = STATE.lstat()
-    runs = STATE / "runs"
+    state = Path(value["root"])
+    if not state.is_absolute() or any(path.is_symlink() for path in (state, *state.parents)):
+        raise ValueError("unsafe_job_root")
+    meta = state.lstat()
+    runs = state / "runs"
     runs_meta = runs.lstat()
     if not all(stat.S_ISDIR(item.st_mode) and not item.st_mode & 0o077
                for item in (meta, runs_meta)):
         raise ValueError("unsafe_job_root")
-    if meta.st_uid != pwd.getpwnam("rsl-backup").pw_uid or runs_meta.st_uid != meta.st_uid:
+    if meta.st_uid != OWNER_UID or runs_meta.st_uid != OWNER_UID:
         raise ValueError("unsafe_job_root")
-    return runs
+    return state, runs
 
 
 def safe_time(value):
@@ -155,13 +157,19 @@ def unit_state(unit):
 def inspect():
     result = {"schema": 1, "phase": "backup-incident-readonly", "timestamp": datetime.now(timezone.utc).isoformat(),
               "inspection_status": "STOP", "backup_status": "UNKNOWN", "checks": {}}
+    stage = "root_execution"
     try:
         if os.geteuid() != 0:
             raise ValueError("root_required")
-        runs = job_root()
+        stage = "job_profile_and_root"
+        state, runs = job_root()
+        stage = "job_reports"
         entries, unreadable = reports(runs)
-        usage = shutil.disk_usage(STATE)
+        stage = "disk_capacity"
+        usage = shutil.disk_usage(state)
+        stage = "systemd_units"
         units = {unit: unit_state(unit) for unit in UNITS}
+        stage = "selected_evidence"
         last_success = next((item for item in entries if item[0]["result"] == "PASS"), None)
         latest = entries[0] if entries else None
         first_failure = next((item for item in reversed(entries)
@@ -185,7 +193,7 @@ def inspect():
         if not all(result["checks"].values()):
             result["inspection_status"] = "STOP"
     except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError, subprocess.TimeoutExpired):
-        result["checks"] = {"inspection": False}
+        result["checks"] = {"inspection": False, "failed_stage": stage}
     return result
 
 
