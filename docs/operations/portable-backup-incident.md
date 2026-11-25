@@ -41,3 +41,33 @@ with the last successful local and off-host receipt. A successful historical
 `remote_receipt_readback` check does not prove the NAS copy is retrievable now.
 Plan any repair separately with its dependency, blast radius, rollback, and
 post-repair backup/receiver verification. Preserve the failed run evidence.
+
+## Upload transport diagnosis
+
+The 2026-11-25 inspection found that the backup and encryption phases pass,
+but the encrypted upload fails before readback (`publish: tool_failed`,
+`encrypted_object_uploaded` absent). Run the reviewed
+`scripts/portable-backup-transport-inspect.py` **once** through the existing
+root console or admin SSH route. It reads only the installed private profile
+and transport config, checks DNS/TCP reachability, and performs a bounded
+`rclone lsd` of the configured remote directory. It suppresses the listing and
+raw rclone errors and emits only fixed outcomes. It does not upload, download,
+start a backup, or change host state.
+
+```bash
+set -o pipefail
+curl -fsSL --max-time 20 https://raw.githubusercontent.com/glitchwerks/rsl-siege-manager/REVIEWED_SHA/scripts/portable-backup-transport-inspect.py |
+  python3 -I -B - --confirm-readonly
+```
+
+Replace `REVIEWED_SHA` with the exact reviewed commit. Preserve only the
+sanitized JSON output; do not paste the private profile, transport config,
+raw rclone stderr, or NAS directory listing into an issue or chat.
+
+`inspection_status=PASS` means the probe ran, even if a transport check failed.
+If DNS/TCP fails, inspect the NAS and Tailscale route before changing the backup
+job. If remote listing fails, investigate the fixed `failure_class` against
+NAS authentication/share state. If listing passes, a read-only check cannot
+prove upload permission or NAS free capacity; obtain that evidence on the NAS
+before planning a separately approved write or repair. Keep failed backup runs
+and the last successful off-host copy intact.

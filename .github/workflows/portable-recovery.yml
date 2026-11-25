@@ -1,10 +1,10 @@
 name: Portable recovery
 on:
   pull_request:
-    paths: ["scripts/portable-recovery.py", "scripts/tests/test_portable_recovery.py", "scripts/portable-backup-copy.py", "scripts/tests/test_portable_backup_copy.py", "scripts/portable-backup-job.py", "scripts/tests/test_portable_backup_job.py", "deploy/portable/recovery/**", ".github/workflows/portable-recovery.yml"]
+    paths: ["scripts/portable-recovery.py", "scripts/tests/test_portable_recovery.py", "scripts/portable-backup-copy.py", "scripts/tests/test_portable_backup_copy.py", "scripts/portable-backup-job.py", "scripts/tests/test_portable_backup_job.py", "scripts/portable-backup-transport-inspect.py", "scripts/tests/test_portable_backup_transport_inspect.py", "deploy/portable/recovery/**", ".github/workflows/portable-recovery.yml"]
   push:
     branches: [main]
-    paths: ["scripts/portable-recovery.py", "scripts/tests/test_portable_recovery.py", "scripts/portable-backup-copy.py", "scripts/tests/test_portable_backup_copy.py", "scripts/portable-backup-job.py", "scripts/tests/test_portable_backup_job.py", "deploy/portable/recovery/**", ".github/workflows/portable-recovery.yml"]
+    paths: ["scripts/portable-recovery.py", "scripts/tests/test_portable_recovery.py", "scripts/portable-backup-copy.py", "scripts/tests/test_portable_backup_copy.py", "scripts/portable-backup-job.py", "scripts/tests/test_portable_backup_job.py", "scripts/portable-backup-transport-inspect.py", "scripts/tests/test_portable_backup_transport_inspect.py", "deploy/portable/recovery/**", ".github/workflows/portable-recovery.yml"]
 permissions:
   contents: read
 jobs:
@@ -43,6 +43,8 @@ jobs:
           export PATH="/usr/lib/postgresql/16/bin:$PATH"
           python3 -m unittest discover -s scripts/tests -p test_portable_backup_job.py -v
           python3 -m unittest discover -s scripts/tests -p test_portable_backup_copy.py -v
+      - name: Verify sanitized read-only transport inspection
+        run: python3 -m unittest discover -s scripts/tests -p test_portable_backup_transport_inspect.py -v
       - name: Validate hourly timer and service syntax without activation
         run: |
           systemd-analyze calendar hourly
