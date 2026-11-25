@@ -12,6 +12,7 @@ import ipaddress
 import json
 import os
 from pathlib import Path
+import re
 import socket
 import stat
 import subprocess
@@ -30,7 +31,8 @@ def private_bytes(path, limit):
         raise ValueError("unsafe_file")
     with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK), "rb") as stream:
         opened = os.fstat(stream.fileno())
-        if opened.st_dev != info.st_dev or opened.st_ino != info.st_ino or opened.st_uid != 0:
+        if (opened.st_dev != info.st_dev or opened.st_ino != info.st_ino or opened.st_uid != 0
+                or not stat.S_ISREG(opened.st_mode) or opened.st_mode & 0o077):
             raise ValueError("changed_file")
         raw = stream.read(limit + 1)
     if len(raw) > limit:
@@ -86,6 +88,48 @@ def resolved_addresses(host):
         return []
 
 
+def validated_remote(parser, prefix):
+    """Mirror the backup copy path's accepted backend and credential settings."""
+    if parser.sections() != ["backup"] or parser.defaults() or parser["backup"].get("type") not in BACKENDS:
+        raise ValueError("invalid_config")
+    remote = parser["backup"]
+    kind = remote["type"]
+    allowed = {
+        "s3": {"provider", "access_key_id", "secret_access_key", "region", "endpoint", "location_constraint"},
+        "azureblob": {"account", "key", "sas_url"},
+        "smb": {"host", "user", "pass", "domain", "port"},
+        "sftp": {"host", "user", "port", "pass", "key_file", "known_hosts_file", "disable_hashcheck", "shell_type"},
+    }
+    values = dict(remote)
+    if not set(values) <= {"type"} | allowed[kind]:
+        raise ValueError("unapproved_remote_setting")
+    if kind == "s3":
+        if not values.get("access_key_id") or not values.get("secret_access_key") or (
+                values.get("endpoint") and not values["endpoint"].startswith("https://")):
+            raise ValueError("invalid_s3_config")
+    elif kind == "azureblob":
+        if not ((values.get("account") and values.get("key")) or values.get("sas_url", "").startswith("https://")):
+            raise ValueError("invalid_azure_config")
+    elif kind == "smb":
+        if (not values.get("host", "").strip() or not values.get("pass", "").strip()
+                or not values.get("user", "").strip()
+                or values["user"].strip().casefold() in {"guest", "anonymous"}
+                or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.-]*", values["host"])):
+            raise ValueError("invalid_smb_config")
+    else:
+        if (values.get("shell_type") != "none" or values.get("disable_hashcheck") != "true"
+                or not values.get("host") or not values.get("user") or not values.get("known_hosts_file")
+                or not (values.get("pass") or values.get("key_file"))):
+            raise ValueError("invalid_sftp_config")
+        private_bytes(Path(values["known_hosts_file"]), 65536)
+        if values.get("key_file"):
+            private_bytes(Path(values["key_file"]), 65536)
+    if (not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*(/[A-Za-z0-9][A-Za-z0-9._-]*)*", prefix)
+            or any(part in {".", ".."} for part in prefix.split("/"))):
+        raise ValueError("invalid_prefix")
+    return remote
+
+
 def inspect():
     report = {"schema": 1, "phase": "backup-transport-readonly", "inspection_status": "STOP",
               "checks": {}, "failure_class": None}
@@ -97,15 +141,12 @@ def inspect():
         profile = json.loads(private_bytes(PROFILE, 4096))
         config = Path(profile["remote_config"])
         prefix = profile["prefix"]
-        if not isinstance(prefix, str) or not prefix or len(prefix) > 256 or any(
-                part in ("", ".", "..") for part in prefix.split("/")):
+        if not isinstance(prefix, str) or not prefix or len(prefix) > 256:
             raise ValueError("invalid_prefix")
         stage = "private_transport_config"
         parser = configparser.ConfigParser(interpolation=None)
         parser.read_string(private_bytes(config, 16384).decode())
-        if parser.sections() != ["backup"] or parser.defaults() or parser["backup"].get("type") not in BACKENDS:
-            raise ValueError("invalid_config")
-        remote = parser["backup"]
+        remote = validated_remote(parser, prefix)
         backend = remote["type"]
         report.update(backend=backend, tailscale=tailscale_state() if backend in {"smb", "sftp"} else "SKIP")
         report["checks"]["private_inputs_readable"] = True

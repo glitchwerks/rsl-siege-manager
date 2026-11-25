@@ -63,6 +63,51 @@ class TransportInspectorTests(unittest.TestCase):
         self.assertNotIn("private-nas", json.dumps(report))
         self.assertNotIn("not-shared", json.dumps(report))
 
+    def test_unapproved_sftp_command_never_reaches_rclone(self):
+        config = (b"[backup]\ntype=sftp\nhost=private-nas\nuser=backup\npass=hidden\n"
+                  b"known_hosts_file=/private/known_hosts\nshell_type=none\ndisable_hashcheck=true\n"
+                  b"server_command=touch /tmp/probe-marker\n")
+        with (patch.object(inspector.os, "geteuid", return_value=0),
+              patch.object(inspector, "private_bytes", side_effect=lambda path, limit: PROFILE if path == inspector.PROFILE else config),
+              patch.object(inspector.subprocess, "run") as run):
+            report = inspector.inspect()
+        self.assertEqual(report["inspection_status"], "STOP")
+        self.assertEqual(report["failed_stage"], "private_transport_config")
+        run.assert_not_called()
+
+    def test_sftp_without_private_host_trust_never_reaches_rclone(self):
+        config = (b"[backup]\ntype=sftp\nhost=private-nas\nuser=backup\npass=hidden\n"
+                  b"shell_type=none\ndisable_hashcheck=true\n")
+        with (patch.object(inspector.os, "geteuid", return_value=0),
+              patch.object(inspector, "private_bytes", side_effect=lambda path, limit: PROFILE if path == inspector.PROFILE else config),
+              patch.object(inspector.subprocess, "run") as run):
+            report = inspector.inspect()
+        self.assertEqual(report["inspection_status"], "STOP")
+        self.assertEqual(report["failed_stage"], "private_transport_config")
+        run.assert_not_called()
+
+    def test_approved_sftp_requires_private_trust_before_probe(self):
+        config = (b"[backup]\ntype=sftp\nhost=private-nas\nuser=backup\npass=hidden\n"
+                  b"known_hosts_file=/private/known_hosts\nshell_type=none\ndisable_hashcheck=true\n")
+        read_paths = []
+        def read(path, limit):
+            read_paths.append(path)
+            if path == inspector.PROFILE:
+                return PROFILE
+            if path == Path("/private/upload.conf"):
+                return config
+            return b"private-host-trust"
+        with (patch.object(inspector.os, "geteuid", return_value=0),
+              patch.object(inspector, "private_bytes", side_effect=read),
+              patch.object(inspector, "tailscale_state", return_value="PASS"),
+              patch.object(inspector, "resolved_addresses", return_value=["100.1.2.3"]),
+              patch.object(inspector.socket, "create_connection"),
+              patch.object(inspector.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, b"", b""))):
+            report = inspector.inspect()
+        self.assertEqual(report["inspection_status"], "PASS")
+        self.assertEqual(report["checks"]["remote_read"], True)
+        self.assertIn(Path("/private/known_hosts"), read_paths)
+
 
 if __name__ == "__main__":
     unittest.main()
