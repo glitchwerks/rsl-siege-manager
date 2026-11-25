@@ -4,8 +4,11 @@ This is the read-only diagnosis for #655. The installed hourly job has sent
 explicit failure pings since 2026-11-15. Do not restart it, run it manually,
 delete failed runs, change credentials, or activate retention during diagnosis.
 
-The reviewed `scripts/portable-backup-incident-inspect.py` reads only the
-installed job profile's fixed `root`, private `job.json` and phase reports,
+The reviewed `scripts/portable-backup-incident-inspect.py` uses the verified
+installed root-run service profile at
+`/srv/rsl-siege/backup-candidate/job.json`. It validates the private state
+root named in that profile and reads only its private
+`job.json` and phase reports,
 systemd timer/service properties, and local free space. It does not read
 password, recipient, remote transport, heartbeat, database, or workload files.
 It makes no network request and writes nothing on the VPS. The single JSON

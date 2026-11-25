@@ -29,9 +29,8 @@ class IncidentInspectTests(unittest.TestCase):
         self.profile.write_text(json.dumps({"root": str(self.state), "passwords": "sensitive"}))
         self.profile.chmod(0o600)
         self.patches = [patch.object(inspector, "PROFILE", self.profile),
-                        patch.object(inspector, "STATE", self.state),
-                        patch.object(inspector.os, "geteuid", return_value=0),
-                        patch.object(inspector.pwd, "getpwnam", return_value=SimpleNamespace(pw_uid=os.getuid()))]
+                        patch.object(inspector, "OWNER_UID", os.getuid()),
+                        patch.object(inspector.os, "geteuid", return_value=0)]
         for item in self.patches:
             item.start()
             self.addCleanup(item.stop)
@@ -81,7 +80,14 @@ class IncidentInspectTests(unittest.TestCase):
         with patch.object(inspector, "reports") as reports:
             result = inspector.inspect()
         self.assertEqual(result["inspection_status"], "STOP")
+        self.assertEqual(result["checks"]["failed_stage"], "job_profile_and_root")
         reports.assert_not_called()
+
+    def test_missing_profile_reports_fixed_failure_stage(self):
+        self.profile.unlink()
+        result = inspector.inspect()
+        self.assertEqual(result["inspection_status"], "STOP")
+        self.assertEqual(result["checks"], {"inspection": False, "failed_stage": "job_profile_and_root"})
 
     def test_incomplete_run_is_newer_than_prior_success(self):
         self.write_run("00000000-0000-4000-8000-000000000001", "2026-11-15T18:01:00+00:00", "PASS")
