@@ -98,14 +98,16 @@ def reports(runs):
         try:
             if str(uuid.UUID(entry.name)) != entry.name or not stat.S_ISDIR(entry.lstat().st_mode):
                 continue
-            report = summarize(entry / "job.json")
-            if report["started_at"]:
+            path = entry / "job.json"
+            report = summarize(path)
+            if report["started_at"] or report["result"] == "INCOMPLETE":
+                report["evidence_time"] = datetime.fromtimestamp(path.lstat().st_mtime, timezone.utc).isoformat()
                 result.append((report, entry))
             else:
                 unreadable += 1
         except (OSError, ValueError, TypeError, json.JSONDecodeError):
             unreadable += 1
-    return sorted(result, key=lambda item: item[0]["started_at"], reverse=True), unreadable
+    return sorted(result, key=lambda item: item[0]["evidence_time"], reverse=True), unreadable
 
 
 def phase_reports(directory):
@@ -164,7 +166,8 @@ def inspect():
         latest = entries[0] if entries else None
         first_failure = next((item for item in reversed(entries)
                               if item[0]["result"] != "PASS"
-                              and item[0]["started_at"] >= "2026-11-15T18:00:00+00:00"), None)
+                              and (item[0]["started_at"] or item[0]["evidence_time"])
+                              >= "2026-11-15T18:00:00+00:00"), None)
         result.update(inspection_status="PASS", backup_status=latest[0]["result"] if latest else "UNKNOWN",
                       total_reports=len(entries), unreadable_reports=unreadable,
                       latest=detailed(latest), first_failure_since_nov_15=detailed(first_failure),

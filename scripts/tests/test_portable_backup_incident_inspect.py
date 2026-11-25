@@ -1,6 +1,7 @@
 """Exercise the incident inspector on private fixtures without host access."""
 
 import importlib.util
+from datetime import datetime
 import json
 import os
 from pathlib import Path
@@ -81,6 +82,28 @@ class IncidentInspectTests(unittest.TestCase):
             result = inspector.inspect()
         self.assertEqual(result["inspection_status"], "STOP")
         reports.assert_not_called()
+
+    def test_incomplete_run_is_newer_than_prior_success(self):
+        self.write_run("00000000-0000-4000-8000-000000000001", "2026-11-15T18:01:00+00:00", "PASS")
+        success = self.state / "runs/00000000-0000-4000-8000-000000000001/job.json"
+        old_time = datetime.fromisoformat("2026-11-15T18:02:00+00:00").timestamp()
+        os.utime(success, (old_time, old_time))
+        directory = self.state / "runs/00000000-0000-4000-8000-000000000002"
+        directory.mkdir(mode=0o700)
+        incomplete = directory / "job.json"
+        incomplete.write_text('{"result":"INCOMPLETE"}')
+        incomplete.chmod(0o600)
+        phase = directory / "backup.json"
+        phase.write_text(json.dumps({"phase": "backup", "result": "STOP", "error": "source_unavailable"}))
+        phase.chmod(0o600)
+        with patch.object(inspector.subprocess, "run", return_value=SimpleNamespace(
+                returncode=0, stdout=b"LoadState=loaded\nActiveState=active\n")):
+            result = inspector.inspect()
+        self.assertEqual(result["inspection_status"], "PASS")
+        self.assertEqual(result["backup_status"], "INCOMPLETE")
+        self.assertIsNone(result["latest"]["started_at"])
+        self.assertEqual(result["latest"]["phase_reports"]["backup"]["error_code"], "source_unavailable")
+        self.assertEqual(result["last_success"]["result"], "PASS")
 
 
 if __name__ == "__main__":
