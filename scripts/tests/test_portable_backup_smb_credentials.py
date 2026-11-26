@@ -43,7 +43,7 @@ class SmbCredentialRepairTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "^candidate_share_not_found$"):
                 repair.probe(Path("/private/candidate"), "share")
 
-    def run_repair(self, probe_result):
+    def run_repair(self, probe_result, fail_write=False):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         root = Path(directory.name)
@@ -61,17 +61,29 @@ class SmbCredentialRepairTests(unittest.TestCase):
             current = path.stat()
             return SimpleNamespace(st_uid=0, st_dev=current.st_dev, st_ino=current.st_ino), path.read_bytes()
 
+        original_write = repair.write_private
+        def write_candidate(path, data, mode=0o600):
+            if fail_write:
+                original_write(path, data[:16], mode)
+                raise OSError("simulated partial write")
+            return original_write(path, data, mode)
+
         with (patch.object(repair.os, "geteuid", return_value=0),
               patch.object(repair, "read_state", return_value=(root, config, info, original, values, "share")),
               patch.object(repair, "private_file", side_effect=read_private),
               patch.object(repair, "service_idle", return_value=True),
               patch.object(repair, "obscure", return_value="obscured-new-password"),
               patch.object(repair, "probe", side_effect=None if probe_result else ValueError("candidate_authentication_failed")),
+              patch.object(repair, "write_private", side_effect=write_candidate),
               patch.object(repair.sys.stdin, "isatty", return_value=True),
               patch.object(repair.sys.stderr, "isatty", return_value=True),
               patch("builtins.input", side_effect=["new-account", "NEW-NAS"]),
               patch.object(repair.getpass, "getpass", side_effect=["password", "password"])):
-            if probe_result:
+            if fail_write:
+                with self.assertRaises(OSError):
+                    repair.run(True)
+                report = None
+            elif probe_result:
                 report = repair.run(True)
             else:
                 with self.assertRaisesRegex(ValueError, "candidate_authentication_failed"):
@@ -81,6 +93,12 @@ class SmbCredentialRepairTests(unittest.TestCase):
 
     def test_failed_candidate_read_keeps_active_config(self):
         config, original, _ = self.run_repair(False)
+        self.assertEqual(config.read_bytes(), original)
+        self.assertFalse(config.with_name(config.name + ".before-smb-credentials").exists())
+        self.assertEqual(list(config.parent.glob("*.smb-candidate-*")), [])
+
+    def test_partial_candidate_write_is_removed(self):
+        config, original, _ = self.run_repair(True, fail_write=True)
         self.assertEqual(config.read_bytes(), original)
         self.assertFalse(config.with_name(config.name + ".before-smb-credentials").exists())
         self.assertEqual(list(config.parent.glob("*.smb-candidate-*")), [])

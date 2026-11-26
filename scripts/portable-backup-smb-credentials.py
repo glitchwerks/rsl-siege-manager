@@ -168,8 +168,8 @@ def run(apply):
             updated = replace_field(updated, "domain", domain)
         else:
             raise ValueError("domain_field_missing")
-        write_private(candidate, updated, stat.S_IMODE(info.st_mode))
         try:
+            write_private(candidate, updated, stat.S_IMODE(info.st_mode))
             probe(candidate, share)
             current_info, current = private_file(path, 16384)
             if (current_info.st_dev, current_info.st_ino) != (info.st_dev, info.st_ino) or current != original:
