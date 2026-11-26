@@ -1,0 +1,59 @@
+"""The NAS repair changes exactly one reviewed SMB host line."""
+
+import importlib.util
+from pathlib import Path
+import stat
+import tempfile
+import unittest
+
+
+SCRIPT = Path(__file__).resolve().parents[1] / "portable-backup-nas-repoint.py"
+SPEC = importlib.util.spec_from_file_location("backup_nas_repoint", SCRIPT)
+repoint = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(repoint)
+
+
+class NasRepointTests(unittest.TestCase):
+    def test_only_host_changes_and_secret_bytes_are_preserved(self):
+        original = (b"[backup]\r\ntype = smb\r\nhost = 100.126.80.92\r\n"
+                    b"user = backup\r\npass = opaque-private-value\r\n")
+        updated = repoint.replacement(original)
+        self.assertEqual(updated, original.replace(b"host = 100.126.80.92", b"host = 100.117.158.121"))
+
+    def test_unexpected_host_stops(self):
+        with self.assertRaises(ValueError):
+            repoint.replacement(b"[backup]\ntype=smb\nhost=another-host\npass=private\n")
+
+    def test_other_backend_stops(self):
+        with self.assertRaises(ValueError):
+            repoint.replacement(b"[backup]\ntype=sftp\nhost=100.126.80.92\npass=private\n")
+
+    def test_ambiguous_host_line_stops(self):
+        with self.assertRaises(ValueError):
+            repoint.replacement(b"[backup]\ntype=smb\nhost=100.126.80.92\nhost=100.126.80.92\n")
+
+    def test_replacement_preserves_private_rollback_copy(self):
+        original = b"[backup]\ntype=smb\nhost=100.126.80.92\npass=private\n"
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / "remote.conf"
+            config.write_bytes(original)
+            config.chmod(0o600)
+            repoint.preserve_and_replace(config, config.stat(), original, repoint.replacement(original))
+            self.assertEqual(config.read_bytes(), repoint.replacement(original))
+            self.assertEqual(config.with_name("remote.conf.before-nas-repoint").read_bytes(), original)
+            self.assertEqual(stat.S_IMODE(config.stat().st_mode), 0o600)
+
+    def test_existing_rollback_copy_prevents_second_change(self):
+        original = b"[backup]\ntype=smb\nhost=100.126.80.92\npass=private\n"
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / "remote.conf"
+            config.write_bytes(original)
+            config.chmod(0o600)
+            config.with_name("remote.conf.before-nas-repoint").write_bytes(b"preserve")
+            with self.assertRaises(FileExistsError):
+                repoint.preserve_and_replace(config, config.stat(), original, repoint.replacement(original))
+            self.assertEqual(config.read_bytes(), original)
+
+
+if __name__ == "__main__":
+    unittest.main()

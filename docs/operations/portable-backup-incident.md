@@ -71,3 +71,38 @@ NAS authentication/share state. If listing passes, a read-only check cannot
 prove upload permission or NAS free capacity; obtain that evidence on the NAS
 before planning a separately approved write or repair. Keep failed backup runs
 and the last successful off-host copy intact.
+
+## Rebuilt NAS address repair
+
+The focused 2026-11-25 check found that the VPS can reach the rebuilt NAS at
+`100.117.158.121:445`, while the installed backup configuration does not
+resolve to that address. This is a live private configuration repair, separate
+from the release backup workflow. Do not restart Tailscale or the application.
+
+After reviewing the installed unit and retaining console access, run the
+one-time `scripts/portable-backup-nas-repoint.py` from an exact reviewed commit
+as root with `--confirm-repoint`. It requires the installed SMB host to be
+exactly the former NAS address `100.126.80.92`, an idle backup service, private
+root-owned configuration, and reachable TCP 445 on the new address. Any other
+host value stops without changing the config. The script preserves the original
+secret-bearing config in a root-private sibling file ending in
+`.before-nas-repoint`, then atomically replaces only the host line. Its JSON
+report contains no host config, credentials, or workload data. Save that report
+privately. Do not paste either config file into an issue or chat.
+
+Keep mutation and validation separate. Run the read-only transport inspector
+again and require `tcp_reachable=true` and `remote_read=true`. If it fails,
+preserve the rollback copy and diagnose the fixed failure class before starting
+a backup. If it passes, start `rsl-production-backup.service` once from the
+existing root console, away from the hourly timer boundary, and require a new
+managed job report with encrypted object and remote receipt readback plus the
+independent success ping. Do not use `vps-release-backup.yml`: that workflow is
+bound to paused writers and a staged release candidate.
+
+Rollback is the preserved `.before-nas-repoint` file. If the change must be
+reversed, first confirm the backup service is idle, preserve the failed
+post-change evidence, and atomically restore that file with its original
+ownership and mode; rerun the read-only transport inspector afterward. The old
+address is known to fail, so rollback is for unexpected impact, not a substitute
+for repairing NAS authentication or share access. A failed manual backup does
+not authorize retention, release promotion, or deletion of failed evidence.
