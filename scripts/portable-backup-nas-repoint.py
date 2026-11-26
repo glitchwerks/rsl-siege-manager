@@ -58,6 +58,15 @@ def preserve_and_replace(path, info, original, updated):
         temporary.unlink(missing_ok=True)
 
 
+def backup_service_idle():
+    result = subprocess.run(
+        ["systemctl", "show", "rsl-production-backup.service", "-p", "LoadState", "-p", "ActiveState", "--no-pager"],
+        capture_output=True, text=True, timeout=8, check=False,
+    )
+    fields = dict(line.split("=", 1) for line in result.stdout.splitlines() if "=" in line)
+    return result.returncode == 0 and fields.get("LoadState") == "loaded" and fields.get("ActiveState") in {"inactive", "failed"}
+
+
 def main():
     phase = "preflight"
     try:
@@ -76,8 +85,8 @@ def main():
         info = path.lstat()
         if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o077:
             raise ValueError("unsafe_config")
-        if subprocess.run(["systemctl", "is-active", "--quiet", "rsl-production-backup.service"], check=False).returncode == 0:
-            raise ValueError("backup_running")
+        if not backup_service_idle():
+            raise ValueError("backup_not_idle")
         original = path.read_bytes()
         if len(original) > 16384:
             raise ValueError("oversize_config")

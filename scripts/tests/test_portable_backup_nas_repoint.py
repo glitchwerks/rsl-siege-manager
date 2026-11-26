@@ -3,8 +3,10 @@
 import importlib.util
 from pathlib import Path
 import stat
+import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / "portable-backup-nas-repoint.py"
@@ -53,6 +55,17 @@ class NasRepointTests(unittest.TestCase):
             with self.assertRaises(FileExistsError):
                 repoint.preserve_and_replace(config, config.stat(), original, repoint.replacement(original))
             self.assertEqual(config.read_bytes(), original)
+
+    def test_service_must_be_loaded_and_idle(self):
+        with patch.object(repoint.subprocess, "run", return_value=subprocess.CompletedProcess([], 0,
+                "LoadState=loaded\nActiveState=failed\n", "")):
+            self.assertTrue(repoint.backup_service_idle())
+        with patch.object(repoint.subprocess, "run", return_value=subprocess.CompletedProcess([], 0,
+                "LoadState=not-found\nActiveState=inactive\n", "")):
+            self.assertFalse(repoint.backup_service_idle())
+        with patch.object(repoint.subprocess, "run", return_value=subprocess.CompletedProcess([], 0,
+                "LoadState=loaded\nActiveState=activating\n", "")):
+            self.assertFalse(repoint.backup_service_idle())
 
 
 if __name__ == "__main__":
