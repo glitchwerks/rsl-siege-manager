@@ -12,7 +12,8 @@ import subprocess
 import sys
 
 OLD = "100.126.80.92"
-NEW = "100.117.158.121"
+NEW_HOST = "server-nas"
+EXPECTED_ADDRESS = "100.117.158.121"
 PROFILE = Path("/srv/rsl-siege/backup-candidate/job.json")
 
 
@@ -25,7 +26,7 @@ def replacement(original):
     if parser.sections() != ["backup"] or parser["backup"].get("type") != "smb" or parser["backup"].get("host") != OLD:
         raise ValueError("unexpected_host")
     pattern = re.compile(rb"(?im)^([ \t]*host[ \t]*=[ \t]*)100\.126\.80\.92([ \t]*\r?$)")
-    updated, count = pattern.subn(lambda match: match.group(1) + NEW.encode() + match.group(2), original)
+    updated, count = pattern.subn(lambda match: match.group(1) + NEW_HOST.encode() + match.group(2), original)
     if count != 1:
         raise ValueError("host_line_not_unique")
     return updated
@@ -67,6 +68,20 @@ def backup_service_idle():
     return result.returncode == 0 and fields.get("LoadState") == "loaded" and fields.get("ActiveState") in {"inactive", "failed"}
 
 
+def new_nas_name_reachable():
+    result = subprocess.run(
+        ["getent", "ahostsv4", NEW_HOST], capture_output=True, text=True, timeout=8, check=False,
+    )
+    addresses = {line.split()[0] for line in result.stdout.splitlines() if line.split()}
+    if result.returncode or addresses != {EXPECTED_ADDRESS}:
+        return False
+    try:
+        with socket.create_connection((NEW_HOST, 445), timeout=5):
+            return True
+    except OSError:
+        return False
+
+
 def main():
     phase = "preflight"
     try:
@@ -91,8 +106,8 @@ def main():
         if len(original) > 16384:
             raise ValueError("oversize_config")
         updated = replacement(original)
-        with socket.create_connection((NEW, 445), timeout=5):
-            pass
+        if not new_nas_name_reachable():
+            raise ValueError("nas_name_unreachable")
         phase = "preserve_original"
         preserve_and_replace(path, info, original, updated)
         phase = "repoint_smb_host"

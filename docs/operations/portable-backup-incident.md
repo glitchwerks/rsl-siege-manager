@@ -76,17 +76,23 @@ and the last successful off-host copy intact.
 
 The focused 2026-11-25 check found that the VPS can reach the rebuilt NAS at
 `100.117.158.121:445`, while the installed backup configuration does not
-resolve to that address. This is a live private configuration repair, separate
-from the release backup workflow. Do not restart Tailscale or the application.
+resolve to that address. Use the stable [Tailscale MagicDNS](https://tailscale.com/docs/features/magicdns)
+name `server-nas`
+for the backup target, with the new numeric address only as a one-time identity
+check. This is a live private configuration repair, separate from the release
+backup workflow. Do not restart Tailscale or the application.
 
 After reviewing the installed unit and retaining console access, run the
 one-time `scripts/portable-backup-nas-repoint.py` from an exact reviewed commit
 as root with `--confirm-repoint`. It requires the installed SMB host to be
 exactly the former NAS address `100.126.80.92`, an idle backup service, private
-root-owned configuration, and reachable TCP 445 on the new address. Any other
-host value stops without changing the config. The script preserves the original
-secret-bearing config in a root-private sibling file ending in
-`.before-nas-repoint`, then atomically replaces only the host line. Its JSON
+root-owned configuration, and `server-nas` resolving *only* to the confirmed
+new NAS address `100.117.158.121` with reachable TCP 445. If MagicDNS is not
+active on the VPS or resolves a different address, stop and fix DNS separately;
+do not substitute a literal IP. Any other installed host value also stops
+without changing the config. The script preserves the original secret-bearing
+config in a root-private sibling file ending in `.before-nas-repoint`, then
+atomically replaces only the host line with `server-nas`. Its JSON
 report contains no host config, credentials, or workload data. Save that report
 privately. Do not paste either config file into an issue or chat.
 

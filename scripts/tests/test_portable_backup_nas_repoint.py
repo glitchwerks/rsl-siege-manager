@@ -20,7 +20,7 @@ class NasRepointTests(unittest.TestCase):
         original = (b"[backup]\r\ntype = smb\r\nhost = 100.126.80.92\r\n"
                     b"user = backup\r\npass = opaque-private-value\r\n")
         updated = repoint.replacement(original)
-        self.assertEqual(updated, original.replace(b"host = 100.126.80.92", b"host = 100.117.158.121"))
+        self.assertEqual(updated, original.replace(b"host = 100.126.80.92", b"host = server-nas"))
 
     def test_unexpected_host_stops(self):
         with self.assertRaises(ValueError):
@@ -66,6 +66,18 @@ class NasRepointTests(unittest.TestCase):
         with patch.object(repoint.subprocess, "run", return_value=subprocess.CompletedProcess([], 0,
                 "LoadState=loaded\nActiveState=activating\n", "")):
             self.assertFalse(repoint.backup_service_idle())
+
+    def test_magicdns_name_must_resolve_only_to_rebuilt_nas_and_accept_smb(self):
+        with (patch.object(repoint.subprocess, "run", return_value=subprocess.CompletedProcess([], 0,
+                "100.117.158.121 STREAM server-nas\n", "")),
+              patch.object(repoint.socket, "create_connection") as connect):
+            self.assertTrue(repoint.new_nas_name_reachable())
+            connect.assert_called_once_with(("server-nas", 445), timeout=5)
+        with (patch.object(repoint.subprocess, "run", return_value=subprocess.CompletedProcess([], 0,
+                "100.126.80.92 STREAM server-nas\n", "")),
+              patch.object(repoint.socket, "create_connection") as connect):
+            self.assertFalse(repoint.new_nas_name_reachable())
+            connect.assert_not_called()
 
 
 if __name__ == "__main__":
