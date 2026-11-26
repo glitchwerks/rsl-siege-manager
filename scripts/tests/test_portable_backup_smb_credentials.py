@@ -29,6 +29,7 @@ class SmbCredentialRepairTests(unittest.TestCase):
 
     def test_probe_reports_only_fixed_failure_class(self):
         samples = {
+            b"Logon failure: STATUS_PASSWORD_MUST_CHANGE on secret-endpoint": "candidate_password_change_required",
             b"mount failed: Logon failure: invalid credentials for secret-endpoint": "candidate_authentication_failed",
             b"share not found on secret-endpoint": "candidate_share_not_found",
             b"access denied on secret-endpoint": "candidate_permission_denied",

@@ -95,6 +95,12 @@ proof of which credential or permission failed. Keep the rollback copy private;
 it contains the former credential. Do not paste either config or terminal prompts into
 issues or chat.
 
+For the rebuilt NAS account, a Windows Security 4625 event from the VPS with
+status `0xC0000224` means the account must change its password before first
+logon. Clear that requirement on the dedicated local account through Windows
+account management before repeating the candidate read. This is an account
+change on the NAS, not a reason to weaken SMB encryption or share permissions.
+
 After update, rerun the read-only transport inspector. Its `remote_read=true`
 proves only authentication and read access to the share. Verify create/readback
 with a separately gated harmless-object test, then run one managed backup and

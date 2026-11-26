@@ -98,6 +98,9 @@ def write_private(path, data, mode=0o600):
 def probe_failure(stderr):
     """Return only a fixed diagnosis; raw rclone errors can contain private data."""
     value = stderr[:8192].lower()
+    if any(marker in value for marker in (b"password must change", b"password change required",
+                                           b"status_password_must_change", b"0xc0000224")):
+        return "candidate_password_change_required"
     if any(marker in value for marker in (b"logon failure", b"invalid credentials", b"bad password",
                                            b"authentication failed", b"bad username")):
         return "candidate_authentication_failed"
@@ -198,7 +201,7 @@ def main():
                    "file_changed", "oversize_private_file", "unsafe_root", "invalid_smb_config",
                    "unexpected_smb_config", "invalid_prefix", "config_field_not_unique", "obscure_failed",
                    "unsafe_job_lock", "backup_not_idle", "private_destination_exists", "invalid_account_or_domain",
-                   "password_not_confirmed", "candidate_authentication_failed", "candidate_share_not_found",
+                   "password_not_confirmed", "candidate_password_change_required", "candidate_authentication_failed", "candidate_share_not_found",
                    "candidate_permission_denied", "candidate_connection_failed", "candidate_remote_read_unknown",
                    "config_changed", "domain_field_missing"}
         code = str(error) if isinstance(error, ValueError) and str(error) in allowed else "operation_failed"
