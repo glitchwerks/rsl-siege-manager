@@ -154,7 +154,9 @@ def run(apply):
             raise ValueError("private_destination_exists")
         user = input("New SMB account name: ").strip()
         domain = input("NAS computer or AD domain (Enter retains current): ").strip() or config.get("domain", "WORKGROUP")
-        if not re.fullmatch(r"[A-Za-z0-9_.@-]{1,128}", user) or not re.fullmatch(r"[A-Za-z0-9_.-]{1,128}", domain):
+        if (not re.fullmatch(r"[A-Za-z0-9_.@-]{1,128}", user)
+                or user.casefold() in {"guest", "anonymous"}
+                or not re.fullmatch(r"[A-Za-z0-9_.-]{1,128}", domain)):
             raise ValueError("invalid_account_or_domain")
         password = getpass.getpass("New SMB password: ")
         confirm = getpass.getpass("Repeat SMB password: ")

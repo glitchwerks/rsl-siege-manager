@@ -43,7 +43,7 @@ class SmbCredentialRepairTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "^candidate_share_not_found$"):
                 repair.probe(Path("/private/candidate"), "share")
 
-    def run_repair(self, probe_result, fail_write=False):
+    def run_repair(self, probe_result, fail_write=False, account="new-account"):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         root = Path(directory.name)
@@ -77,9 +77,13 @@ class SmbCredentialRepairTests(unittest.TestCase):
               patch.object(repair, "write_private", side_effect=write_candidate),
               patch.object(repair.sys.stdin, "isatty", return_value=True),
               patch.object(repair.sys.stderr, "isatty", return_value=True),
-              patch("builtins.input", side_effect=["new-account", "NEW-NAS"]),
+              patch("builtins.input", side_effect=[account, "NEW-NAS"]),
               patch.object(repair.getpass, "getpass", side_effect=["password", "password"])):
-            if fail_write:
+            if account.casefold() in {"guest", "anonymous"}:
+                with self.assertRaisesRegex(ValueError, "invalid_account_or_domain"):
+                    repair.run(True)
+                report = None
+            elif fail_write:
                 with self.assertRaises(OSError):
                     repair.run(True)
                 report = None
@@ -102,6 +106,14 @@ class SmbCredentialRepairTests(unittest.TestCase):
         self.assertEqual(config.read_bytes(), original)
         self.assertFalse(config.with_name(config.name + ".before-smb-credentials").exists())
         self.assertEqual(list(config.parent.glob("*.smb-candidate-*")), [])
+
+    def test_backup_job_forbidden_accounts_stop_before_candidate_write(self):
+        for account in ("Guest", "ANONYMOUS"):
+            with self.subTest(account=account):
+                config, original, _ = self.run_repair(True, account=account)
+                self.assertEqual(config.read_bytes(), original)
+                self.assertFalse(config.with_name(config.name + ".before-smb-credentials").exists())
+                self.assertEqual(list(config.parent.glob("*.smb-candidate-*")), [])
 
     def test_success_preserves_private_rollback_and_updates_config(self):
         config, original, report = self.run_repair(True)
