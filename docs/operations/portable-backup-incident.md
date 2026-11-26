@@ -84,7 +84,11 @@ backup workflow. Do not restart Tailscale or the application.
 
 After reviewing the installed unit and retaining console access, run the
 one-time `scripts/portable-backup-nas-repoint.py` from an exact reviewed commit
-as root with `--confirm-repoint`. It requires the installed SMB host to be
+as root with `--inspect` first. This read-only mode performs every preflight
+and emits one sanitized `error_code` and failed phase on STOP; it never writes
+the config. The previous generic `preflight` STOP did not enter the write
+phase, so it did not repoint the host. Once the inspector passes, invoke the
+separate `--confirm-repoint` phase. It requires the installed SMB host to be
 exactly the former NAS address `100.126.80.92`, an idle backup service, private
 root-owned configuration, and `server-nas` resolving *only* to the confirmed
 new NAS address `100.117.158.121` with reachable TCP 445. If MagicDNS is not

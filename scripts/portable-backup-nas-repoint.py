@@ -25,7 +25,11 @@ def replacement(original):
         parser.read_string(original.decode())
     except (configparser.Error, UnicodeError):
         raise ValueError("invalid_config") from None
-    if parser.sections() != ["backup"] or parser["backup"].get("type") != "smb" or parser["backup"].get("host") != OLD:
+    if parser.sections() != ["backup"] or parser["backup"].get("type") != "smb":
+        raise ValueError("invalid_smb_config")
+    if parser["backup"].get("host") == NEW_HOST:
+        raise ValueError("host_already_magicdns")
+    if parser["backup"].get("host") != OLD:
         raise ValueError("unexpected_host")
     pattern = re.compile(rb"(?im)^([ \t]*host[ \t]*=[ \t]*)100\.126\.80\.92([ \t]*\r?$)")
     updated, count = pattern.subn(lambda match: match.group(1) + NEW_HOST.encode() + match.group(2), original)
@@ -70,18 +74,21 @@ def backup_service_idle():
     return result.returncode == 0 and fields.get("LoadState") == "loaded" and fields.get("ActiveState") in {"inactive", "failed"}
 
 
-def new_nas_name_reachable():
-    result = subprocess.run(
-        ["getent", "ahostsv4", NEW_HOST], capture_output=True, text=True, timeout=8, check=False,
-    )
+def new_nas_name_status():
+    try:
+        result = subprocess.run(
+            ["getent", "ahostsv4", NEW_HOST], capture_output=True, text=True, timeout=8, check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return "magicdns_query_failed"
     addresses = {line.split()[0] for line in result.stdout.splitlines() if line.split()}
     if result.returncode or addresses != {EXPECTED_ADDRESS}:
-        return False
+        return "magicdns_address_mismatch"
     try:
         with socket.create_connection((NEW_HOST, 445), timeout=5):
-            return True
+            return "ready"
     except OSError:
-        return False
+        return "magicdns_smb_unreachable"
 
 
 @contextmanager
@@ -107,36 +114,56 @@ def main():
     phase = "preflight"
     try:
         parser = argparse.ArgumentParser(description=__doc__)
-        parser.add_argument("--confirm-repoint", action="store_true", required=True)
-        parser.parse_args()
+        operation = parser.add_mutually_exclusive_group(required=True)
+        operation.add_argument("--inspect", action="store_true", help="Read-only, sanitized preflight diagnosis")
+        operation.add_argument("--confirm-repoint", action="store_true", help="Apply the guarded host repair")
+        args = parser.parse_args()
         if os.geteuid() != 0:
             raise ValueError("root_required")
         profile_info = PROFILE.lstat()
         if not stat.S_ISREG(profile_info.st_mode) or profile_info.st_uid != 0 or profile_info.st_mode & 0o077:
             raise ValueError("unsafe_profile")
         profile = json.loads(PROFILE.read_text())
+        phase = "config"
         path = Path(profile["remote_config"])
         if not path.is_absolute() or any(part.is_symlink() for part in (path, *path.parents)):
             raise ValueError("unsafe_path")
         info = path.lstat()
         if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o077:
             raise ValueError("unsafe_config")
+        phase = "job_lock"
         with backup_job_lock(Path(profile["root"])):
+            phase = "service"
             if not backup_service_idle():
                 raise ValueError("backup_not_idle")
+            phase = "configured_host"
             original = path.read_bytes()
             if len(original) > 16384:
                 raise ValueError("oversize_config")
             updated = replacement(original)
-            if not new_nas_name_reachable():
-                raise ValueError("nas_name_unreachable")
+            phase = "magicdns"
+            name_status = new_nas_name_status()
+            if name_status != "ready":
+                raise ValueError(name_status)
+            if args.inspect:
+                print(json.dumps({"status": "PASS", "phase": "inspect", "checks": {
+                    "configured_host_expected": True, "backup_service_idle": True,
+                    "magicdns_matches_new_nas": True, "smb_reachable_by_name": True,
+                }}))
+                return 0
             phase = "preserve_original"
             preserve_and_replace(path, info, original, updated)
         phase = "repoint_smb_host"
         print(json.dumps({"status": "PASS", "phase": "repoint_smb_host", "backup_preserved": True, "host_updated": True}))
         return 0
-    except Exception:
-        print(json.dumps({"status": "STOP", "phase": phase, "config_may_need_inspection": phase != "preflight"}))
+    except Exception as error:
+        safe = {"root_required", "unsafe_profile", "unsafe_path", "unsafe_config", "unsafe_backup_root",
+                "unsafe_job_lock", "backup_not_idle", "oversize_config", "invalid_config", "invalid_smb_config",
+                "host_already_magicdns", "unexpected_host", "host_line_not_unique", "magicdns_query_failed",
+                "magicdns_address_mismatch", "magicdns_smb_unreachable", "config_changed_during_update"}
+        code = str(error) if isinstance(error, ValueError) and str(error) in safe else "operation_failed"
+        print(json.dumps({"status": "STOP", "phase": phase, "error_code": code,
+                          "config_may_need_inspection": phase in {"preserve_original", "repoint_smb_host"}}))
         return 1
 
 
