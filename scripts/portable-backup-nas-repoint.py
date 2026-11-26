@@ -2,6 +2,8 @@
 """Repoint only the incident's SMB host, preserving a private rollback copy."""
 import argparse
 import configparser
+from contextlib import contextmanager
+import fcntl
 import json
 import os
 from pathlib import Path
@@ -82,6 +84,25 @@ def new_nas_name_reachable():
         return False
 
 
+@contextmanager
+def backup_job_lock(root, owner=0):
+    if not root.is_absolute() or any(part.is_symlink() for part in (root, *root.parents)):
+        raise ValueError("unsafe_backup_root")
+    info = root.lstat()
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != owner or info.st_mode & 0o077:
+        raise ValueError("unsafe_backup_root")
+    path = root / "job.lock"
+    descriptor = os.open(path, os.O_RDWR | os.O_NOFOLLOW)
+    try:
+        locked = os.fstat(descriptor)
+        if not stat.S_ISREG(locked.st_mode) or locked.st_uid != owner or locked.st_mode & 0o077:
+            raise ValueError("unsafe_job_lock")
+        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        yield
+    finally:
+        os.close(descriptor)
+
+
 def main():
     phase = "preflight"
     try:
@@ -100,16 +121,17 @@ def main():
         info = path.lstat()
         if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o077:
             raise ValueError("unsafe_config")
-        if not backup_service_idle():
-            raise ValueError("backup_not_idle")
-        original = path.read_bytes()
-        if len(original) > 16384:
-            raise ValueError("oversize_config")
-        updated = replacement(original)
-        if not new_nas_name_reachable():
-            raise ValueError("nas_name_unreachable")
-        phase = "preserve_original"
-        preserve_and_replace(path, info, original, updated)
+        with backup_job_lock(Path(profile["root"])):
+            if not backup_service_idle():
+                raise ValueError("backup_not_idle")
+            original = path.read_bytes()
+            if len(original) > 16384:
+                raise ValueError("oversize_config")
+            updated = replacement(original)
+            if not new_nas_name_reachable():
+                raise ValueError("nas_name_unreachable")
+            phase = "preserve_original"
+            preserve_and_replace(path, info, original, updated)
         phase = "repoint_smb_host"
         print(json.dumps({"status": "PASS", "phase": "repoint_smb_host", "backup_preserved": True, "host_updated": True}))
         return 0

@@ -90,7 +90,9 @@ root-owned configuration, and `server-nas` resolving *only* to the confirmed
 new NAS address `100.117.158.121` with reachable TCP 445. If MagicDNS is not
 active on the VPS or resolves a different address, stop and fix DNS separately;
 do not substitute a literal IP. Any other installed host value also stops
-without changing the config. The script preserves the original secret-bearing
+without changing the config. The script holds the managed backup job's
+exclusive `job.lock` through the change so an hourly run cannot read mixed
+destinations. It preserves the original secret-bearing
 config in a root-private sibling file ending in `.before-nas-repoint`, then
 atomically replaces only the host line with `server-nas`. Its JSON
 report contains no host config, credentials, or workload data. Save that report

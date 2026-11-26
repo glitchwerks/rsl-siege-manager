@@ -1,6 +1,7 @@
 """The NAS repair changes exactly one reviewed SMB host line."""
 
 import importlib.util
+import os
 from pathlib import Path
 import stat
 import subprocess
@@ -78,6 +79,20 @@ class NasRepointTests(unittest.TestCase):
               patch.object(repoint.socket, "create_connection") as connect):
             self.assertFalse(repoint.new_nas_name_reachable())
             connect.assert_not_called()
+
+    def test_repair_holds_same_exclusive_job_lock(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            root.chmod(0o700)
+            lock = root / "job.lock"
+            lock.write_bytes(b"")
+            lock.chmod(0o600)
+            with repoint.backup_job_lock(root, owner=os.getuid()):
+                with self.assertRaises(BlockingIOError):
+                    with repoint.backup_job_lock(root, owner=os.getuid()):
+                        pass
+            with repoint.backup_job_lock(root, owner=os.getuid()):
+                pass
 
 
 if __name__ == "__main__":
