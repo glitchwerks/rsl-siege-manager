@@ -89,8 +89,10 @@ the configured share without printing its contents. Only a successful
 candidate read permits it to preserve the previous private config as
 `.before-smb-credentials` and atomically install the candidate. It holds the
 backup job lock and requires the service to be idle. Failed candidate reads
-leave the active config unchanged. Keep the rollback copy private; it contains
-the former credential. Do not paste either config or terminal prompts into
+leave the active config unchanged. The report uses fixed failure classes and
+never includes raw rclone output; a classification is a diagnostic clue, not
+proof of which credential or permission failed. Keep the rollback copy private;
+it contains the former credential. Do not paste either config or terminal prompts into
 issues or chat.
 
 After update, rerun the read-only transport inspector. Its `remote_read=true`

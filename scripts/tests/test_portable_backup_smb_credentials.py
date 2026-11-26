@@ -3,6 +3,7 @@
 import importlib.util
 from pathlib import Path
 import stat
+import subprocess
 import tempfile
 import unittest
 from types import SimpleNamespace
@@ -25,6 +26,21 @@ class SmbCredentialRepairTests(unittest.TestCase):
     def test_duplicate_field_stops(self):
         with self.assertRaisesRegex(ValueError, "config_field_not_unique"):
             repair.replace_field(b"user=one\nuser=two\n", "user", "new")
+
+    def test_probe_reports_only_fixed_failure_class(self):
+        samples = {
+            b"mount failed: Logon failure: invalid credentials for secret-endpoint": "candidate_authentication_failed",
+            b"share not found on secret-endpoint": "candidate_share_not_found",
+            b"access denied on secret-endpoint": "candidate_permission_denied",
+            b"connection refused by secret-endpoint": "candidate_connection_failed",
+            b"unrecognized private error secret-endpoint": "candidate_remote_read_unknown",
+        }
+        for raw_error, expected in samples.items():
+            with self.subTest(expected=expected):
+                self.assertEqual(repair.probe_failure(raw_error), expected)
+        with patch.object(repair.subprocess, "run", return_value=subprocess.CompletedProcess([], 1, b"", b"share not found on secret-endpoint")):
+            with self.assertRaisesRegex(ValueError, "^candidate_share_not_found$"):
+                repair.probe(Path("/private/candidate"), "share")
 
     def run_repair(self, probe_result):
         directory = tempfile.TemporaryDirectory()
@@ -49,7 +65,7 @@ class SmbCredentialRepairTests(unittest.TestCase):
               patch.object(repair, "private_file", side_effect=read_private),
               patch.object(repair, "service_idle", return_value=True),
               patch.object(repair, "obscure", return_value="obscured-new-password"),
-              patch.object(repair, "probe", return_value=probe_result),
+              patch.object(repair, "probe", side_effect=None if probe_result else ValueError("candidate_authentication_failed")),
               patch.object(repair.sys.stdin, "isatty", return_value=True),
               patch.object(repair.sys.stderr, "isatty", return_value=True),
               patch("builtins.input", side_effect=["new-account", "NEW-NAS"]),
@@ -57,7 +73,7 @@ class SmbCredentialRepairTests(unittest.TestCase):
             if probe_result:
                 report = repair.run(True)
             else:
-                with self.assertRaisesRegex(ValueError, "candidate_remote_read_failed"):
+                with self.assertRaisesRegex(ValueError, "candidate_authentication_failed"):
                     repair.run(True)
                 report = None
         return config, original, report

@@ -95,16 +95,33 @@ def write_private(path, data, mode=0o600):
         os.fsync(stream.fileno())
 
 
+def probe_failure(stderr):
+    """Return only a fixed diagnosis; raw rclone errors can contain private data."""
+    value = stderr[:8192].lower()
+    if any(marker in value for marker in (b"logon failure", b"invalid credentials", b"bad password",
+                                           b"authentication failed", b"bad username")):
+        return "candidate_authentication_failed"
+    if any(marker in value for marker in (b"network name cannot be found", b"share not found")):
+        return "candidate_share_not_found"
+    if any(marker in value for marker in (b"access denied", b"permission denied", b"access is denied")):
+        return "candidate_permission_denied"
+    if any(marker in value for marker in (b"connection refused", b"network is unreachable", b"no route to host",
+                                           b"i/o timeout", b"connection timed out", b"context deadline exceeded")):
+        return "candidate_connection_failed"
+    return "candidate_remote_read_unknown"
+
+
 def probe(config_path, share):
     env = {key: value for key, value in os.environ.items()
            if not key.startswith(("RCLONE", "AGE", "AWS", "AZURE", "PG", "SSH_AUTH_SOCK"))}
     result = subprocess.run(
         ["rclone", "lsd", f"backup:{share}", "--config", str(config_path), "--log-level", "ERROR",
          "--retries", "1", "--low-level-retries", "1", "--contimeout", "5s", "--timeout", "10s"],
-        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
         env=env, timeout=30, check=False,
     )
-    return result.returncode == 0
+    if result.returncode:
+        raise ValueError(probe_failure(result.stderr))
 
 
 def run(apply):
@@ -150,8 +167,7 @@ def run(apply):
             raise ValueError("domain_field_missing")
         write_private(candidate, updated, stat.S_IMODE(info.st_mode))
         try:
-            if not probe(candidate, share):
-                raise ValueError("candidate_remote_read_failed")
+            probe(candidate, share)
             current_info, current = private_file(path, 16384)
             if (current_info.st_dev, current_info.st_ino) != (info.st_dev, info.st_ino) or current != original:
                 raise ValueError("config_changed")
@@ -182,7 +198,9 @@ def main():
                    "file_changed", "oversize_private_file", "unsafe_root", "invalid_smb_config",
                    "unexpected_smb_config", "invalid_prefix", "config_field_not_unique", "obscure_failed",
                    "unsafe_job_lock", "backup_not_idle", "private_destination_exists", "invalid_account_or_domain",
-                   "password_not_confirmed", "candidate_remote_read_failed", "config_changed", "domain_field_missing"}
+                   "password_not_confirmed", "candidate_authentication_failed", "candidate_share_not_found",
+                   "candidate_permission_denied", "candidate_connection_failed", "candidate_remote_read_unknown",
+                   "config_changed", "domain_field_missing"}
         code = str(error) if isinstance(error, ValueError) and str(error) in allowed else "operation_failed"
         report = {"status": "STOP", "phase": "update" if args.confirm_update else "inspect", "error_code": code}
     print(json.dumps(report, sort_keys=True))
