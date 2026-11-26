@@ -72,6 +72,33 @@ prove upload permission or NAS free capacity; obtain that evidence on the NAS
 before planning a separately approved write or repair. Keep failed backup runs
 and the last successful off-host copy intact.
 
+## Rebuilt NAS SMB credential repair
+
+When the rebuilt NAS uses a new dedicated backup account and password, run
+`scripts/portable-backup-smb-credentials.py` from an exact reviewed commit in
+an interactive root VPS shell. Download it to a root-private file and verify
+its reviewed SHA-256 before execution. Run `--inspect` first; it checks the
+private profile/config, existing SMB host, idle backup job, and availability of
+the one-time rollback path. It does not read or print the password.
+
+Run `--confirm-update` separately after the NAS share, SMB encryption, and
+share/NTFS permissions are configured. Enter the new account, NAS computer or
+AD domain, and password at the terminal prompts. The script obscures the
+password through rclone stdin, creates a private candidate config, and lists
+the configured share without printing its contents. Only a successful
+candidate read permits it to preserve the previous private config as
+`.before-smb-credentials` and atomically install the candidate. It holds the
+backup job lock and requires the service to be idle. Failed candidate reads
+leave the active config unchanged. Keep the rollback copy private; it contains
+the former credential. Do not paste either config or terminal prompts into
+issues or chat.
+
+After update, rerun the read-only transport inspector. Its `remote_read=true`
+proves only authentication and read access to the share. Verify create/readback
+with a separately gated harmless-object test, then run one managed backup and
+require encrypted object and receipt readback plus independent monitor
+recovery. Do not infer write access from `rclone lsd` alone.
+
 ## Rebuilt NAS address repair
 
 The focused 2026-11-25 check found that the VPS can reach the rebuilt NAS at
