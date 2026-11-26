@@ -1,11 +1,15 @@
 """The NAS repair changes exactly one reviewed SMB host line."""
 
+from contextlib import nullcontext, redirect_stdout
 import importlib.util
+import io
+import json
 import os
 from pathlib import Path
 import stat
 import subprocess
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -26,6 +30,10 @@ class NasRepointTests(unittest.TestCase):
     def test_unexpected_host_stops(self):
         with self.assertRaises(ValueError):
             repoint.replacement(b"[backup]\ntype=smb\nhost=another-host\npass=private\n")
+
+    def test_existing_magicdns_host_is_reported_without_rewrite(self):
+        with self.assertRaisesRegex(ValueError, "host_already_magicdns"):
+            repoint.replacement(b"[backup]\ntype=smb\nhost=server-nas\npass=private\n")
 
     def test_other_backend_stops(self):
         with self.assertRaises(ValueError):
@@ -72,12 +80,12 @@ class NasRepointTests(unittest.TestCase):
         with (patch.object(repoint.subprocess, "run", return_value=subprocess.CompletedProcess([], 0,
                 "100.117.158.121 STREAM server-nas\n", "")),
               patch.object(repoint.socket, "create_connection") as connect):
-            self.assertTrue(repoint.new_nas_name_reachable())
+            self.assertEqual(repoint.new_nas_name_status(), "ready")
             connect.assert_called_once_with(("server-nas", 445), timeout=5)
         with (patch.object(repoint.subprocess, "run", return_value=subprocess.CompletedProcess([], 0,
                 "100.126.80.92 STREAM server-nas\n", "")),
               patch.object(repoint.socket, "create_connection") as connect):
-            self.assertFalse(repoint.new_nas_name_reachable())
+            self.assertEqual(repoint.new_nas_name_status(), "magicdns_address_mismatch")
             connect.assert_not_called()
 
     def test_repair_holds_same_exclusive_job_lock(self):
@@ -93,6 +101,27 @@ class NasRepointTests(unittest.TestCase):
                         pass
             with repoint.backup_job_lock(root, owner=os.getuid()):
                 pass
+
+    def test_inspect_mode_runs_all_guards_without_writing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            profile = Path(directory) / "job.json"
+            config = Path(directory) / "remote.conf"
+            profile.write_text(json.dumps({"root": "/private/backup", "remote_config": str(config)}))
+            config.write_bytes(b"[backup]\ntype=smb\nhost=100.126.80.92\npass=private\n")
+            info = SimpleNamespace(st_mode=stat.S_IFREG | 0o600, st_uid=0)
+            output = io.StringIO()
+            with (patch.object(repoint, "PROFILE", profile),
+                  patch.object(repoint.os, "geteuid", return_value=0),
+                  patch.object(repoint.Path, "lstat", return_value=info),
+                  patch.object(repoint, "backup_job_lock", return_value=nullcontext()),
+                  patch.object(repoint, "backup_service_idle", return_value=True),
+                  patch.object(repoint, "new_nas_name_status", return_value="ready"),
+                  patch.object(repoint, "preserve_and_replace") as write,
+                  patch.object(repoint.sys, "argv", ["script", "--inspect"]),
+                  redirect_stdout(output)):
+                self.assertEqual(repoint.main(), 0)
+            self.assertEqual(json.loads(output.getvalue())["status"], "PASS")
+            write.assert_not_called()
 
 
 if __name__ == "__main__":
