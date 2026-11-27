@@ -1,0 +1,134 @@
+"""The rehearsal inventory binds the VM to a trusted host key without mutation."""
+
+import base64
+import hashlib
+import importlib.util
+import json
+from pathlib import Path
+import struct
+import subprocess
+import tempfile
+import unittest
+from unittest.mock import patch
+
+
+SCRIPT = Path(__file__).resolve().parents[1] / "portable-vps-rehearsal-host-inspect.py"
+SPEC = importlib.util.spec_from_file_location("rehearsal_host_inspect", SCRIPT)
+inspect = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(inspect)
+
+
+class RehearsalHostInspectTests(unittest.TestCase):
+    def test_policy_route_to_exit_node_stops_even_with_lan_default(self):
+        def query(args, timeout=8):
+            routes = ([{"dst": "default", "dev": "ens33"}] if args[-1] == "default"
+                      else [{"dst": "1.1.1.1", "dev": "tailscale0"}] if args[-2:] == ["get", "1.1.1.1"]
+                      else [])
+            return subprocess.CompletedProcess(args, 0, json.dumps(routes).encode(), b"")
+        with patch.object(inspect, "command", side_effect=query):
+            self.assertFalse(inspect.default_route_safe())
+
+    def test_ipv6_exit_node_default_stops(self):
+        def query(args, timeout=8):
+            routes = ([{"dst": "default", "dev": "ens33"}] if args[-1] == "default"
+                      else [{"dst": "1.1.1.1", "dev": "ens33"}] if args[-2:] == ["get", "1.1.1.1"]
+                      else [{"dst": "default", "dev": "tailscale0"}])
+            return subprocess.CompletedProcess(args, 0, json.dumps(routes).encode(), b"")
+        with patch.object(inspect, "command", side_effect=query):
+            self.assertFalse(inspect.default_route_safe())
+
+    def test_network_controls_omit_raw_firewall_rules(self):
+        raw = b"*filter\n-A INPUT -s 10.1.2.3 -j ts-input\nCOMMIT\n"
+        with (patch.object(inspect, "service_state", return_value=False),
+              patch.object(inspect.shutil, "which", side_effect=lambda name: name),
+              patch.object(inspect, "command", return_value=subprocess.CompletedProcess([], 0, raw, b""))):
+            result = inspect.network_controls()
+        self.assertTrue(result["iptables_save_has_rules"])
+        self.assertTrue(result["iptables_save_mentions_tailscale"])
+        self.assertNotIn("10.1.2.3", str(result))
+
+    def test_listener_report_keeps_only_port_scope_and_process_name(self):
+        sample = (b'LISTEN 0 128 0.0.0.0:22 0.0.0.0:* users:(("sshd",pid=123,fd=3))\n'
+                  b'LISTEN 0 128 127.0.0.1:631 0.0.0.0:* users:(("cupsd",pid=456,fd=4))\n')
+        with patch.object(inspect, "command", return_value=subprocess.CompletedProcess([], 0, sample, b"")):
+            self.assertEqual(inspect.listener_details("100.93.16.52"), [
+                {"port": 22, "scope": "all_interfaces", "process": "sshd"},
+                {"port": 631, "scope": "loopback", "process": "cupsd"},
+            ])
+
+    def test_service_and_timer_inventory_uses_unit_names_only(self):
+        result = subprocess.CompletedProcess([], 0, b"ssh.service loaded active running OpenSSH\n", b"")
+        with patch.object(inspect, "command", return_value=result):
+            self.assertEqual(inspect.unit_names("service", "running"), ["ssh.service"])
+        result = subprocess.CompletedProcess([], 0, b"unexpected private data\n", b"")
+        with patch.object(inspect, "command", return_value=result):
+            self.assertIsNone(inspect.unit_names("timer", "active"))
+
+    def test_public_host_key_fingerprint_uses_exact_key_blob(self):
+        blob = struct.pack(">I", 11) + b"ssh-ed25519" + struct.pack(">I", 32) + bytes(range(32))
+        encoded = base64.b64encode(blob).decode()
+        expected = "SHA256:" + base64.b64encode(hashlib.sha256(blob).digest()).decode().rstrip("=")
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "ssh_host_ed25519_key.pub"
+            path.write_text(f"ssh-ed25519 {encoded} test-host\n")
+            with patch.object(inspect, "HOST_KEY", path):
+                self.assertEqual(inspect.host_fingerprint(), expected)
+            path.write_text("ssh-ed25519 invalid!\n")
+            with patch.object(inspect, "HOST_KEY", path):
+                with self.assertRaises(ValueError):
+                    inspect.host_fingerprint()
+
+    def test_identity_and_route_checks_must_all_pass(self):
+        with (patch.object(inspect.os, "geteuid", return_value=0),
+              patch.object(inspect, "os_release", return_value={"ID": "debian", "VERSION_CODENAME": "trixie"}),
+              patch.object(inspect.platform, "machine", return_value="x86_64"),
+              patch.object(inspect, "service_state", return_value=True),
+              patch.object(inspect, "host_fingerprint", return_value="SHA256:" + "A" * 43),
+              patch.object(inspect, "tailscale_state", return_value=True),
+              patch.object(inspect, "default_route_safe", return_value=True),
+              patch.object(inspect, "network_controls", return_value={"nft_available": False}),
+              patch.object(inspect, "listening_ports", return_value=[22]),
+              patch.object(inspect, "listener_details", return_value=[{"port": 22, "scope": "all_interfaces", "process": "sshd"}]),
+              patch.object(inspect, "container_count", return_value=(0, False)),
+              patch.object(inspect, "unit_names", side_effect=[["ssh.service", "tailscaled.service"], []])):
+            report = inspect.inspect("100.93.16.52", "SHA256:" + "A" * 43)
+            self.assertEqual(report["inspection_status"], "PASS")
+            self.assertEqual(report["existing_containers"], 0)
+
+    def test_mismatched_host_key_stops(self):
+        with (patch.object(inspect.os, "geteuid", return_value=0),
+              patch.object(inspect, "os_release", return_value={"ID": "debian", "VERSION_CODENAME": "trixie"}),
+              patch.object(inspect.platform, "machine", return_value="x86_64"),
+              patch.object(inspect, "service_state", return_value=True),
+              patch.object(inspect, "host_fingerprint", return_value="SHA256:" + "B" * 43),
+              patch.object(inspect, "tailscale_state", return_value=True),
+              patch.object(inspect, "default_route_safe", return_value=True),
+              patch.object(inspect, "network_controls", return_value={"nft_available": False}),
+              patch.object(inspect, "listening_ports", return_value=[22]),
+              patch.object(inspect, "listener_details", return_value=[{"port": 22, "scope": "all_interfaces", "process": "sshd"}]),
+              patch.object(inspect, "container_count", return_value=(0, False)),
+              patch.object(inspect, "unit_names", side_effect=[["ssh.service"], []])):
+            report = inspect.inspect("100.93.16.52", "SHA256:" + "A" * 43)
+            self.assertEqual(report["inspection_status"], "STOP")
+            self.assertFalse(report["checks"]["host_fingerprint_matches"])
+
+    def test_active_ssh_without_port_22_listener_stops(self):
+        with (patch.object(inspect.os, "geteuid", return_value=0),
+              patch.object(inspect, "os_release", return_value={"ID": "debian", "VERSION_CODENAME": "trixie"}),
+              patch.object(inspect.platform, "machine", return_value="x86_64"),
+              patch.object(inspect, "service_state", return_value=True),
+              patch.object(inspect, "host_fingerprint", return_value="SHA256:" + "A" * 43),
+              patch.object(inspect, "tailscale_state", return_value=True),
+              patch.object(inspect, "default_route_safe", return_value=True),
+              patch.object(inspect, "network_controls", return_value={"nft_available": False}),
+              patch.object(inspect, "listening_ports", return_value=[53]),
+              patch.object(inspect, "listener_details", return_value=[{"port": 53, "scope": "loopback", "process": "dns"}]),
+              patch.object(inspect, "container_count", return_value=(0, False)),
+              patch.object(inspect, "unit_names", side_effect=[["ssh.service"], []])):
+            report = inspect.inspect("100.93.16.52", "SHA256:" + "A" * 43)
+            self.assertEqual(report["inspection_status"], "STOP")
+            self.assertFalse(report["checks"]["ssh_port_22_listening"])
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -555,6 +555,22 @@ Completion is tracked by [Siege #583](https://github.com/glitchwerks/rsl-siege-m
 
 ### Isolated CI target setup
 
+Before configuring the VM's deploy identity or tailnet grant, inventory the
+operator-created host from its VMware console with the read-only
+`scripts/portable-vps-rehearsal-host-inspect.py` from an exact reviewed commit.
+Pass the tailnet IPv4 and ED25519 fingerprint verified at the console as
+`--expected-ip` and `--expected-fingerprint`, plus `--confirm-readonly`.
+The single JSON report includes fixed checks, the effective policy-selected
+public IPv4 route and IPv6 defaults, capacity, TCP listener ports,
+their bind scope and process names, running service/timer names, existing
+container count, a bounded firewall ownership summary, and whether portable
+paths already exist. It omits host keys,
+credentials, raw addresses/routes, process arguments and raw command output.
+A `PASS` confirms the inspection completed against the expected identity; review the reported
+existing state before any host bootstrap. It does not install or authorize
+anything. If an unexpected listener, container, path or route appears, stop
+and review it privately before modifying the VM.
+
 The protected `vps-rehearsal` GitHub environment in Siege requires approval by
 the same reviewer as `vps-prod` and allows deployments only from `main`. It
 currently has no secrets. Store the VM-only host, pinned host key, SSH
