@@ -17,8 +17,10 @@ account or grant the new account access to the production share.
 Create the `rsl_rehearsal` share on the new folder with SMB encryption required.
 Grant the dedicated account Change access at the share and read/write access
 through NTFS; retain NAS administrator access. Remove broad share grants such
-as Everyone, Users, Authenticated Users, and Guests from both shares before
-claiming isolation. Do not weaken the production share or reuse its directory.
+as Everyone, Users, Authenticated Users, and Guests from the new rehearsal
+share. If the inspector finds broad production share access, stop and review
+that preexisting exposure separately; this rehearsal setup does not change
+production permissions. Do not reuse the production directory.
 The planned rclone prefix is `rsl_rehearsal/siege-backups`, where the first
 component is the SMB share name.
 
