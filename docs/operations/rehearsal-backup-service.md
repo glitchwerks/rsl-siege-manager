@@ -23,6 +23,21 @@ age, rclone, and the reviewed checkout. Verify the transport with a read-only
 remote listing and a denied production-share connection using the rehearsal
 account. Do not expose credential or workload content in reports.
 
+Once the root-private `/etc/rsl-backup/job.json` and rclone config exist, run
+the reviewed read-only transport inspector as one consolidated check:
+
+```sh
+sudo python3 -I -B scripts/portable-backup-transport-inspect.py \
+  --confirm-readonly --profile /etc/rsl-backup/job.json \
+  --expected-prefix rsl_rehearsal/siege-backups \
+  --expected-host server-nas --require-remote-read
+```
+
+Use the actual reviewed share and MagicDNS name if they differ. Require
+`transport_ready: true` and exit status zero. The report does not contain the
+SMB password, resolved address, or remote object listing. This check only
+lists the remote prefix; it does not create a backup or prove write access.
+
 Install and activate in separate confirmed phases. First copy only the exact
 reviewed units and inspect their effective systemd properties. Then run one
 manual disposable backup; require encrypted upload, independent remote

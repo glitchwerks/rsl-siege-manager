@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One read-only, sanitized transport inspection for the production backup incident.
+"""One read-only, sanitized inspection of a protected backup transport.
 
 Run as root on the VPS. Reads the installed private backup profile/config,
 checks the NAS route, and lists only the configured remote directory with
@@ -130,7 +130,7 @@ def validated_remote(parser, prefix):
     return remote
 
 
-def inspect():
+def inspect(profile_path=PROFILE, expected_prefix=None, expected_host=None):
     report = {"schema": 1, "phase": "backup-transport-readonly", "inspection_status": "STOP",
               "checks": {}, "failure_class": None}
     stage = "root_execution"
@@ -138,7 +138,7 @@ def inspect():
         if os.geteuid() != 0:
             raise ValueError("root_required")
         stage = "private_profile"
-        profile = json.loads(private_bytes(PROFILE, 4096))
+        profile = json.loads(private_bytes(profile_path, 4096))
         config = Path(profile["remote_config"])
         prefix = profile["prefix"]
         if not isinstance(prefix, str) or not prefix or len(prefix) > 256:
@@ -148,6 +148,14 @@ def inspect():
         parser.read_string(private_bytes(config, 16384).decode())
         remote = validated_remote(parser, prefix)
         backend = remote["type"]
+        if expected_prefix is not None:
+            report["checks"]["expected_prefix"] = prefix == expected_prefix
+        if expected_host is not None:
+            report["checks"]["expected_host"] = (
+                backend in {"smb", "sftp"} and remote["host"].casefold() == expected_host.casefold())
+        if any(value is False for value in report["checks"].values()):
+            report["failed_stage"] = "expected_remote"
+            return report
         report.update(backend=backend, tailscale=tailscale_state() if backend in {"smb", "sftp"} else "SKIP")
         report["checks"]["private_inputs_readable"] = True
         if backend in {"smb", "sftp"}:
@@ -203,10 +211,17 @@ def inspect():
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--confirm-readonly", action="store_true", required=True)
-    parser.parse_args()
-    report = inspect()
+    parser.add_argument("--profile", type=Path, default=PROFILE)
+    parser.add_argument("--expected-prefix")
+    parser.add_argument("--expected-host")
+    parser.add_argument("--require-remote-read", action="store_true")
+    args = parser.parse_args()
+    report = inspect(args.profile, args.expected_prefix, args.expected_host)
+    report["transport_ready"] = (report["inspection_status"] == "PASS"
+                                 and report["checks"].get("remote_read") is True)
     print(json.dumps(report, sort_keys=True))
-    return 0 if report["inspection_status"] == "PASS" else 1
+    return 0 if (report["transport_ready"] if args.require_remote_read
+                 else report["inspection_status"] == "PASS") else 1
 
 
 if __name__ == "__main__":
