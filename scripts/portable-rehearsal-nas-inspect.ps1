@@ -155,7 +155,8 @@ function Invoke-RehearsalNasBaseline {
         if (-not $checks.distinct_names -or [string]::IsNullOrWhiteSpace($CandidatePath)) {
             throw 'invalid_candidate'
         }
-        $checks.proposed_path_absolute = [System.IO.Path]::IsPathRooted($CandidatePath)
+        # IsPathRooted also accepts drive-relative paths such as C:folder.
+        $checks.proposed_path_absolute = $CandidatePath -match '^[A-Za-z]:\\'
         if (-not $checks.proposed_path_absolute) { throw 'relative_candidate' }
         $production = Get-SmbShare -Name $ProductionShare -ErrorAction Stop
         $checks.production_share_exists = $null -ne $production

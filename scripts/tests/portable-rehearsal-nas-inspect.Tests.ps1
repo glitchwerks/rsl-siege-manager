@@ -64,6 +64,12 @@ Describe 'Rehearsal NAS read-only inspection' {
         $report.checks.rehearsal_share_unused | Should -BeFalse
     }
 
+    It 'stops on a drive-relative proposed backing path' {
+        $report = Invoke-RehearsalNasBaseline rsl_rehearsal rsl_rehearsal share production_account 'C:rehearsal'
+        $report.status | Should -Be 'STOP'
+        $report.checks.proposed_path_absolute | Should -BeFalse
+    }
+
     It 'recognizes a direct local-account grant' {
         Test-AccountName 'SERVER-NAS\rsl_rehearsal' 'rsl_rehearsal' 'SERVER-NAS' | Should -BeTrue
         Test-AccountName 'SERVER-NAS\production_account' 'rsl_rehearsal' 'SERVER-NAS' | Should -BeFalse
