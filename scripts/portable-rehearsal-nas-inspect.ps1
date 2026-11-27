@@ -30,11 +30,36 @@ function Test-AccountName {
             $parts[1] -ieq $Expected)
 }
 
+function Resolve-PrincipalSid {
+    param([string]$Identity)
+    if ($Identity -match '^S-1-[0-9]+(-[0-9]+)+$') { return $Identity }
+    $account = New-Object -TypeName System.Security.Principal.NTAccount -ArgumentList $Identity
+    return $account.Translate([System.Security.Principal.SecurityIdentifier]).Value
+}
+
 function Test-BroadPrincipal {
     param([string]$Identity)
-    $name = ($Identity -split '\\')[-1]
-    return $name -in @('Everyone', 'Authenticated Users', 'Users', 'Guests', 'Guest',
-                       'S-1-1-0', 'S-1-5-11', 'S-1-5-32-545', 'S-1-5-32-546')
+    # Translation failures throw and make the whole inspection STOP.
+    $sid = Resolve-PrincipalSid $Identity
+    return ($sid -in @('S-1-1-0', 'S-1-5-11', 'S-1-5-32-545', 'S-1-5-32-546') -or
+            $sid -match '^S-1-5-21(-[0-9]+){3}-501$')
+}
+
+function Test-NoReparseComponents {
+    param([string]$Path)
+    $current = [System.IO.Path]::GetFullPath($Path)
+    while (-not [string]::IsNullOrEmpty($current)) {
+        if (Test-Path -LiteralPath $current) {
+            $item = Get-Item -LiteralPath $current -Force -ErrorAction Stop
+            if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+                return $false
+            }
+        }
+        $parent = [System.IO.Path]::GetDirectoryName($current)
+        if ([string]::IsNullOrEmpty($parent) -or $parent -eq $current) { break }
+        $current = $parent
+    }
+    return $true
 }
 
 function Test-SeparateDirectory {
@@ -58,6 +83,7 @@ function Invoke-RehearsalNasInspection {
         share_exists = $false
         production_share_exists = $false
         backing_directories_exist = $false
+        backing_paths_no_reparse = $false
         backing_directories_separate = $false
         share_encryption_required = $false
         local_account_exists_enabled = $false
@@ -82,7 +108,10 @@ function Invoke-RehearsalNasInspection {
             (Test-Path -LiteralPath $share.Path -PathType Container) -and
             (Test-Path -LiteralPath $production.Path -PathType Container)
         )
-        $checks.backing_directories_separate = Test-SeparateDirectory $share.Path $production.Path
+        $checks.backing_paths_no_reparse = (Test-NoReparseComponents $share.Path) -and
+                                            (Test-NoReparseComponents $production.Path)
+        $checks.backing_directories_separate = $checks.backing_paths_no_reparse -and
+                                                (Test-SeparateDirectory $share.Path $production.Path)
         $checks.share_encryption_required = $share.EncryptData -eq $true
         $account = Get-LocalUser -Name $RehearsalAccount -ErrorAction Stop
         $checks.local_account_exists_enabled = $null -ne $account -and $account.Enabled -eq $true
@@ -145,6 +174,7 @@ function Invoke-RehearsalNasBaseline {
         production_backing_directory_exists = $false
         proposed_parent_exists = $false
         proposed_path_unused = $false
+        backing_paths_no_reparse = $false
         backing_directories_separate = $false
         rehearsal_share_unused = $false
         rehearsal_account_unused = $false
@@ -165,7 +195,10 @@ function Invoke-RehearsalNasBaseline {
         $parent = [System.IO.Path]::GetDirectoryName([System.IO.Path]::GetFullPath($CandidatePath))
         $checks.proposed_parent_exists = Test-Path -LiteralPath $parent -PathType Container
         $checks.proposed_path_unused = -not (Test-Path -LiteralPath $CandidatePath)
-        $checks.backing_directories_separate = Test-SeparateDirectory $CandidatePath $production.Path
+        $checks.backing_paths_no_reparse = (Test-NoReparseComponents $CandidatePath) -and
+                                            (Test-NoReparseComponents $production.Path)
+        $checks.backing_directories_separate = $checks.backing_paths_no_reparse -and
+                                                (Test-SeparateDirectory $CandidatePath $production.Path)
         $checks.rehearsal_share_unused = $null -eq (Get-SmbShare -Name $RehearsalShare -ErrorAction SilentlyContinue)
         $checks.rehearsal_account_unused = $null -eq (Get-LocalUser -Name $RehearsalAccount -ErrorAction SilentlyContinue)
         $productionAccess = @(Get-SmbShareAccess -Name $ProductionShare -ErrorAction Stop)

@@ -26,6 +26,9 @@ changes:
 The baseline reports only pass/fail checks. It requires the proposed folder,
 share, and account names to be unused; a separate path from the production
 share; and no broad or direct rehearsal-account grant on the production share.
+It stops if either backing path traverses a junction or another reparse point,
+or if a share principal cannot be resolved to a Windows SID. Use a plain local
+folder path and resolve unexpected grants before proceeding.
 Save the report privately and stop on any failure. Preserve the existing
 production share, backing folder, accounts, and ACLs. Create the separate
 backing folder outside the production share folder. Create a non-administrator
@@ -60,6 +63,8 @@ read-only inspector from a pinned checkout:
 The script prints one sanitized JSON report. A PASS checks share encryption,
 backing-folder separation, local account status, direct rehearsal share and
 NTFS rights, and absence of obvious broad or cross-account share grants.
+Broad share principals are compared by SID, including on localized Windows
+installations; unresolved identities stop the inspection.
 It cannot prove effective access through every nested or domain group. A live
 SMB connection from the VM with the dedicated account, plus a production-share
 denial check, remains required. Do not paste passwords, rclone configuration,
