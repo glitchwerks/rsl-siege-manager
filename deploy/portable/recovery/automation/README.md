@@ -1,5 +1,8 @@
 # Hourly portable backups and independent monitoring
 
+The isolated VMware rehearsal VM has separate inert unit templates and
+activation gates in [the rehearsal service runbook](../../../../docs/operations/rehearsal-backup-service.md).
+
 Preparation under #557. These scripts/templates do not install or enable services,
 create users, obtain credentials, purchase storage, create monitors, send real
 notifications during CI, restore databases, or alter Azure infrastructure. Live

@@ -49,6 +49,21 @@ class TransportInspectorTests(unittest.TestCase):
         self.assertFalse(report["checks"]["dns_resolved"])
         run.assert_not_called()
 
+    def test_rehearsal_profile_must_match_expected_share_and_host_before_network(self):
+        rehearsal = Path("/etc/rsl-backup/job.json")
+        with (patch.object(inspector.os, "geteuid", return_value=0),
+              patch.object(inspector, "private_bytes", side_effect=lambda path, limit: PROFILE if path == rehearsal else CONFIG),
+              patch.object(inspector, "tailscale_state") as tailscale,
+              patch.object(inspector, "resolved_addresses") as resolve,
+              patch.object(inspector.subprocess, "run") as run):
+            report = inspector.inspect(rehearsal, "rsl_rehearsal/siege-backups", "server-nas")
+        self.assertEqual(report["inspection_status"], "STOP")
+        self.assertEqual(report["failed_stage"], "expected_remote")
+        self.assertFalse(report["checks"]["expected_prefix"])
+        tailscale.assert_not_called()
+        resolve.assert_not_called()
+        run.assert_not_called()
+
     def test_remote_failure_class_discards_raw_stderr(self):
         error = b"private-nas: username=backup password=not-shared: logon failure"
         with (patch.object(inspector.os, "geteuid", return_value=0),
