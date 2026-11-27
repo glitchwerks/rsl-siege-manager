@@ -8,9 +8,28 @@ names to the inspector.
 
 ## Prepare on the Windows NAS
 
-Inspect the existing production share, backing folder, accounts, and ACLs first.
-Preserve their settings. Create a separate backing folder outside the production
-share folder. Create a non-administrator local account with a new password that
+From an elevated **Windows PowerShell** session in a pinned checkout, first
+choose an unused absolute folder path. Run the read-only baseline before making
+changes:
+
+```powershell
+& .\scripts\portable-rehearsal-nas-inspect.ps1 `
+  -Mode Baseline `
+  -ShareName rsl_rehearsal `
+  -AccountName rsl_rehearsal `
+  -ProductionAccountName 'YOUR_PRODUCTION_ACCOUNT' `
+  -ProductionShareName share `
+  -ProposedPath 'YOUR_ABSOLUTE_REHEARSAL_FOLDER' `
+  -ConfirmReadOnly
+```
+
+The baseline reports only pass/fail checks. It requires the proposed folder,
+share, and account names to be unused; a separate path from the production
+share; and no broad or direct rehearsal-account grant on the production share.
+Save the report privately and stop on any failure. Preserve the existing
+production share, backing folder, accounts, and ACLs. Create the separate
+backing folder outside the production share folder. Create a non-administrator
+local account with a new password that
 is not set to require a change at next logon. Do not reuse the production SMB
 account or grant the new account access to the production share.
 
@@ -30,6 +49,7 @@ read-only inspector from a pinned checkout:
 
 ```powershell
 & .\scripts\portable-rehearsal-nas-inspect.ps1 `
+  -Mode Verify `
   -ShareName rsl_rehearsal `
   -AccountName rsl_rehearsal `
   -ProductionAccountName 'YOUR_PRODUCTION_ACCOUNT' `

@@ -15,6 +15,8 @@ param(
     [string]$ProductionAccountName,
     [Parameter(Mandatory = $true)][ValidatePattern('^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$')]
     [string]$ProductionShareName,
+    [ValidateSet('Baseline', 'Verify')][string]$Mode = 'Verify',
+    [string]$ProposedPath,
     [switch]$ConfirmReadOnly
 )
 
@@ -131,10 +133,66 @@ function Invoke-RehearsalNasInspection {
     }
 }
 
+function Invoke-RehearsalNasBaseline {
+    param([string]$RehearsalShare, [string]$RehearsalAccount,
+          [string]$ProductionShare, [string]$ProductionAccount,
+          [string]$CandidatePath)
+    $checks = [ordered]@{
+        distinct_names = $RehearsalShare -ine $ProductionShare -and
+                         $RehearsalAccount -ine $ProductionAccount
+        proposed_path_absolute = $false
+        production_share_exists = $false
+        production_backing_directory_exists = $false
+        proposed_parent_exists = $false
+        proposed_path_unused = $false
+        backing_directories_separate = $false
+        rehearsal_share_unused = $false
+        rehearsal_account_unused = $false
+        no_rehearsal_account_on_production_share = $false
+        no_broad_production_share_grant = $false
+    }
+    try {
+        if (-not $checks.distinct_names -or [string]::IsNullOrWhiteSpace($CandidatePath)) {
+            throw 'invalid_candidate'
+        }
+        $checks.proposed_path_absolute = [System.IO.Path]::IsPathRooted($CandidatePath)
+        if (-not $checks.proposed_path_absolute) { throw 'relative_candidate' }
+        $production = Get-SmbShare -Name $ProductionShare -ErrorAction Stop
+        $checks.production_share_exists = $null -ne $production
+        if (-not $checks.production_share_exists) { throw 'missing_production_share' }
+        $checks.production_backing_directory_exists = Test-Path -LiteralPath $production.Path -PathType Container
+        $parent = [System.IO.Path]::GetDirectoryName([System.IO.Path]::GetFullPath($CandidatePath))
+        $checks.proposed_parent_exists = Test-Path -LiteralPath $parent -PathType Container
+        $checks.proposed_path_unused = -not (Test-Path -LiteralPath $CandidatePath)
+        $checks.backing_directories_separate = Test-SeparateDirectory $CandidatePath $production.Path
+        $checks.rehearsal_share_unused = $null -eq (Get-SmbShare -Name $RehearsalShare -ErrorAction SilentlyContinue)
+        $checks.rehearsal_account_unused = $null -eq (Get-LocalUser -Name $RehearsalAccount -ErrorAction SilentlyContinue)
+        $productionAccess = @(Get-SmbShareAccess -Name $ProductionShare -ErrorAction Stop)
+        $checks.no_rehearsal_account_on_production_share = @($productionAccess | Where-Object {
+            Test-AccountName ([string]$_.AccountName) $RehearsalAccount $env:COMPUTERNAME
+        }).Count -eq 0
+        $checks.no_broad_production_share_grant = @($productionAccess | Where-Object {
+            $_.AccessControlType -eq 'Allow' -and
+            (Test-BroadPrincipal ([string]$_.AccountName))
+        }).Count -eq 0
+    } catch {
+        $checks.inspection_completed = $false
+    }
+    $passed = @($checks.Values | Where-Object { $_ -ne $true }).Count -eq 0
+    return [ordered]@{
+        schema = 1
+        phase = 'rehearsal-nas-baseline'
+        status = $(if ($passed) { 'PASS' } else { 'STOP' })
+        checks = $checks
+    }
+}
+
 if ($MyInvocation.InvocationName -ne '.') {
     if (-not $ConfirmReadOnly) {
         $report = @{ schema = 1; phase = 'rehearsal-nas-readonly'; status = 'STOP';
                      checks = @{ explicit_readonly_confirmation = $false } }
+    } elseif ($Mode -eq 'Baseline') {
+        $report = Invoke-RehearsalNasBaseline $ShareName $AccountName $ProductionShareName $ProductionAccountName $ProposedPath
     } else {
         $report = Invoke-RehearsalNasInspection $ShareName $AccountName $ProductionShareName $ProductionAccountName
     }

@@ -15,6 +15,55 @@ AfterAll {
 }
 
 Describe 'Rehearsal NAS read-only inspection' {
+    It 'accepts an unused separate backing path before setup' {
+        Mock Get-SmbShare {
+            if ($Name -eq 'share') { [pscustomobject]@{ Path = 'C:\data\production' } }
+        }
+        Mock Get-LocalUser { $null }
+        Mock Get-SmbShareAccess {
+            [pscustomobject]@{ AccountName = 'SERVER-NAS\production_account';
+                               AccessControlType = 'Allow'; AccessRight = 'Change' }
+        }
+        Mock Test-Path {
+            if ($LiteralPath -eq 'C:\data\rehearsal') { return $false }
+            return $true
+        }
+        $report = Invoke-RehearsalNasBaseline rsl_rehearsal rsl_rehearsal share production_account 'C:\data\rehearsal'
+        $report.status | Should -Be 'PASS'
+        ($report | ConvertTo-Json -Compress -Depth 5) | Should -Not -Match 'C:\\data'
+    }
+
+    It 'stops when the proposed backing path overlaps production' {
+        Mock Get-SmbShare {
+            if ($Name -eq 'share') { [pscustomobject]@{ Path = 'C:\data\production' } }
+        }
+        Mock Get-LocalUser { $null }
+        Mock Get-SmbShareAccess { @() }
+        Mock Test-Path { $true }
+        $report = Invoke-RehearsalNasBaseline rsl_rehearsal rsl_rehearsal share production_account 'C:\data\production\rehearsal'
+        $report.status | Should -Be 'STOP'
+        $report.checks.backing_directories_separate | Should -BeFalse
+    }
+
+    It 'stops when the proposed share name is already in use' {
+        Mock Get-SmbShare {
+            if ($Name -eq 'share') {
+                [pscustomobject]@{ Path = 'C:\data\production' }
+            } else {
+                [pscustomobject]@{ Path = 'C:\data\other' }
+            }
+        }
+        Mock Get-LocalUser { $null }
+        Mock Get-SmbShareAccess { @() }
+        Mock Test-Path {
+            if ($LiteralPath -eq 'C:\data\rehearsal') { return $false }
+            return $true
+        }
+        $report = Invoke-RehearsalNasBaseline rsl_rehearsal rsl_rehearsal share production_account 'C:\data\rehearsal'
+        $report.status | Should -Be 'STOP'
+        $report.checks.rehearsal_share_unused | Should -BeFalse
+    }
+
     It 'recognizes a direct local-account grant' {
         Test-AccountName 'SERVER-NAS\rsl_rehearsal' 'rsl_rehearsal' 'SERVER-NAS' | Should -BeTrue
         Test-AccountName 'SERVER-NAS\production_account' 'rsl_rehearsal' 'SERVER-NAS' | Should -BeFalse
