@@ -28,6 +28,7 @@ class RehearsalRuntimePreflightTests(unittest.TestCase):
             with (patch.object(preflight, "RUNTIME_PATHS", paths),
                   patch.object(preflight, "host_inspection", return_value=BASELINE),
                   patch.object(preflight, "installed_packages", return_value={"docker.io": False}),
+                  patch.object(preflight, "docker_apt_source_present", return_value=False),
                   patch.object(preflight.shutil, "which", return_value="/usr/bin/tool")):
                 report = preflight.inspect("100.93.16.52", "SHA256:" + "A" * 43)
         self.assertEqual(report["status"], "PASS")
@@ -40,6 +41,7 @@ class RehearsalRuntimePreflightTests(unittest.TestCase):
             with (patch.object(preflight, "RUNTIME_PATHS", {"docker_state": existing}),
                   patch.object(preflight, "host_inspection", return_value=BASELINE),
                   patch.object(preflight, "installed_packages", return_value={"docker.io": True}),
+                  patch.object(preflight, "docker_apt_source_present", return_value=False),
                   patch.object(preflight.shutil, "which", return_value="/usr/bin/tool")):
                 report = preflight.inspect("100.93.16.52", "SHA256:" + "A" * 43)
         self.assertEqual(report["status"], "STOP")
@@ -58,6 +60,15 @@ class RehearsalRuntimePreflightTests(unittest.TestCase):
         response = subprocess.CompletedProcess([], 0, b"deinstall ok config-files", b"")
         with patch.object(preflight.subprocess, "run", return_value=response):
             self.assertTrue(all(preflight.installed_packages().values()))
+
+    def test_alternate_docker_apt_source_stops_without_exposing_contents(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source_dir = Path(directory)
+            (source_dir / "other.sources").write_text(
+                "URIs: https://download.docker.com/linux/debian\n")
+            with (patch.object(preflight, "APT_SOURCES", source_dir),
+                  patch.object(preflight, "APT_LIST", source_dir / "missing.list")):
+                self.assertTrue(preflight.docker_apt_source_present())
 
 
 if __name__ == "__main__":
