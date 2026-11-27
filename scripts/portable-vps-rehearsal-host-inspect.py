@@ -136,6 +136,7 @@ def inspect(expected_ip, expected_fingerprint):
         checks["default_route_not_tailscale"] = default_route_safe()
         ports = listening_ports()
         checks["listener_query"] = ports is not None
+        checks["ssh_port_22_listening"] = ports is not None and 22 in ports
         report["tcp_listen_ports"] = ports
         count, docker_installed = container_count()
         checks["container_query"] = count is not None
@@ -148,9 +149,9 @@ def inspect(expected_ip, expected_fingerprint):
         report["running_services"] = services
         report["active_timers"] = timers
         report["preexisting_portable_paths"] = {
-            "deployment": Path("/srv/rsl-siege").exists(),
-            "backup_config": Path("/etc/rsl-backup").exists(),
-            "backup_state": Path("/var/lib/rsl-backup").exists(),
+            "deployment": Path("/srv/rsl-siege").exists() or Path("/srv/rsl-siege").is_symlink(),
+            "backup_config": Path("/etc/rsl-backup").exists() or Path("/etc/rsl-backup").is_symlink(),
+            "backup_state": Path("/var/lib/rsl-backup").exists() or Path("/var/lib/rsl-backup").is_symlink(),
         }
         memory = next(int(line.split()[1]) * 1024 for line in Path("/proc/meminfo").read_text().splitlines()
                       if line.startswith("MemTotal:"))

@@ -70,6 +70,21 @@ class RehearsalHostInspectTests(unittest.TestCase):
             self.assertEqual(report["inspection_status"], "STOP")
             self.assertFalse(report["checks"]["host_fingerprint_matches"])
 
+    def test_active_ssh_without_port_22_listener_stops(self):
+        with (patch.object(inspect.os, "geteuid", return_value=0),
+              patch.object(inspect, "os_release", return_value={"ID": "debian", "VERSION_CODENAME": "trixie"}),
+              patch.object(inspect.platform, "machine", return_value="x86_64"),
+              patch.object(inspect, "service_state", return_value=True),
+              patch.object(inspect, "host_fingerprint", return_value="SHA256:" + "A" * 43),
+              patch.object(inspect, "tailscale_state", return_value=True),
+              patch.object(inspect, "default_route_safe", return_value=True),
+              patch.object(inspect, "listening_ports", return_value=[53]),
+              patch.object(inspect, "container_count", return_value=(0, False)),
+              patch.object(inspect, "unit_names", side_effect=[["ssh.service"], []])):
+            report = inspect.inspect("100.93.16.52", "SHA256:" + "A" * 43)
+            self.assertEqual(report["inspection_status"], "STOP")
+            self.assertFalse(report["checks"]["ssh_port_22_listening"])
+
 
 if __name__ == "__main__":
     unittest.main()
