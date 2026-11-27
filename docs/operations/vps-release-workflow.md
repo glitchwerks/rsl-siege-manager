@@ -571,6 +571,18 @@ existing state before any host bootstrap. It does not install or authorize
 anything. If an unexpected listener, container, path or route appears, stop
 and review it privately before modifying the VM.
 
+Before installing Docker on the isolated VM, run the read-only
+`scripts/portable-vps-rehearsal-runtime-preflight.py` from an exact reviewed
+commit with the same expected identity. Its one JSON report checks that the
+host baseline still passes, Docker and container state are absent, conflicting
+distribution packages are not installed, and the Docker repository, key,
+configuration, and state paths are unused. It includes only bounded firewall
+ownership booleans and package names. A `STOP` requires review of the existing
+host state; do not uninstall packages or overwrite paths to force a pass.
+The production firewall helper assumes a dedicated VPS and must not be applied
+to this desktop VM without a separate adaptation and review. Preserve the
+existing Tailscale, SSH, NetworkManager, and desktop services during bootstrap.
+
 The protected `vps-rehearsal` GitHub environment in Siege requires approval by
 the same reviewer as `vps-prod` and allows deployments only from `main`. It
 currently has no secrets. Store the VM-only host, pinned host key, SSH
