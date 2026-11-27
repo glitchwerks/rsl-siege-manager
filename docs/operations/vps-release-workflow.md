@@ -573,8 +573,8 @@ and review it privately before modifying the VM.
 
 The protected `vps-rehearsal` GitHub environment in Siege requires approval by
 the same reviewer as `vps-prod` and allows deployments only from `main`. It
-currently has no secrets. Store the VM-only host, pinned host key, SSH
-identity, and Tailscale OAuth credentials there under these distinct secret
+already stores the VM-only host, pinned host key, and distinct SSH identity.
+Store the remaining Tailscale OAuth credentials there under these distinct secret
 names: `REHEARSAL_VPS_TAILSCALE_HOST`,
 `REHEARSAL_VPS_SSH_HOST_FINGERPRINT`, `REHEARSAL_VPS_SSH_KNOWN_HOSTS`,
 `REHEARSAL_VPS_DEPLOY_SSH_KEY`, `REHEARSAL_TAILSCALE_OAUTH_CLIENT_ID`, and
@@ -585,6 +585,8 @@ with console recovery and tailnet routing checked before activation. The
 rehearsal jobs use `tag:github-rehearsal`; grant that tag SSH access only to the
 VM. Keep the existing `tag:github-deploy` grant to production unchanged, and
 do not grant the rehearsal tag access to the production VPS.
+Use [the rehearsal CI connection guide](rehearsal-ci-connection.md) to review
+the additive policy, current credential names, verification, and rollback.
 
 The candidate-validation jobs run before their host jobs and do not enter a
 GitHub environment. Grant the selected repository access to separate
