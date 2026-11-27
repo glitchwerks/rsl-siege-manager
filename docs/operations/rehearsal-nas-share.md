@@ -63,7 +63,8 @@ read-only inspector from a pinned checkout:
 ```
 
 The script prints one sanitized JSON report. A PASS checks share encryption,
-backing-folder separation, local account status, direct rehearsal share and
+backing-folder separation, local account status and non-membership in the local
+Administrators group, direct rehearsal share and
 NTFS rights, and absence of obvious broad or cross-account share grants.
 Broad share principals are compared by SID, including on localized Windows
 installations; unresolved identities stop the inspection.

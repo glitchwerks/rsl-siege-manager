@@ -32,6 +32,7 @@ Describe 'Rehearsal NAS read-only inspection' {
         Mock Get-Item {
             [pscustomobject]@{ Attributes = [System.IO.FileAttributes]::Directory }
         }
+        Mock Get-LocalGroupMember { @() }
     }
 
     It 'accepts an unused separate backing path before setup' {
@@ -117,6 +118,14 @@ Describe 'Rehearsal NAS read-only inspection' {
         Test-AccountName 'OTHER\rsl_rehearsal' 'rsl_rehearsal' 'SERVER-NAS' | Should -BeFalse
     }
 
+    It 'rejects a rehearsal account in the local Administrators group' {
+        Mock Get-LocalGroupMember {
+            [pscustomobject]@{ SID = [pscustomobject]@{ Value = 'S-1-5-21-1-2-3-1001' } }
+        }
+        Test-LocalAccountNonAdmin 'S-1-5-21-1-2-3-1001' | Should -BeFalse
+        Test-LocalAccountNonAdmin 'S-1-5-21-1-2-3-1002' | Should -BeTrue
+    }
+
     It 'detects a path if one is accidentally serialized into the JSON report' {
         '{"path":"C:\\data\\rehearsal"}' | Should -Match 'C:\\\\data'
     }
@@ -162,7 +171,8 @@ Describe 'Rehearsal NAS read-only inspection' {
             }
         }
         Mock Get-LocalUser {
-            [pscustomobject]@{ Enabled = $true; PasswordRequired = $true }
+            [pscustomobject]@{ Enabled = $true; PasswordRequired = $true;
+                               SID = [pscustomobject]@{ Value = 'S-1-5-21-1-2-3-1001' } }
         }
         Mock Get-SmbShareAccess {
             if ($Name -eq 'rsl_rehearsal') {
@@ -198,7 +208,8 @@ Describe 'Rehearsal NAS read-only inspection' {
             }
         }
         Mock Get-LocalUser {
-            [pscustomobject]@{ Enabled = $true; PasswordRequired = $true }
+            [pscustomobject]@{ Enabled = $true; PasswordRequired = $true;
+                               SID = [pscustomobject]@{ Value = 'S-1-5-21-1-2-3-1001' } }
         }
         Mock Get-SmbShareAccess {
             if ($Name -eq 'rsl_rehearsal') {
@@ -234,7 +245,8 @@ Describe 'Rehearsal NAS read-only inspection' {
             }
         }
         Mock Get-LocalUser {
-            [pscustomobject]@{ Enabled = $true; PasswordRequired = $true }
+            [pscustomobject]@{ Enabled = $true; PasswordRequired = $true;
+                               SID = [pscustomobject]@{ Value = 'S-1-5-21-1-2-3-1001' } }
         }
         Mock Get-SmbShareAccess {
             if ($Name -eq 'rsl_rehearsal') {
@@ -269,7 +281,8 @@ Describe 'Rehearsal NAS read-only inspection' {
             }
         }
         Mock Get-LocalUser {
-            [pscustomobject]@{ Enabled = $true; PasswordRequired = $true }
+            [pscustomobject]@{ Enabled = $true; PasswordRequired = $true;
+                               SID = [pscustomobject]@{ Value = 'S-1-5-21-1-2-3-1001' } }
         }
         Mock Get-SmbShareAccess {
             if ($Name -eq 'rsl_rehearsal') {
@@ -314,7 +327,8 @@ Describe 'Rehearsal NAS read-only inspection' {
             }
         }
         Mock Get-LocalUser {
-            [pscustomobject]@{ Enabled = $true; PasswordRequired = $true }
+            [pscustomobject]@{ Enabled = $true; PasswordRequired = $true;
+                               SID = [pscustomobject]@{ Value = 'S-1-5-21-1-2-3-1001' } }
         }
         Mock Get-SmbShareAccess {
             [pscustomobject]@{ AccountName = 'SERVER-NAS\rsl_rehearsal';
@@ -345,7 +359,8 @@ Describe 'Rehearsal NAS read-only inspection' {
             }
         }
         Mock Get-LocalUser {
-            [pscustomobject]@{ Enabled = $true; PasswordRequired = $true }
+            [pscustomobject]@{ Enabled = $true; PasswordRequired = $true;
+                               SID = [pscustomobject]@{ Value = 'S-1-5-21-1-2-3-1001' } }
         }
         Mock Get-SmbShareAccess {
             if ($Name -eq 'rsl_rehearsal') {
@@ -383,7 +398,8 @@ Describe 'Rehearsal NAS read-only inspection' {
             }
         }
         Mock Get-LocalUser {
-            [pscustomobject]@{ Enabled = $true; PasswordRequired = $true }
+            [pscustomobject]@{ Enabled = $true; PasswordRequired = $true;
+                               SID = [pscustomobject]@{ Value = 'S-1-5-21-1-2-3-1001' } }
         }
         Mock Get-SmbShareAccess {
             if ($Name -eq 'rsl_rehearsal') {

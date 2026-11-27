@@ -63,6 +63,13 @@ function Test-NoReparseComponents {
     return $true
 }
 
+function Test-LocalAccountNonAdmin {
+    param([string]$AccountSid)
+    $administratorsSid = New-Object -TypeName System.Security.Principal.SecurityIdentifier -ArgumentList 'S-1-5-32-544'
+    $administrators = @(Get-LocalGroupMember -SID $administratorsSid -ErrorAction Stop)
+    return @($administrators | Where-Object { $_.SID.Value -eq $AccountSid }).Count -eq 0
+}
+
 function Test-SeparateDirectory {
     param([string]$RehearsalPath, [string]$ProductionPath)
     $separators = [char[]]@('\', '/')
@@ -89,6 +96,7 @@ function Invoke-RehearsalNasInspection {
         share_encryption_required = $false
         local_account_exists_enabled = $false
         account_password_required = $false
+        local_account_non_admin = $false
         direct_rehearsal_share_write = $false
         no_rehearsal_account_on_production_share = $false
         no_production_account_on_rehearsal_share = $false
@@ -118,6 +126,7 @@ function Invoke-RehearsalNasInspection {
         $account = Get-LocalUser -Name $RehearsalAccount -ErrorAction Stop
         $checks.local_account_exists_enabled = $null -ne $account -and $account.Enabled -eq $true
         $checks.account_password_required = $null -ne $account -and $account.PasswordRequired -eq $true
+        $checks.local_account_non_admin = Test-LocalAccountNonAdmin $account.SID.Value
 
         $shareAccess = @(Get-SmbShareAccess -Name $RehearsalShare -ErrorAction Stop)
         $productionAccess = @(Get-SmbShareAccess -Name $ProductionShare -ErrorAction Stop)
