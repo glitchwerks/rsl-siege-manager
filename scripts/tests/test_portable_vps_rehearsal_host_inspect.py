@@ -3,6 +3,7 @@
 import base64
 import hashlib
 import importlib.util
+import json
 from pathlib import Path
 import struct
 import subprocess
@@ -18,6 +19,24 @@ SPEC.loader.exec_module(inspect)
 
 
 class RehearsalHostInspectTests(unittest.TestCase):
+    def test_policy_route_to_exit_node_stops_even_with_lan_default(self):
+        def query(args, timeout=8):
+            routes = ([{"dst": "default", "dev": "ens33"}] if args[-1] == "default"
+                      else [{"dst": "1.1.1.1", "dev": "tailscale0"}] if args[-2:] == ["get", "1.1.1.1"]
+                      else [])
+            return subprocess.CompletedProcess(args, 0, json.dumps(routes).encode(), b"")
+        with patch.object(inspect, "command", side_effect=query):
+            self.assertFalse(inspect.default_route_safe())
+
+    def test_ipv6_exit_node_default_stops(self):
+        def query(args, timeout=8):
+            routes = ([{"dst": "default", "dev": "ens33"}] if args[-1] == "default"
+                      else [{"dst": "1.1.1.1", "dev": "ens33"}] if args[-2:] == ["get", "1.1.1.1"]
+                      else [{"dst": "default", "dev": "tailscale0"}])
+            return subprocess.CompletedProcess(args, 0, json.dumps(routes).encode(), b"")
+        with patch.object(inspect, "command", side_effect=query):
+            self.assertFalse(inspect.default_route_safe())
+
     def test_network_controls_omit_raw_firewall_rules(self):
         raw = b"*filter\n-A INPUT -s 10.1.2.3 -j ts-input\nCOMMIT\n"
         with (patch.object(inspect, "service_state", return_value=False),

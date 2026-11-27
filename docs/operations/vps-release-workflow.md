@@ -560,7 +560,8 @@ operator-created host from its VMware console with the read-only
 `scripts/portable-vps-rehearsal-host-inspect.py` from an exact reviewed commit.
 Pass the tailnet IPv4 and ED25519 fingerprint verified at the console as
 `--expected-ip` and `--expected-fingerprint`, plus `--confirm-readonly`.
-The single JSON report includes fixed checks, capacity, TCP listener ports,
+The single JSON report includes fixed checks, the effective policy-selected
+public IPv4 route and IPv6 defaults, capacity, TCP listener ports,
 their bind scope and process names, running service/timer names, existing
 container count, a bounded firewall ownership summary, and whether portable
 paths already exist. It omits host keys,
