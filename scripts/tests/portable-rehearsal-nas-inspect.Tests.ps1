@@ -20,6 +20,8 @@ Describe 'Rehearsal NAS read-only inspection' {
             switch ($Identity) {
                 'Everyone' { 'S-1-1-0' }
                 'Jeder' { 'S-1-1-0' }
+                'NT AUTHORITY\NETWORK' { 'S-1-5-2' }
+                'S-1-5-2' { 'S-1-5-2' }
                 'BUILTIN\Users' { 'S-1-5-32-545' }
                 'SERVER-NAS\Administrators' { 'S-1-5-32-544' }
                 'SERVER-NAS\rsl_rehearsal' { 'S-1-5-21-1-2-3-1001' }
@@ -123,6 +125,8 @@ Describe 'Rehearsal NAS read-only inspection' {
         Test-BroadPrincipal 'BUILTIN\Users' | Should -BeTrue
         Test-BroadPrincipal 'Everyone' | Should -BeTrue
         Test-BroadPrincipal 'Jeder' | Should -BeTrue
+        Test-BroadPrincipal 'NT AUTHORITY\NETWORK' | Should -BeTrue
+        Test-BroadPrincipal 'S-1-5-2' | Should -BeTrue
         Test-BroadPrincipal 'SERVER-NAS\Administrators' | Should -BeFalse
     }
 
@@ -346,7 +350,7 @@ Describe 'Rehearsal NAS read-only inspection' {
                 [pscustomobject]@{ AccountName = 'SERVER-NAS\rsl_rehearsal';
                                    AccessControlType = 'Allow'; AccessRight = 'Change' }
             } else {
-                [pscustomobject]@{ AccountName = 'Everyone';
+                [pscustomobject]@{ AccountName = 'NT AUTHORITY\NETWORK';
                                    AccessControlType = 'Allow'; AccessRight = 'Read' }
             }
         }

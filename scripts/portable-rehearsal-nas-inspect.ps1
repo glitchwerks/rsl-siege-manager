@@ -41,7 +41,8 @@ function Test-BroadPrincipal {
     param([string]$Identity)
     # Translation failures throw and make the whole inspection STOP.
     $sid = Resolve-PrincipalSid $Identity
-    return ($sid -in @('S-1-1-0', 'S-1-5-11', 'S-1-5-32-545', 'S-1-5-32-546') -or
+    return ($sid -in @('S-1-1-0', 'S-1-5-2', 'S-1-5-4', 'S-1-5-7', 'S-1-5-11',
+                       'S-1-5-32-545', 'S-1-5-32-546') -or
             $sid -match '^S-1-5-21(-[0-9]+){3}-501$')
 }
 
