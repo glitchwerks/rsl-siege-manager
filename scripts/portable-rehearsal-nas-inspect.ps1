@@ -11,6 +11,8 @@ param(
     [string]$ShareName,
     [Parameter(Mandatory = $true)][ValidatePattern('^[A-Za-z0-9][A-Za-z0-9_-]{0,19}$')]
     [string]$AccountName,
+    [Parameter(Mandatory = $true)][ValidatePattern('^[A-Za-z0-9][A-Za-z0-9_-]{0,19}$')]
+    [string]$ProductionAccountName,
     [Parameter(Mandatory = $true)][ValidatePattern('^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$')]
     [string]$ProductionShareName,
     [switch]$ConfirmReadOnly
@@ -47,7 +49,8 @@ function Test-SeparateDirectory {
 }
 
 function Invoke-RehearsalNasInspection {
-    param([string]$RehearsalShare, [string]$RehearsalAccount, [string]$ProductionShare)
+    param([string]$RehearsalShare, [string]$RehearsalAccount,
+          [string]$ProductionShare, [string]$ProductionAccount)
     $checks = [ordered]@{
         distinct_names = $RehearsalShare -ine $ProductionShare
         share_exists = $false
@@ -59,12 +62,15 @@ function Invoke-RehearsalNasInspection {
         account_password_required = $false
         direct_rehearsal_share_write = $false
         no_rehearsal_account_on_production_share = $false
+        no_production_account_on_rehearsal_share = $false
         no_broad_rehearsal_share_grant = $false
         no_broad_production_share_grant = $false
         rehearsal_ntfs_read_write = $false
     }
     try {
-        if (-not $checks.distinct_names) { throw 'same_share' }
+        if (-not $checks.distinct_names -or $RehearsalAccount -ieq $ProductionAccount) {
+            throw 'same_identity'
+        }
         $share = Get-SmbShare -Name $RehearsalShare -ErrorAction Stop
         $production = Get-SmbShare -Name $ProductionShare -ErrorAction Stop
         $checks.share_exists = $null -ne $share
@@ -89,6 +95,9 @@ function Invoke-RehearsalNasInspection {
         }).Count -gt 0
         $checks.no_rehearsal_account_on_production_share = @($productionAccess | Where-Object {
             Test-AccountName ([string]$_.AccountName) $RehearsalAccount $env:COMPUTERNAME
+        }).Count -eq 0
+        $checks.no_production_account_on_rehearsal_share = @($shareAccess | Where-Object {
+            Test-AccountName ([string]$_.AccountName) $ProductionAccount $env:COMPUTERNAME
         }).Count -eq 0
         $checks.no_broad_rehearsal_share_grant = @($shareAccess | Where-Object {
             $_.AccessControlType -eq 'Allow' -and
@@ -127,7 +136,7 @@ if ($MyInvocation.InvocationName -ne '.') {
         $report = @{ schema = 1; phase = 'rehearsal-nas-readonly'; status = 'STOP';
                      checks = @{ explicit_readonly_confirmation = $false } }
     } else {
-        $report = Invoke-RehearsalNasInspection $ShareName $AccountName $ProductionShareName
+        $report = Invoke-RehearsalNasInspection $ShareName $AccountName $ProductionShareName $ProductionAccountName
     }
     $report | ConvertTo-Json -Compress -Depth 5
     if ($report.status -ne 'PASS') { exit 1 }

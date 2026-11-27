@@ -16,7 +16,8 @@ account or grant the new account access to the production share.
 
 Create the `rsl_rehearsal` share on the new folder with SMB encryption required.
 Grant the dedicated account Change access at the share and read/write access
-through NTFS; retain NAS administrator access. Remove broad share grants such
+through NTFS; retain NAS administrator access. Do not grant the production
+backup account access to the rehearsal share. Remove broad share grants such
 as Everyone, Users, Authenticated Users, and Guests from the new rehearsal
 share. If the inspector finds broad production share access, stop and review
 that preexisting exposure separately; this rehearsal setup does not change
@@ -31,13 +32,14 @@ read-only inspector from a pinned checkout:
 & .\scripts\portable-rehearsal-nas-inspect.ps1 `
   -ShareName rsl_rehearsal `
   -AccountName rsl_rehearsal `
+  -ProductionAccountName 'YOUR_PRODUCTION_ACCOUNT' `
   -ProductionShareName share `
   -ConfirmReadOnly
 ```
 
 The script prints one sanitized JSON report. A PASS checks share encryption,
 backing-folder separation, local account status, direct rehearsal share and
-NTFS rights, and absence of obvious broad or direct production share grants.
+NTFS rights, and absence of obvious broad or cross-account share grants.
 It cannot prove effective access through every nested or domain group. A live
 SMB connection from the VM with the dedicated account, plus a production-share
 denial check, remains required. Do not paste passwords, rclone configuration,

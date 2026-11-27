@@ -6,6 +6,7 @@ BeforeAll {
     $env:COMPUTERNAME = 'SERVER-NAS'
     . (Join-Path $PSScriptRoot '..\portable-rehearsal-nas-inspect.ps1') `
         -ShareName rsl_rehearsal -AccountName rsl_rehearsal `
+        -ProductionAccountName production_account `
         -ProductionShareName share
 }
 
@@ -60,7 +61,7 @@ Describe 'Rehearsal NAS read-only inspection' {
                                     [System.Security.AccessControl.FileSystemRights]::WriteData)
             }) }
         }
-        $report = Invoke-RehearsalNasInspection rsl_rehearsal rsl_rehearsal share
+        $report = Invoke-RehearsalNasInspection rsl_rehearsal rsl_rehearsal share production_account
         $report.status | Should -Be 'PASS'
         ($report | ConvertTo-Json -Compress -Depth 5) | Should -Not -Match 'C:\\data'
     }
@@ -89,9 +90,45 @@ Describe 'Rehearsal NAS read-only inspection' {
                                     [System.Security.AccessControl.FileSystemRights]::WriteData)
             }) }
         }
-        $report = Invoke-RehearsalNasInspection rsl_rehearsal rsl_rehearsal share
+        $report = Invoke-RehearsalNasInspection rsl_rehearsal rsl_rehearsal share production_account
         $report.status | Should -Be 'STOP'
         $report.checks.no_rehearsal_account_on_production_share | Should -BeFalse
+    }
+
+    It 'stops when the production account has direct rehearsal share access' {
+        Mock Get-SmbShare {
+            if ($Name -eq 'rsl_rehearsal') {
+                [pscustomobject]@{ Path = 'C:\data\rehearsal'; EncryptData = $true }
+            } else {
+                [pscustomobject]@{ Path = 'C:\data\production'; EncryptData = $true }
+            }
+        }
+        Mock Get-LocalUser {
+            [pscustomobject]@{ Enabled = $true; PasswordRequired = $true }
+        }
+        Mock Get-SmbShareAccess {
+            if ($Name -eq 'rsl_rehearsal') {
+                @([pscustomobject]@{ AccountName = 'SERVER-NAS\rsl_rehearsal';
+                                     AccessControlType = 'Allow'; AccessRight = 'Change' },
+                  [pscustomobject]@{ AccountName = 'SERVER-NAS\production_account';
+                                     AccessControlType = 'Allow'; AccessRight = 'Read' })
+            } else {
+                [pscustomobject]@{ AccountName = 'SERVER-NAS\production_account';
+                                   AccessControlType = 'Allow'; AccessRight = 'Change' }
+            }
+        }
+        Mock Test-Path { $true }
+        Mock Get-Acl {
+            [pscustomobject]@{ Access = @([pscustomobject]@{
+                IdentityReference = 'SERVER-NAS\rsl_rehearsal'
+                AccessControlType = 'Allow'
+                FileSystemRights = ([System.Security.AccessControl.FileSystemRights]::ReadData -bor
+                                    [System.Security.AccessControl.FileSystemRights]::WriteData)
+            }) }
+        }
+        $report = Invoke-RehearsalNasInspection rsl_rehearsal rsl_rehearsal share production_account
+        $report.status | Should -Be 'STOP'
+        $report.checks.no_production_account_on_rehearsal_share | Should -BeFalse
     }
 
     It 'stops when the production share allows broad access' {
@@ -123,7 +160,7 @@ Describe 'Rehearsal NAS read-only inspection' {
                                     [System.Security.AccessControl.FileSystemRights]::WriteData)
             }) }
         }
-        $report = Invoke-RehearsalNasInspection rsl_rehearsal rsl_rehearsal share
+        $report = Invoke-RehearsalNasInspection rsl_rehearsal rsl_rehearsal share production_account
         $report.status | Should -Be 'STOP'
         $report.checks.no_broad_production_share_grant | Should -BeFalse
     }
