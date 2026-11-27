@@ -25,8 +25,8 @@ retry; do not skip to a later phase.
 
 | Phase | Change | Recovery boundary |
 | --- | --- | --- |
-| `prepare-repo` | Add only the exact Docker signing key and Debian trixie apt source, run `apt-get update`, and simulate the fixed Docker package install. The key fingerprint and absence of package removals/upgrades must pass. | `rollback-repo` can remove these exact files while Docker is absent. A partially written or changed file requires snapshot/manual review. |
-| `install-runtime` | Write a bounded Docker log configuration, then install Docker Engine, CLI, containerd, Buildx, and Compose from the official source. Verify Docker, Compose, zero containers, host services, timers, and Tailscale firewall ownership. | Restore the VMware snapshot if installation or post-install checks fail. Do not broadly uninstall packages or reset the firewall. |
+| `prepare-repo` | Add only the exact Docker signing key and Debian trixie apt source, run `apt-get update`, and simulate the fixed Docker package install. The key fingerprint, official source of every package candidate, and absence of package removals/upgrades must pass. | `rollback-repo` can remove these exact files while Docker is absent. A partially written or changed file requires snapshot/manual review. |
+| `install-runtime` | Write a bounded Docker log configuration, then install Docker Engine, CLI, containerd, Buildx, and Compose at the exact verified candidate versions from the official source. Verify Docker, Compose, zero containers, host services, timers, and Tailscale firewall ownership. | Restore the VMware snapshot if installation or post-install checks fail. Do not broadly uninstall packages or reset the firewall. |
 | `prepare-paths` | Create only the new private deployment, runtime, evidence, and backup directories. Verify mode and host baseline. | If this phase fails, inspect the new paths and restore the snapshot before retrying. Do not recursively delete unknown content. |
 | `rollback-repo` | Remove only the exact source and key added by `prepare-repo`, before Docker installation. | The original apt source inventory remains available in the preflight report. |
 

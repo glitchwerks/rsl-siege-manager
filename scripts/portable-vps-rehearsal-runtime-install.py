@@ -107,8 +107,8 @@ def key_fingerprint(path):
     return None
 
 
-def apt_plan():
-    result = command(["apt-get", "-s", "--no-install-recommends", "install", *PACKAGES], 120)
+def apt_plan(packages=PACKAGES):
+    result = command(["apt-get", "-s", "--no-install-recommends", "install", *packages], 120)
     if result is None or result.returncode or len(result.stdout) > 2_000_000:
         return None
     lines = result.stdout.decode("utf-8", "replace").splitlines()
@@ -122,6 +122,34 @@ def apt_plan():
             "planned_install_names": sorted(names),
             "removed_names": sorted({line.split()[1] for line in removed if len(line.split()) > 1}),
             "upgraded_names": sorted({line.split()[1] for line in upgraded if len(line.split()) > 1})}
+
+
+def official_candidate_versions():
+    """Get exact candidate versions only if no alternate source offers them."""
+    candidates = {}
+    for package in PACKAGES:
+        policy = command(["apt-cache", "policy", package])
+        versions = command(["apt-cache", "madison", package])
+        if (policy is None or versions is None or policy.returncode or versions.returncode
+                or len(policy.stdout) > 65536 or len(versions.stdout) > 65536):
+            return None
+        match = re.search(r"^\s*Candidate:\s*(\S+)\s*$", policy.stdout.decode("utf-8", "replace"), re.M)
+        if match is None or match.group(1) == "(none)":
+            return None
+        candidate = match.group(1)
+        sources = []
+        for line in versions.stdout.decode("utf-8", "replace").splitlines():
+            parts = [part.strip() for part in line.split("|")]
+            if len(parts) != 3:
+                return None
+            if parts[0] == package and parts[1] == candidate:
+                sources.append(parts[2])
+        if not sources or not all(source.startswith(
+                "https://download.docker.com/linux/debian trixie/stable amd64 Packages")
+                for source in sources):
+            return None
+        candidates[package] = candidate
+    return candidates
 
 
 def repo_ready():
@@ -173,7 +201,11 @@ def prepare_repo(ip, fingerprint, details=None):
     checks["apt_update"] = success(["apt-get", "update", "-qq"], 600)
     if not checks["apt_update"]:
         return checks
-    plan = apt_plan()
+    candidates = official_candidate_versions()
+    checks["official_package_candidates"] = candidates is not None
+    if not checks["official_package_candidates"]:
+        return checks
+    plan = apt_plan(tuple(f"{name}={candidates[name]}" for name in PACKAGES))
     checks["apt_simulation"] = plan is not None
     if plan is not None:
         checks.update({name: plan[name] for name in
@@ -187,9 +219,11 @@ def prepare_repo(ip, fingerprint, details=None):
 
 def install_runtime(ip, fingerprint, details=None):
     before = baseline(ip, fingerprint)
+    candidates = official_candidate_versions()
     checks = {
         "host_baseline": before.get("inspection_status") == "PASS",
         "repo_exact": repo_ready(),
+        "official_package_candidates": candidates is not None,
         "runtime_paths_unused": not any(path.exists() or path.is_symlink()
                                          for path in (DOCKER_DIR, Path("/var/lib/docker"))),
         "docker_absent": before.get("docker_installed") is False
@@ -197,7 +231,7 @@ def install_runtime(ip, fingerprint, details=None):
     }
     if not all(checks.values()):
         return checks
-    plan = apt_plan()
+    plan = apt_plan(tuple(f"{name}={candidates[name]}" for name in PACKAGES))
     checks["apt_simulation"] = plan is not None
     if plan is not None:
         checks.update({name: plan[name] for name in
@@ -218,7 +252,8 @@ def install_runtime(ip, fingerprint, details=None):
     if not checks["daemon_configuration"]:
         return checks
     checks["apt_install"] = success(
-        ["apt-get", "-y", "--no-install-recommends", "install", *PACKAGES], 1800)
+        ["apt-get", "-y", "--no-install-recommends", "install",
+         *(f"{name}={candidates[name]}" for name in PACKAGES)], 1800)
     if not checks["apt_install"]:
         return checks
     checks["docker_info"] = success(["docker", "info"], 30)

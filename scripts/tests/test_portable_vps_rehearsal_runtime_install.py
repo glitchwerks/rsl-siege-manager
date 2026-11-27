@@ -26,6 +26,28 @@ class RehearsalRuntimeInstallTests(unittest.TestCase):
         self.assertFalse(plan["no_removals"])
         self.assertFalse(plan["no_upgrades"])
 
+    def test_package_candidate_requires_only_official_docker_source(self):
+        policy = b"docker-ce:\n  Installed: (none)\n  Candidate: 5:29.0\n"
+        official = b"docker-ce | 5:29.0 | https://download.docker.com/linux/debian trixie/stable amd64 Packages\n"
+        foreign = official + b"docker-ce | 5:29.0 | https://other.example/debian trixie/main amd64 Packages\n"
+        with patch.object(install, "PACKAGES", ("docker-ce",)):
+            with patch.object(install, "command", side_effect=(
+                    subprocess.CompletedProcess([], 0, policy, b""),
+                    subprocess.CompletedProcess([], 0, official, b""))):
+                self.assertEqual(install.official_candidate_versions(), {"docker-ce": "5:29.0"})
+            with patch.object(install, "command", side_effect=(
+                    subprocess.CompletedProcess([], 0, policy, b""),
+                    subprocess.CompletedProcess([], 0, foreign, b""))):
+                self.assertIsNone(install.official_candidate_versions())
+
+    def test_simulation_uses_exact_candidate_versions(self):
+        result = subprocess.CompletedProcess([], 0,
+            b"Inst docker-ce (5:29.0 Docker:stable [amd64])\n", b"")
+        with (patch.object(install, "PACKAGES", ("docker-ce",)),
+              patch.object(install, "command", return_value=result) as run):
+            install.apt_plan(("docker-ce=5:29.0",))
+        self.assertEqual(run.call_args.args[0][-1], "docker-ce=5:29.0")
+
     def test_repo_phase_stops_before_download_when_preflight_fails(self):
         class Preflight:
             @staticmethod
