@@ -4,6 +4,7 @@ import base64
 import hashlib
 import importlib.util
 import json
+import os
 from pathlib import Path
 import struct
 import subprocess
@@ -40,12 +41,29 @@ class RehearsalHostInspectTests(unittest.TestCase):
     def test_network_controls_omit_raw_firewall_rules(self):
         raw = b"*filter\n-A INPUT -s 10.1.2.3 -j ts-input\nCOMMIT\n"
         with (patch.object(inspect, "service_state", return_value=False),
-              patch.object(inspect.shutil, "which", side_effect=lambda name: name),
+              patch.object(inspect.shutil, "which", side_effect=lambda name, path=None: name),
               patch.object(inspect, "command", return_value=subprocess.CompletedProcess([], 0, raw, b""))):
             result = inspect.network_controls()
         self.assertTrue(result["iptables_save_has_rules"])
         self.assertTrue(result["iptables_save_mentions_tailscale"])
         self.assertNotIn("10.1.2.3", str(result))
+
+    def test_network_controls_find_sbin_tools_with_restricted_shell_path(self):
+        raw = b"*filter\n-A INPUT -j ts-input\nCOMMIT\n"
+        with tempfile.TemporaryDirectory() as directory:
+            tools = ["iptables-save", "ip6tables-save", "nft"]
+            for name in tools:
+                tool = Path(directory) / name
+                tool.touch(mode=0o755)
+                tool.chmod(0o755)
+            with (patch.object(inspect, "FIREWALL_TOOL_PATH", directory),
+                  patch.dict(os.environ, {"PATH": "/usr/bin:/bin"}),
+                  patch.object(inspect, "service_state", return_value=False),
+                  patch.object(inspect, "command", return_value=subprocess.CompletedProcess([], 0, raw, b"")) as query):
+                result = inspect.network_controls()
+        self.assertTrue(all(result[f"{name.replace('-', '_')}_available"] for name in tools))
+        self.assertEqual([Path(call.args[0][0]).name for call in query.call_args_list], tools)
+        self.assertTrue(all(Path(call.args[0][0]).is_absolute() for call in query.call_args_list))
 
     def test_listener_report_keeps_only_port_scope_and_process_name(self):
         sample = (b'LISTEN 0 128 0.0.0.0:22 0.0.0.0:* users:(("sshd",pid=123,fd=3))\n'

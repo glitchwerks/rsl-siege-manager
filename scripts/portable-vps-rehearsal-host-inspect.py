@@ -22,6 +22,7 @@ import subprocess
 
 HOST_KEY = Path("/etc/ssh/ssh_host_ed25519_key.pub")
 TAILNET = ipaddress.IPv4Network("100.64.0.0/10")
+FIREWALL_TOOL_PATH = "/usr/sbin:/usr/bin:/sbin:/bin"
 
 
 def command(args, timeout=8):
@@ -101,10 +102,11 @@ def network_controls():
     for name in ("ufw", "firewalld"):
         result[f"{name}_active"] = service_state(f"{name}.service")
     for name in ("iptables-save", "ip6tables-save", "nft"):
-        if shutil.which(name) is None:
+        tool = shutil.which(name, path=FIREWALL_TOOL_PATH)
+        if tool is None:
             result[f"{name.replace('-', '_')}_available"] = False
             continue
-        args = [name, "-t", "filter"] if name.endswith("tables-save") else [name, "list", "ruleset"]
+        args = [tool, "-t", "filter"] if name.endswith("tables-save") else [tool, "list", "ruleset"]
         query = command(args)
         if query is None or query.returncode or len(query.stdout) > 2_000_000:
             return None
