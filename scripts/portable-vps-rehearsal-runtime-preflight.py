@@ -13,10 +13,13 @@ import subprocess
 INSPECTOR = Path(__file__).with_name("portable-vps-rehearsal-host-inspect.py")
 CONFLICTS = ("docker.io", "docker-compose", "docker-doc", "docker-buildx",
              "podman-docker", "containerd", "runc")
+OFFICIAL_PACKAGES = ("docker-ce", "docker-ce-cli", "containerd.io",
+                     "docker-buildx-plugin", "docker-compose-plugin")
 RUNTIME_PATHS = {
     "docker_source": Path("/etc/apt/sources.list.d/docker.sources"),
     "docker_list": Path("/etc/apt/sources.list.d/docker.list"),
     "docker_key": Path("/etc/apt/keyrings/docker.asc"),
+    "docker_config_dir": Path("/etc/docker"),
     "docker_daemon_config": Path("/etc/docker/daemon.json"),
     "docker_state": Path("/var/lib/docker"),
 }
@@ -31,7 +34,7 @@ def host_inspection(expected_ip, expected_fingerprint):
 
 def installed_packages():
     result = {}
-    for name in CONFLICTS:
+    for name in CONFLICTS + OFFICIAL_PACKAGES:
         try:
             process = subprocess.run(
                 ["dpkg-query", "-W", "-f=${Status}", name],
@@ -56,7 +59,7 @@ def inspect(expected_ip, expected_fingerprint):
     }
     packages = installed_packages()
     checks["package_inventory"] = packages is not None
-    checks["no_conflicting_packages"] = packages is not None and not any(packages.values())
+    checks["no_existing_runtime_packages"] = packages is not None and not any(packages.values())
     paths = {name: path.exists() or path.is_symlink() for name, path in RUNTIME_PATHS.items()}
     checks["runtime_paths_unused"] = not any(paths.values())
     controls = baseline.get("network_controls")
