@@ -44,11 +44,10 @@ manual disposable backup; require encrypted upload, independent remote
 readback, receipt readback, and success notification. Verify a restore from
 the remote copy in an isolated target. Only after those pass, create the
 previously absent `/etc/rsl-backup/rehearsal-only.marker` as a root-owned
-regular file with mode `0600` in a separately confirmed service-activation
-phase. Stop if that path already exists or has an unexpected type, owner, or
-mode. Verify the marker and effective unit before enabling the timer. Then
-enable the timer
-and verify both the fixed SSH access check and the next scheduled backup.
+regular file with mode `0600` in a separately confirmed marker phase. Stop if
+that path already exists or has an unexpected type, owner, or mode. Verify the
+marker and effective unit. In a later confirmed activation phase, enable the
+timer and verify both the fixed SSH access check and the next scheduled backup.
 Test failure and missed-signal delivery to the independent monitor separately.
 
 If any phase fails, disable only the rehearsal timer, remove only the exact
