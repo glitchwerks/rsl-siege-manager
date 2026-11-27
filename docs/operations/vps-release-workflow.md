@@ -541,6 +541,9 @@ The remaining acceptance work is:
    readback and restore, migrate the reviewed revisions, promote, and run
    read-only acceptance. The recovery guard stops if any stage on the target
    has started migration or Compose activation. Keep reports sanitized.
+   Prepare the dedicated NAS rehearsal share using
+   [the isolated share runbook](rehearsal-nas-share.md) before any backup proof;
+   it must not reuse production share credentials or backup objects.
 4. Verify Mom gateway and scheduler behavior, sidecar authentication, public
    HTTPS, component identities, independent Slack and fallback email delivery,
    and unaffected host services. Production Discord writes require separate
