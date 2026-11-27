@@ -1,0 +1,12 @@
+[Unit]
+Description=Hourly isolated rehearsal backup schedule
+
+[Timer]
+OnCalendar=hourly
+RandomizedDelaySec=2min
+AccuracySec=1min
+Persistent=true
+Unit=rsl-production-backup.service
+
+[Install]
+WantedBy=timers.target
