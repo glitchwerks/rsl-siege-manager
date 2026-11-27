@@ -54,6 +54,11 @@ class RehearsalRuntimePreflightTests(unittest.TestCase):
         self.assertTrue(all(packages.values()))
         self.assertEqual(run.call_count, len(preflight.CONFLICTS + preflight.OFFICIAL_PACKAGES))
 
+    def test_residual_package_configuration_stops(self):
+        response = subprocess.CompletedProcess([], 0, b"deinstall ok config-files", b"")
+        with patch.object(preflight.subprocess, "run", return_value=response):
+            self.assertTrue(all(preflight.installed_packages().values()))
+
 
 if __name__ == "__main__":
     unittest.main()

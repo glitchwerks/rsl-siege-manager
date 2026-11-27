@@ -45,7 +45,7 @@ def installed_packages():
         status = process.stdout.strip()
         if process.returncode not in (0, 1):
             return None
-        result[name] = process.returncode == 0 and status == b"install ok installed"
+        result[name] = process.returncode == 0 and status != b"unknown ok not-installed"
     return result
 
 
