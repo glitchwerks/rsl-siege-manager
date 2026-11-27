@@ -73,11 +73,26 @@ def tailscale_state(expected):
 
 
 def default_route_safe():
-    result = command(["ip", "-j", "route", "show", "default"])
-    if result is None or result.returncode or len(result.stdout) > 65536:
-        return None
-    routes = json.loads(result.stdout)
-    return bool(routes) and all(route.get("dev") != "tailscale0" for route in routes)
+    # The main table can retain a LAN default while an exit node uses policy
+    # routing. A route lookup applies those rules without sending traffic.
+    queries = (
+        (["ip", "-j", "route", "show", "default"], True),
+        (["ip", "-j", "route", "get", "1.1.1.1"], True),
+        (["ip", "-j", "-6", "route", "show", "table", "all"], False),
+    )
+    for args, required in queries:
+        result = command(args)
+        if result is None or result.returncode or len(result.stdout) > 65536:
+            return None
+        routes = json.loads(result.stdout)
+        if not isinstance(routes, list) or (required and not routes) or not all(isinstance(route, dict) for route in routes):
+            return None
+        if any(route.get("dev") == "tailscale0" and
+               (args[-2:] == ["get", "1.1.1.1"] or route.get("dst") in
+                ("default", "0.0.0.0/0", "0.0.0.0/1", "128.0.0.0/1", "::/0", "::/1", "8000::/1"))
+               for route in routes):
+            return False
+    return True
 
 
 def network_controls():
