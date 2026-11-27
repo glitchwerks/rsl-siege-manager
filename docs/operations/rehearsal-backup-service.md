@@ -50,9 +50,17 @@ marker and effective unit. In a later confirmed activation phase, enable the
 timer and verify both the fixed SSH access check and the next scheduled backup.
 Test failure and missed-signal delivery to the independent monitor separately.
 
-If any phase fails, disable only the rehearsal timer, remove only the exact
-rehearsal marker if this activation created it, and preserve its job reports,
-and leave the production NAS share, production VPS, and production credentials
+If any phase fails, stop and disable only the rehearsal timer with
+`sudo systemctl disable --now rsl-production-backup.timer`, then verify that
+timer is inactive and no backup job is running. If a job is still active, stop
+the recovery phase and inspect it before any targeted interruption. Remove
+only the exact rehearsal marker if this activation created it. Before any VM
+snapshot restore, copy the failed run's sanitized job and phase reports from
+`/var/lib/rsl-backup/runs`
+to protected operator storage outside the VM and verify the copy completed.
+Do not copy credentials, workload content, or raw backup objects into evidence.
+Leave the production NAS share, production VPS, and production credentials
 untouched. Remove rehearsal objects and credentials only after reviewing the
 exact cleanup target. Restore the VM snapshot for an ambiguous unit or runtime
-change; never use a broad service or firewall reset.
+change only after report preservation; never use a broad service or firewall
+reset.
