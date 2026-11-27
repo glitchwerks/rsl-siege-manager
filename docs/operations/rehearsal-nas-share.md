@@ -44,8 +44,9 @@ as Everyone, Users, Authenticated Users, and Guests from the new rehearsal
 share. If the inspector finds broad production share access, stop and review
 that preexisting exposure separately; this rehearsal setup does not change
 production permissions. Do not reuse the production directory.
-The planned rclone prefix is `rsl_rehearsal/siege-backups`, where the first
-component is the SMB share name.
+The planned rclone prefix is `<selected-share-name>/siege-backups`; with the
+default share name it is `rsl_rehearsal/siege-backups`. Use the same selected
+share name in the profile and the transport inspector's expected prefix.
 
 From an elevated **Windows PowerShell** session on the NAS, run the reviewed
 read-only inspector from a pinned checkout:
@@ -66,7 +67,9 @@ NTFS rights, and absence of obvious broad or cross-account share grants.
 Broad share principals are compared by SID, including on localized Windows
 installations; unresolved identities stop the inspection.
 The NTFS check requires rights that apply to the backing folder itself; grants
-marked for child objects only do not pass.
+marked for child objects only do not pass. A direct read or write deny for the
+rehearsal account also stops the inspection. A live SMB test remains required
+to prove effective access through all groups and ACLs.
 It cannot prove effective access through every nested or domain group. A live
 SMB connection from the VM with the dedicated account, plus a production-share
 denial check, remains required. Do not paste passwords, rclone configuration,

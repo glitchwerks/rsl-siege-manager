@@ -47,7 +47,7 @@ Describe 'Rehearsal NAS read-only inspection' {
         }
         $report = Invoke-RehearsalNasBaseline rsl_rehearsal rsl_rehearsal share production_account 'C:\data\rehearsal'
         $report.status | Should -Be 'PASS'
-        ($report | ConvertTo-Json -Compress -Depth 5) | Should -Not -Match 'C:\\data'
+        ($report | ConvertTo-Json -Compress -Depth 5) | Should -Not -Match 'C:\\\\data'
     }
 
     It 'stops when the proposed backing path overlaps production' {
@@ -115,6 +115,10 @@ Describe 'Rehearsal NAS read-only inspection' {
         Test-AccountName 'OTHER\rsl_rehearsal' 'rsl_rehearsal' 'SERVER-NAS' | Should -BeFalse
     }
 
+    It 'detects a path if one is accidentally serialized into the JSON report' {
+        '{"path":"C:\\data\\rehearsal"}' | Should -Match 'C:\\\\data'
+    }
+
     It 'recognizes broad share principals' {
         Test-BroadPrincipal 'BUILTIN\Users' | Should -BeTrue
         Test-BroadPrincipal 'Everyone' | Should -BeTrue
@@ -177,7 +181,7 @@ Describe 'Rehearsal NAS read-only inspection' {
         }
         $report = Invoke-RehearsalNasInspection rsl_rehearsal rsl_rehearsal share production_account
         $report.status | Should -Be 'PASS'
-        ($report | ConvertTo-Json -Compress -Depth 5) | Should -Not -Match 'C:\\data'
+        ($report | ConvertTo-Json -Compress -Depth 5) | Should -Not -Match 'C:\\\\data'
     }
 
     It 'rejects read and write rights that apply only to children' {
@@ -212,6 +216,50 @@ Describe 'Rehearsal NAS read-only inspection' {
         }
         $report = Invoke-RehearsalNasInspection rsl_rehearsal rsl_rehearsal share production_account
         $report.status | Should -Be 'STOP'
+        $report.checks.rehearsal_ntfs_read_write | Should -BeFalse
+    }
+
+    It 'rejects a direct write deny despite a direct read and write allow' {
+        Mock Get-SmbShare {
+            if ($Name -eq 'rsl_rehearsal') {
+                [pscustomobject]@{ Path = 'C:\data\rehearsal'; EncryptData = $true }
+            } else {
+                [pscustomobject]@{ Path = 'C:\data\production'; EncryptData = $true }
+            }
+        }
+        Mock Get-LocalUser {
+            [pscustomobject]@{ Enabled = $true; PasswordRequired = $true }
+        }
+        Mock Get-SmbShareAccess {
+            if ($Name -eq 'rsl_rehearsal') {
+                [pscustomobject]@{ AccountName = 'SERVER-NAS\rsl_rehearsal';
+                                   AccessControlType = 'Allow'; AccessRight = 'Change' }
+            } else {
+                [pscustomobject]@{ AccountName = 'SERVER-NAS\production_account';
+                                   AccessControlType = 'Allow'; AccessRight = 'Change' }
+            }
+        }
+        Mock Test-Path { $true }
+        Mock Get-Acl {
+            [pscustomobject]@{ Access = @(
+                [pscustomobject]@{
+                    IdentityReference = 'SERVER-NAS\rsl_rehearsal'
+                    AccessControlType = 'Deny'
+                    PropagationFlags = [System.Security.AccessControl.PropagationFlags]::None
+                    FileSystemRights = [System.Security.AccessControl.FileSystemRights]::WriteData
+                },
+                [pscustomobject]@{
+                    IdentityReference = 'SERVER-NAS\rsl_rehearsal'
+                    AccessControlType = 'Allow'
+                    PropagationFlags = [System.Security.AccessControl.PropagationFlags]::None
+                    FileSystemRights = ([System.Security.AccessControl.FileSystemRights]::ReadData -bor
+                                        [System.Security.AccessControl.FileSystemRights]::WriteData)
+                }
+            ) }
+        }
+        $report = Invoke-RehearsalNasInspection rsl_rehearsal rsl_rehearsal share production_account
+        $report.status | Should -Be 'STOP'
+        $report.checks.no_direct_rehearsal_ntfs_deny | Should -BeFalse
         $report.checks.rehearsal_ntfs_read_write | Should -BeFalse
     }
 
