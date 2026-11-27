@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
@@ -17,6 +18,44 @@ SHA = "a" * 40
 
 
 class RehearsalCheckoutTests(unittest.TestCase):
+    def install_fixture(self, directory, *, staged_remote=None, final_checks=None):
+        stage = Path(directory) / "stage"
+        target = Path(directory) / "target"
+
+        def run(args, timeout=30):
+            if args[1] == "clone":
+                stage.mkdir()
+                (stage / ".git").mkdir()
+                for name in checkout.REQUIRED:
+                    script = stage / name
+                    script.parent.mkdir(parents=True, exist_ok=True)
+                    script.touch()
+            return True
+
+        def output(args, timeout=30):
+            if "rev-parse" in args:
+                value = SHA
+            elif "get-url" in args:
+                value = staged_remote or checkout.SOURCE_URL
+            elif "status" in args:
+                value = ""
+            else:
+                raise AssertionError(args)
+            return subprocess.CompletedProcess(args, 0, value.encode(), b"")
+
+        with (patch.object(checkout, "STAGE", stage),
+              patch.object(checkout, "TARGET", target),
+              patch.object(checkout, "host_checks", return_value={"identity": True}),
+              patch.object(checkout, "success", side_effect=run),
+              patch.object(checkout, "command", side_effect=output),
+              patch.object(checkout, "protected_directory", return_value=True)):
+            if final_checks is None:
+                result = checkout.install("100.93.16.52", "SHA256:" + "A" * 43, SHA)
+            else:
+                with patch.object(checkout, "checkout_checks", return_value=final_checks):
+                    result = checkout.install("100.93.16.52", "SHA256:" + "A" * 43, SHA)
+        return result, stage.exists(), target.exists()
+
     def test_occupied_target_stops_before_clone(self):
         with (patch.object(checkout, "host_checks", return_value={"identity": True}),
               patch.object(checkout, "unused", side_effect=[False, True]),
@@ -70,6 +109,43 @@ class RehearsalCheckoutTests(unittest.TestCase):
             return subprocess.CompletedProcess(args, 0, json.dumps(data).encode(), b"")
         with patch.object(checkout, "command", side_effect=routes):
             self.assertFalse(checkout.route_safe())
+
+    def test_split_default_ipv4_route_blocks_host_check(self):
+        def routes(args, timeout=30):
+            if args[-2:] == ["get", "1.1.1.1"]:
+                data = [{"dst": "1.1.1.1", "dev": "ens33"}]
+            elif "-6" in args:
+                data = []
+            else:
+                data = [{"dst": "default", "dev": "ens33"},
+                        {"dst": "128.0.0.0/1", "dev": "tailscale0"}]
+            return subprocess.CompletedProcess(args, 0, json.dumps(data).encode(), b"")
+        with patch.object(checkout, "command", side_effect=routes):
+            self.assertFalse(checkout.route_safe())
+
+    def test_install_promotes_only_verified_stage(self):
+        with TemporaryDirectory() as directory:
+            checks, stage_exists, target_exists = self.install_fixture(directory)
+        self.assertTrue(all(checks.values()))
+        self.assertFalse(stage_exists)
+        self.assertTrue(target_exists)
+
+    def test_install_rejects_unreviewed_stage_before_rename(self):
+        with TemporaryDirectory() as directory:
+            checks, stage_exists, target_exists = self.install_fixture(
+                directory, staged_remote="https://example.invalid/other.git")
+        self.assertFalse(checks["stage_origin_reviewed"])
+        self.assertTrue(stage_exists)
+        self.assertFalse(target_exists)
+
+    def test_install_failed_final_verification_cannot_pass(self):
+        with TemporaryDirectory() as directory:
+            checks, stage_exists, target_exists = self.install_fixture(
+                directory, final_checks={"exact_head": False})
+        self.assertTrue(checks["atomic_install"])
+        self.assertFalse(checks["exact_head"])
+        self.assertFalse(stage_exists)
+        self.assertTrue(target_exists)
 
     def test_report_path_must_be_root_private(self):
         self.assertIsNone(checkout.reserve_report(Path("/tmp/report.json")))

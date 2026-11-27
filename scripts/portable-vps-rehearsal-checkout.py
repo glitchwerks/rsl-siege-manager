@@ -68,7 +68,7 @@ def host_fingerprint():
 
 
 def route_safe():
-    queries = ((["ip", "-j", "route", "show", "default"], True),
+    queries = ((["ip", "-j", "-4", "route", "show", "table", "all"], True),
                (["ip", "-j", "route", "get", "1.1.1.1"], True),
                (["ip", "-j", "-6", "route", "show", "table", "all"], False))
     for args, required in queries:
