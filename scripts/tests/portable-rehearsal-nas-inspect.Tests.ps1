@@ -2,15 +2,22 @@
 #Requires -Modules @{ ModuleName = 'Pester'; ModuleVersion = '5.0.0' }
 
 BeforeAll {
+    $script:OriginalComputerName = $env:COMPUTERNAME
+    $env:COMPUTERNAME = 'SERVER-NAS'
     . (Join-Path $PSScriptRoot '..\portable-rehearsal-nas-inspect.ps1') `
         -ShareName rsl_rehearsal -AccountName rsl_rehearsal `
         -ProductionShareName share
 }
 
+AfterAll {
+    $env:COMPUTERNAME = $script:OriginalComputerName
+}
+
 Describe 'Rehearsal NAS read-only inspection' {
     It 'recognizes a direct local-account grant' {
-        Test-AccountName 'SERVER-NAS\rsl_rehearsal' 'rsl_rehearsal' | Should -BeTrue
-        Test-AccountName 'SERVER-NAS\production_account' 'rsl_rehearsal' | Should -BeFalse
+        Test-AccountName 'SERVER-NAS\rsl_rehearsal' 'rsl_rehearsal' 'SERVER-NAS' | Should -BeTrue
+        Test-AccountName 'SERVER-NAS\production_account' 'rsl_rehearsal' 'SERVER-NAS' | Should -BeFalse
+        Test-AccountName 'OTHER\rsl_rehearsal' 'rsl_rehearsal' 'SERVER-NAS' | Should -BeFalse
     }
 
     It 'recognizes broad share principals' {

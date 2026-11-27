@@ -20,8 +20,10 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 function Test-AccountName {
-    param([string]$Identity, [string]$Expected)
-    return (($Identity -split '\\')[-1] -ieq $Expected)
+    param([string]$Identity, [string]$Expected, [string]$LocalComputer)
+    $parts = $Identity -split '\\'
+    return ($parts.Count -eq 2 -and $parts[0] -ieq $LocalComputer -and
+            $parts[1] -ieq $Expected)
 }
 
 function Test-BroadPrincipal {
@@ -83,10 +85,10 @@ function Invoke-RehearsalNasInspection {
         $checks.direct_rehearsal_share_write = @($shareAccess | Where-Object {
             $_.AccessControlType -eq 'Allow' -and
             $_.AccessRight -in @('Change', 'Full') -and
-            (Test-AccountName ([string]$_.AccountName) $RehearsalAccount)
+            (Test-AccountName ([string]$_.AccountName) $RehearsalAccount $env:COMPUTERNAME)
         }).Count -gt 0
         $checks.no_rehearsal_account_on_production_share = @($productionAccess | Where-Object {
-            Test-AccountName ([string]$_.AccountName) $RehearsalAccount
+            Test-AccountName ([string]$_.AccountName) $RehearsalAccount $env:COMPUTERNAME
         }).Count -eq 0
         $checks.no_broad_rehearsal_share_grant = @($shareAccess | Where-Object {
             $_.AccessControlType -eq 'Allow' -and
@@ -104,7 +106,7 @@ function Invoke-RehearsalNasInspection {
             $checks.rehearsal_ntfs_read_write = @($acl.Access | Where-Object {
                 $rights = [int]$_.FileSystemRights
                 $_.AccessControlType -eq 'Allow' -and
-                (Test-AccountName ([string]$_.IdentityReference) $RehearsalAccount) -and
+                (Test-AccountName ([string]$_.IdentityReference) $RehearsalAccount $env:COMPUTERNAME) -and
                 ($rights -band $read) -ne 0 -and ($rights -band $write) -ne 0
             }).Count -gt 0
         }
