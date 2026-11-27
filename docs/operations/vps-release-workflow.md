@@ -586,6 +586,9 @@ host state; do not uninstall packages or overwrite paths to force a pass.
 The production firewall helper assumes a dedicated VPS and must not be applied
 to this desktop VM without a separate adaptation and review. Preserve the
 existing Tailscale, SSH, NetworkManager, and desktop services during bootstrap.
+The phase-gated installation and recovery sequence is in
+[the rehearsal runtime runbook](rehearsal-runtime-install.md). Runtime setup
+is a separate operator action after the read-only preflight passes.
 
 The protected `vps-rehearsal` GitHub environment in Siege requires approval by
 the same reviewer as `vps-prod` and allows deployments only from `main`. It
