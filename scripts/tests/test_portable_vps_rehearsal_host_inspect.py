@@ -18,6 +18,15 @@ SPEC.loader.exec_module(inspect)
 
 
 class RehearsalHostInspectTests(unittest.TestCase):
+    def test_listener_report_keeps_only_port_scope_and_process_name(self):
+        sample = (b'LISTEN 0 128 0.0.0.0:22 0.0.0.0:* users:(("sshd",pid=123,fd=3))\n'
+                  b'LISTEN 0 128 127.0.0.1:631 0.0.0.0:* users:(("cupsd",pid=456,fd=4))\n')
+        with patch.object(inspect, "command", return_value=subprocess.CompletedProcess([], 0, sample, b"")):
+            self.assertEqual(inspect.listener_details("100.93.16.52"), [
+                {"port": 22, "scope": "all_interfaces", "process": "sshd"},
+                {"port": 631, "scope": "loopback", "process": "cupsd"},
+            ])
+
     def test_service_and_timer_inventory_uses_unit_names_only(self):
         result = subprocess.CompletedProcess([], 0, b"ssh.service loaded active running OpenSSH\n", b"")
         with patch.object(inspect, "command", return_value=result):
@@ -49,6 +58,7 @@ class RehearsalHostInspectTests(unittest.TestCase):
               patch.object(inspect, "tailscale_state", return_value=True),
               patch.object(inspect, "default_route_safe", return_value=True),
               patch.object(inspect, "listening_ports", return_value=[22]),
+              patch.object(inspect, "listener_details", return_value=[{"port": 22, "scope": "all_interfaces", "process": "sshd"}]),
               patch.object(inspect, "container_count", return_value=(0, False)),
               patch.object(inspect, "unit_names", side_effect=[["ssh.service", "tailscaled.service"], []])):
             report = inspect.inspect("100.93.16.52", "SHA256:" + "A" * 43)
@@ -64,6 +74,7 @@ class RehearsalHostInspectTests(unittest.TestCase):
               patch.object(inspect, "tailscale_state", return_value=True),
               patch.object(inspect, "default_route_safe", return_value=True),
               patch.object(inspect, "listening_ports", return_value=[22]),
+              patch.object(inspect, "listener_details", return_value=[{"port": 22, "scope": "all_interfaces", "process": "sshd"}]),
               patch.object(inspect, "container_count", return_value=(0, False)),
               patch.object(inspect, "unit_names", side_effect=[["ssh.service"], []])):
             report = inspect.inspect("100.93.16.52", "SHA256:" + "A" * 43)
@@ -79,6 +90,7 @@ class RehearsalHostInspectTests(unittest.TestCase):
               patch.object(inspect, "tailscale_state", return_value=True),
               patch.object(inspect, "default_route_safe", return_value=True),
               patch.object(inspect, "listening_ports", return_value=[53]),
+              patch.object(inspect, "listener_details", return_value=[{"port": 53, "scope": "loopback", "process": "dns"}]),
               patch.object(inspect, "container_count", return_value=(0, False)),
               patch.object(inspect, "unit_names", side_effect=[["ssh.service"], []])):
             report = inspect.inspect("100.93.16.52", "SHA256:" + "A" * 43)

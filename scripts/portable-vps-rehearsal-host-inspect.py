@@ -96,6 +96,34 @@ def listening_ports():
     return sorted(ports)
 
 
+def listener_details(expected_ip):
+    result = command(["ss", "-H", "-ltnp"])
+    if result is None or result.returncode or len(result.stdout) > 65536:
+        return None
+    entries = []
+    for line in result.stdout.decode("ascii", "replace").splitlines():
+        fields = line.split()
+        if len(fields) < 5:
+            return None
+        address = fields[3]
+        host, sep, port = address.rpartition(":")
+        if not sep or not port.isdigit():
+            return None
+        host = host.strip("[]")
+        if host in {"0.0.0.0", "::", "*"}:
+            scope = "all_interfaces"
+        elif host.startswith("127.") or host == "::1":
+            scope = "loopback"
+        elif host == expected_ip:
+            scope = "tailnet"
+        else:
+            scope = "other_interface"
+        process = re.search(r'users:\(\("([A-Za-z0-9_.@+-]{1,64})"', line)
+        entries.append({"port": int(port), "scope": scope,
+                        "process": process.group(1) if process else "unknown"})
+    return sorted(entries, key=lambda entry: (entry["port"], entry["scope"], entry["process"])) if len(entries) <= 128 else None
+
+
 def container_count():
     if shutil.which("docker") is None:
         return 0, False
@@ -138,6 +166,9 @@ def inspect(expected_ip, expected_fingerprint):
         checks["listener_query"] = ports is not None
         checks["ssh_port_22_listening"] = ports is not None and 22 in ports
         report["tcp_listen_ports"] = ports
+        details = listener_details(expected_ip)
+        checks["listener_ownership_query"] = details is not None
+        report["listeners"] = details
         count, docker_installed = container_count()
         checks["container_query"] = count is not None
         report["existing_containers"] = count
