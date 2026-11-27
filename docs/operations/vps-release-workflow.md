@@ -583,11 +583,14 @@ host state; do not uninstall packages or overwrite paths to force a pass.
 The production firewall helper assumes a dedicated VPS and must not be applied
 to this desktop VM without a separate adaptation and review. Preserve the
 existing Tailscale, SSH, NetworkManager, and desktop services during bootstrap.
+The phase-gated installation and recovery sequence is in
+[the rehearsal runtime runbook](rehearsal-runtime-install.md). Runtime setup
+is a separate operator action after the read-only preflight passes.
 
 The protected `vps-rehearsal` GitHub environment in Siege requires approval by
 the same reviewer as `vps-prod` and allows deployments only from `main`. It
-currently has no secrets. Store the VM-only host, pinned host key, SSH
-identity, and Tailscale OAuth credentials there under these distinct secret
+already stores the VM-only host, pinned host key, and distinct SSH identity.
+Store the remaining Tailscale OAuth credentials there under these distinct secret
 names: `REHEARSAL_VPS_TAILSCALE_HOST`,
 `REHEARSAL_VPS_SSH_HOST_FINGERPRINT`, `REHEARSAL_VPS_SSH_KNOWN_HOSTS`,
 `REHEARSAL_VPS_DEPLOY_SSH_KEY`, `REHEARSAL_TAILSCALE_OAUTH_CLIENT_ID`, and
