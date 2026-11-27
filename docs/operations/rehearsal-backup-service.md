@@ -44,7 +44,9 @@ lists the remote prefix; it does not create a backup or prove write access.
 
 Install and activate in separate confirmed phases. First copy only the exact
 reviewed units and inspect their effective systemd properties. Then run one
-manual disposable backup; require encrypted upload, independent remote
+manual disposable backup, capturing its terminal output in protected operator
+storage so a failure before report creation is retained; review and redact
+that output before sharing it. Require encrypted upload, independent remote
 readback, receipt readback, and success notification. Verify a restore from
 the remote copy in an isolated target. Only after those pass, create the
 previously absent `/etc/rsl-backup/rehearsal-only.marker` as a root-owned
@@ -65,9 +67,10 @@ only the exact rehearsal marker if this activation created it. Before any VM
 snapshot restore, read the `root` field from the reviewed private job profile
 and copy the failed run's sanitized job and phase reports from `<root>/runs`
 to protected operator storage outside the VM; verify the copy completed. If
-the failure happened before a run report was created, preserve the relevant
-service journal in protected operator storage outside the VM, review and redact
-it before sharing any evidence, and verify that copy before restoring. A
+the failure happened before a run report was created, preserve the captured
+manual-run output or, for a service run, the relevant service journal in
+protected operator storage outside the VM. Review and redact that evidence
+before sharing it, and verify that it was preserved before restoring. A
 missing profile or uncertain report root is a stop condition for recovery,
 not a reason to assume the default path.
 Do not copy credentials, workload content, or raw backup objects into evidence.
