@@ -43,16 +43,16 @@ class RehearsalRuntimePreflightTests(unittest.TestCase):
                   patch.object(preflight.shutil, "which", return_value="/usr/bin/tool")):
                 report = preflight.inspect("100.93.16.52", "SHA256:" + "A" * 43)
         self.assertEqual(report["status"], "STOP")
-        self.assertFalse(report["checks"]["no_conflicting_packages"])
+        self.assertFalse(report["checks"]["no_existing_runtime_packages"])
         self.assertFalse(report["checks"]["runtime_paths_unused"])
 
     def test_package_inventory_uses_fixed_names(self):
         response = subprocess.CompletedProcess([], 0, b"install ok installed", b"")
         with patch.object(preflight.subprocess, "run", return_value=response) as run:
             packages = preflight.installed_packages()
-        self.assertEqual(set(packages), set(preflight.CONFLICTS))
+        self.assertEqual(set(packages), set(preflight.CONFLICTS + preflight.OFFICIAL_PACKAGES))
         self.assertTrue(all(packages.values()))
-        self.assertEqual(run.call_count, len(preflight.CONFLICTS))
+        self.assertEqual(run.call_count, len(preflight.CONFLICTS + preflight.OFFICIAL_PACKAGES))
 
 
 if __name__ == "__main__":
