@@ -38,7 +38,8 @@ account or grant the new account access to the production share.
 
 Create the `rsl_rehearsal` share on the new folder with SMB encryption required.
 Grant the dedicated account Change access at the share and read/write access
-through NTFS; retain NAS administrator access. Do not grant the production
+through NTFS, including the right to create subdirectories in the backing
+folder; retain NAS administrator access. Do not grant the production
 backup account access to the rehearsal share. Remove broad share grants such
 as Everyone, Users, Authenticated Users, and Guests from the new rehearsal
 share. If the inspector finds broad production share access, stop and review
@@ -66,7 +67,8 @@ backing-folder separation, local account status, direct rehearsal share and
 NTFS rights, and absence of obvious broad or cross-account share grants.
 Broad share principals are compared by SID, including on localized Windows
 installations; unresolved identities stop the inspection.
-The NTFS check requires rights that apply to the backing folder itself; grants
+The NTFS check requires read, write, and subdirectory creation rights that
+apply to the backing folder itself; grants
 marked for child objects only do not pass. A direct read or write deny for the
 rehearsal account also stops the inspection. A live SMB test remains required
 to prove effective access through all groups and ACLs.

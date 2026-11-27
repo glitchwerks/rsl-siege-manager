@@ -145,13 +145,14 @@ function Invoke-RehearsalNasInspection {
             $acl = Get-Acl -LiteralPath $share.Path -ErrorAction Stop
             $read = [int][System.Security.AccessControl.FileSystemRights]::ReadData
             $write = [int][System.Security.AccessControl.FileSystemRights]::WriteData
+            $createDirectory = [int][System.Security.AccessControl.FileSystemRights]::AppendData
             $checks.no_direct_rehearsal_ntfs_deny = @($acl.Access | Where-Object {
                 $rights = [int]$_.FileSystemRights
                 $propagation = [int]$_.PropagationFlags
                 $_.AccessControlType -eq 'Deny' -and
                 (Test-AccountName ([string]$_.IdentityReference) $RehearsalAccount $env:COMPUTERNAME) -and
                 ($propagation -band [int][System.Security.AccessControl.PropagationFlags]::InheritOnly) -eq 0 -and
-                ($rights -band ($read -bor $write)) -ne 0
+                ($rights -band ($read -bor $write -bor $createDirectory)) -ne 0
             }).Count -eq 0
             $checks.rehearsal_ntfs_read_write = @($acl.Access | Where-Object {
                 $rights = [int]$_.FileSystemRights
@@ -159,7 +160,8 @@ function Invoke-RehearsalNasInspection {
                 $_.AccessControlType -eq 'Allow' -and
                 (Test-AccountName ([string]$_.IdentityReference) $RehearsalAccount $env:COMPUTERNAME) -and
                 ($propagation -band [int][System.Security.AccessControl.PropagationFlags]::InheritOnly) -eq 0 -and
-                ($rights -band $read) -ne 0 -and ($rights -band $write) -ne 0
+                ($rights -band $read) -ne 0 -and ($rights -band $write) -ne 0 -and
+                ($rights -band $createDirectory) -ne 0
             }).Count -gt 0 -and $checks.no_direct_rehearsal_ntfs_deny
         }
     } catch {
