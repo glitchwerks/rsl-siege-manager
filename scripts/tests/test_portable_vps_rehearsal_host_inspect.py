@@ -18,6 +18,16 @@ SPEC.loader.exec_module(inspect)
 
 
 class RehearsalHostInspectTests(unittest.TestCase):
+    def test_network_controls_omit_raw_firewall_rules(self):
+        raw = b"*filter\n-A INPUT -s 10.1.2.3 -j ts-input\nCOMMIT\n"
+        with (patch.object(inspect, "service_state", return_value=False),
+              patch.object(inspect.shutil, "which", side_effect=lambda name: name),
+              patch.object(inspect, "command", return_value=subprocess.CompletedProcess([], 0, raw, b""))):
+            result = inspect.network_controls()
+        self.assertTrue(result["iptables_save_has_rules"])
+        self.assertTrue(result["iptables_save_mentions_tailscale"])
+        self.assertNotIn("10.1.2.3", str(result))
+
     def test_listener_report_keeps_only_port_scope_and_process_name(self):
         sample = (b'LISTEN 0 128 0.0.0.0:22 0.0.0.0:* users:(("sshd",pid=123,fd=3))\n'
                   b'LISTEN 0 128 127.0.0.1:631 0.0.0.0:* users:(("cupsd",pid=456,fd=4))\n')
@@ -57,6 +67,7 @@ class RehearsalHostInspectTests(unittest.TestCase):
               patch.object(inspect, "host_fingerprint", return_value="SHA256:" + "A" * 43),
               patch.object(inspect, "tailscale_state", return_value=True),
               patch.object(inspect, "default_route_safe", return_value=True),
+              patch.object(inspect, "network_controls", return_value={"nft_available": False}),
               patch.object(inspect, "listening_ports", return_value=[22]),
               patch.object(inspect, "listener_details", return_value=[{"port": 22, "scope": "all_interfaces", "process": "sshd"}]),
               patch.object(inspect, "container_count", return_value=(0, False)),
@@ -73,6 +84,7 @@ class RehearsalHostInspectTests(unittest.TestCase):
               patch.object(inspect, "host_fingerprint", return_value="SHA256:" + "B" * 43),
               patch.object(inspect, "tailscale_state", return_value=True),
               patch.object(inspect, "default_route_safe", return_value=True),
+              patch.object(inspect, "network_controls", return_value={"nft_available": False}),
               patch.object(inspect, "listening_ports", return_value=[22]),
               patch.object(inspect, "listener_details", return_value=[{"port": 22, "scope": "all_interfaces", "process": "sshd"}]),
               patch.object(inspect, "container_count", return_value=(0, False)),
@@ -89,6 +101,7 @@ class RehearsalHostInspectTests(unittest.TestCase):
               patch.object(inspect, "host_fingerprint", return_value="SHA256:" + "A" * 43),
               patch.object(inspect, "tailscale_state", return_value=True),
               patch.object(inspect, "default_route_safe", return_value=True),
+              patch.object(inspect, "network_controls", return_value={"nft_available": False}),
               patch.object(inspect, "listening_ports", return_value=[53]),
               patch.object(inspect, "listener_details", return_value=[{"port": 53, "scope": "loopback", "process": "dns"}]),
               patch.object(inspect, "container_count", return_value=(0, False)),

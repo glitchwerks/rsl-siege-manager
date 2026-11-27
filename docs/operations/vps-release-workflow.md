@@ -562,7 +562,8 @@ Pass the tailnet IPv4 and ED25519 fingerprint verified at the console as
 `--expected-ip` and `--expected-fingerprint`, plus `--confirm-readonly`.
 The single JSON report includes fixed checks, capacity, TCP listener ports,
 their bind scope and process names, running service/timer names, existing
-container count and whether portable paths already exist. It omits host keys,
+container count, a bounded firewall ownership summary, and whether portable
+paths already exist. It omits host keys,
 credentials, raw addresses/routes, process arguments and raw command output.
 A `PASS` confirms the inspection completed against the expected identity; review the reported
 existing state before any host bootstrap. It does not install or authorize

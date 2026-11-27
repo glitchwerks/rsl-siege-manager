@@ -80,6 +80,28 @@ def default_route_safe():
     return bool(routes) and all(route.get("dev") != "tailscale0" for route in routes)
 
 
+def network_controls():
+    """Summarize firewall ownership without printing rules or addresses."""
+    result = {}
+    for name in ("ufw", "firewalld"):
+        result[f"{name}_active"] = service_state(f"{name}.service")
+    for name in ("iptables-save", "ip6tables-save", "nft"):
+        if shutil.which(name) is None:
+            result[f"{name.replace('-', '_')}_available"] = False
+            continue
+        args = [name, "-t", "filter"] if name.endswith("tables-save") else [name, "list", "ruleset"]
+        query = command(args)
+        if query is None or query.returncode or len(query.stdout) > 2_000_000:
+            return None
+        result[f"{name.replace('-', '_')}_available"] = True
+        result[f"{name.replace('-', '_')}_has_rules"] = (
+            any(line.startswith(b"-A ") for line in query.stdout.splitlines())
+            if name.endswith("tables-save") else bool(query.stdout.strip())
+        )
+        result[f"{name.replace('-', '_')}_mentions_tailscale"] = b"ts-" in query.stdout or b"tailscale" in query.stdout
+    return result
+
+
 def listening_ports():
     result = command(["ss", "-H", "-ltn"])
     if result is None or result.returncode or len(result.stdout) > 65536:
@@ -162,6 +184,9 @@ def inspect(expected_ip, expected_fingerprint):
         checks["host_fingerprint_matches"] = host_fingerprint() == expected_fingerprint
         checks["tailscale_online_at_expected_ip"] = tailscale_state(expected_ip)
         checks["default_route_not_tailscale"] = default_route_safe()
+        controls = network_controls()
+        checks["network_controls_query"] = controls is not None
+        report["network_controls"] = controls
         ports = listening_ports()
         checks["listener_query"] = ports is not None
         checks["ssh_port_22_listening"] = ports is not None and 22 in ports
