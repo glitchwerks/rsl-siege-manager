@@ -48,6 +48,41 @@ class RehearsalRuntimeInstallTests(unittest.TestCase):
             install.apt_plan(("docker-ce=5:29.0",))
         self.assertEqual(run.call_args.args[0][-1], "docker-ce=5:29.0")
 
+    def test_real_install_refuses_removals_even_after_clean_simulation(self):
+        before = {"inspection_status": "PASS", "docker_installed": False,
+                  "existing_containers": 0, "running_services": ["ssh.service"],
+                  "active_timers": ["apt-daily.timer"]}
+        after = {**before, "docker_installed": True,
+                 "network_controls": {name: True for name in
+                                      ("iptables_save_mentions_tailscale",
+                                       "ip6tables_save_mentions_tailscale",
+                                       "nft_mentions_tailscale")}}
+        plan = {"packages_planned": True, "no_removals": True, "no_upgrades": True,
+                "planned_install_count": len(install.PACKAGES),
+                "planned_install_names": list(install.PACKAGES),
+                "removed_names": [], "upgraded_names": []}
+        with tempfile.TemporaryDirectory() as directory:
+            docker_dir = Path(directory) / "docker"
+            with (patch.object(install, "DOCKER_DIR", docker_dir),
+                  patch.object(install, "DAEMON", docker_dir / "daemon.json"),
+                  patch.object(install, "Path", side_effect=lambda value:
+                               Path(directory) / "var-lib-docker"
+                               if value == "/var/lib/docker" else Path(value)),
+                  patch.object(install, "baseline", side_effect=[before, after]),
+                  patch.object(install, "official_candidate_versions",
+                               return_value={name: "1.0" for name in install.PACKAGES}),
+                  patch.object(install, "repo_ready", return_value=True),
+                  patch.object(install, "apt_plan", return_value=plan),
+                  patch.object(install, "write_new"),
+                  patch.object(install, "exact_file", return_value=True),
+                  patch.object(install, "success", return_value=True) as run):
+                checks = install.install_runtime("100.93.16.52", "SHA256:" + "A" * 43)
+        apt_calls = [call.args[0] for call in run.call_args_list
+                     if call.args[0][:2] == ["apt-get", "-y"]]
+        self.assertTrue(checks["apt_install"])
+        self.assertEqual(len(apt_calls), 1)
+        self.assertIn("--no-remove", apt_calls[0])
+
     def test_repo_phase_stops_before_download_when_preflight_fails(self):
         class Preflight:
             @staticmethod

@@ -252,7 +252,7 @@ def install_runtime(ip, fingerprint, details=None):
     if not checks["daemon_configuration"]:
         return checks
     checks["apt_install"] = success(
-        ["apt-get", "-y", "--no-install-recommends", "install",
+        ["apt-get", "-y", "--no-install-recommends", "--no-remove", "install",
          *(f"{name}={candidates[name]}" for name in PACKAGES)], 1800)
     if not checks["apt_install"]:
         return checks
