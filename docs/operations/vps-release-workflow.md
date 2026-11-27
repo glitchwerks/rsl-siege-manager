@@ -595,7 +595,12 @@ names: `REHEARSAL_VPS_TAILSCALE_HOST`,
 `REHEARSAL_VPS_SSH_USER`. These names must never contain production values.
 The rehearsal VM needs its own reviewed restricted SSH key and host command,
 with console recovery and tailnet routing checked before activation. The
-rehearsal jobs use `tag:github-rehearsal`; grant that tag SSH access only to the
+dedicated public half is `deploy/portable/host/github-vps-rehearsal.pub`;
+its private half belongs only in `REHEARSAL_VPS_DEPLOY_SSH_KEY` in the
+protected rehearsal environment. Do not install the public key until the
+fresh host's root `authorized_keys` path, forced-command prerequisites, and
+rollback have passed a separate review. The rehearsal jobs use
+`tag:github-rehearsal`; grant that tag SSH access only to the
 VM. Keep the existing `tag:github-deploy` grant to production unchanged, and
 do not grant the rehearsal tag access to the production VPS.
 
