@@ -166,12 +166,17 @@ def install(ip, fingerprint, sha):
         checks["target_still_unused"] = False
         return checks
     stage_head = command(["git", "-C", str(STAGE), "rev-parse", "HEAD"])
+    stage_remote = command(["git", "-C", str(STAGE), "remote", "get-url", "origin"])
     stage_status = command(["git", "-C", str(STAGE), "status", "--porcelain", "--untracked-files=all"])
     checks["stage_exact_clean"] = (stage_head is not None and stage_head.returncode == 0
                                    and stage_head.stdout.strip() == sha.encode()
                                    and stage_status is not None and stage_status.returncode == 0
                                    and not stage_status.stdout.strip())
-    if not checks["stage_exact_clean"]:
+    checks["stage_origin_reviewed"] = (stage_remote is not None and stage_remote.returncode == 0
+                                       and stage_remote.stdout.decode("utf-8", "replace").strip() == SOURCE_URL)
+    checks["stage_scripts_present"] = all((STAGE / name).is_file() and not (STAGE / name).is_symlink()
+                                          for name in REQUIRED)
+    if not all(checks.values()):
         return checks
     try:
         STAGE.rename(TARGET)
