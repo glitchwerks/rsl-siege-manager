@@ -23,6 +23,8 @@ RUNTIME_PATHS = {
     "docker_daemon_config": Path("/etc/docker/daemon.json"),
     "docker_state": Path("/var/lib/docker"),
 }
+APT_SOURCES = Path("/etc/apt/sources.list.d")
+APT_LIST = Path("/etc/apt/sources.list")
 
 
 def host_inspection(expected_ip, expected_fingerprint):
@@ -49,6 +51,24 @@ def installed_packages():
     return result
 
 
+def docker_apt_source_present():
+    paths = [APT_LIST]
+    paths.extend(sorted(APT_SOURCES.glob("*.list")))
+    paths.extend(sorted(APT_SOURCES.glob("*.sources")))
+    if len(paths) > 128:
+        return None
+    try:
+        for path in paths:
+            if path.is_file():
+                if path.stat().st_size > 131072:
+                    return None
+                if b"download.docker.com/linux/debian" in path.read_bytes():
+                    return True
+    except OSError:
+        return None
+    return False
+
+
 def inspect(expected_ip, expected_fingerprint):
     baseline = host_inspection(expected_ip, expected_fingerprint)
     checks = {
@@ -60,6 +80,9 @@ def inspect(expected_ip, expected_fingerprint):
     packages = installed_packages()
     checks["package_inventory"] = packages is not None
     checks["no_existing_runtime_packages"] = packages is not None and not any(packages.values())
+    source_present = docker_apt_source_present()
+    checks["apt_sources_readable"] = source_present is not None
+    checks["no_other_docker_source"] = source_present is False
     paths = {name: path.exists() or path.is_symlink() for name, path in RUNTIME_PATHS.items()}
     checks["runtime_paths_unused"] = not any(paths.values())
     controls = baseline.get("network_controls")
