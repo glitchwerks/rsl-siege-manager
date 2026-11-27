@@ -65,6 +65,8 @@ backing-folder separation, local account status, direct rehearsal share and
 NTFS rights, and absence of obvious broad or cross-account share grants.
 Broad share principals are compared by SID, including on localized Windows
 installations; unresolved identities stop the inspection.
+The NTFS check requires rights that apply to the backing folder itself; grants
+marked for child objects only do not pass.
 It cannot prove effective access through every nested or domain group. A live
 SMB connection from the VM with the dedicated account, plus a production-share
 denial check, remains required. Do not paste passwords, rclone configuration,

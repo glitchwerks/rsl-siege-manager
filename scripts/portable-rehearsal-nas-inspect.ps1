@@ -145,8 +145,10 @@ function Invoke-RehearsalNasInspection {
             $write = [int][System.Security.AccessControl.FileSystemRights]::WriteData
             $checks.rehearsal_ntfs_read_write = @($acl.Access | Where-Object {
                 $rights = [int]$_.FileSystemRights
+                $propagation = [int]$_.PropagationFlags
                 $_.AccessControlType -eq 'Allow' -and
                 (Test-AccountName ([string]$_.IdentityReference) $RehearsalAccount $env:COMPUTERNAME) -and
+                ($propagation -band [int][System.Security.AccessControl.PropagationFlags]::InheritOnly) -eq 0 -and
                 ($rights -band $read) -ne 0 -and ($rights -band $write) -ne 0
             }).Count -gt 0
         }

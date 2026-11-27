@@ -170,6 +170,7 @@ Describe 'Rehearsal NAS read-only inspection' {
             [pscustomobject]@{ Access = @([pscustomobject]@{
                 IdentityReference = 'SERVER-NAS\rsl_rehearsal'
                 AccessControlType = 'Allow'
+                PropagationFlags = [System.Security.AccessControl.PropagationFlags]::None
                 FileSystemRights = ([System.Security.AccessControl.FileSystemRights]::ReadData -bor
                                     [System.Security.AccessControl.FileSystemRights]::WriteData)
             }) }
@@ -177,6 +178,41 @@ Describe 'Rehearsal NAS read-only inspection' {
         $report = Invoke-RehearsalNasInspection rsl_rehearsal rsl_rehearsal share production_account
         $report.status | Should -Be 'PASS'
         ($report | ConvertTo-Json -Compress -Depth 5) | Should -Not -Match 'C:\\data'
+    }
+
+    It 'rejects read and write rights that apply only to children' {
+        Mock Get-SmbShare {
+            if ($Name -eq 'rsl_rehearsal') {
+                [pscustomobject]@{ Path = 'C:\data\rehearsal'; EncryptData = $true }
+            } else {
+                [pscustomobject]@{ Path = 'C:\data\production'; EncryptData = $true }
+            }
+        }
+        Mock Get-LocalUser {
+            [pscustomobject]@{ Enabled = $true; PasswordRequired = $true }
+        }
+        Mock Get-SmbShareAccess {
+            if ($Name -eq 'rsl_rehearsal') {
+                [pscustomobject]@{ AccountName = 'SERVER-NAS\rsl_rehearsal';
+                                   AccessControlType = 'Allow'; AccessRight = 'Change' }
+            } else {
+                [pscustomobject]@{ AccountName = 'SERVER-NAS\production_account';
+                                   AccessControlType = 'Allow'; AccessRight = 'Change' }
+            }
+        }
+        Mock Test-Path { $true }
+        Mock Get-Acl {
+            [pscustomobject]@{ Access = @([pscustomobject]@{
+                IdentityReference = 'SERVER-NAS\rsl_rehearsal'
+                AccessControlType = 'Allow'
+                PropagationFlags = [System.Security.AccessControl.PropagationFlags]::InheritOnly
+                FileSystemRights = ([System.Security.AccessControl.FileSystemRights]::ReadData -bor
+                                    [System.Security.AccessControl.FileSystemRights]::WriteData)
+            }) }
+        }
+        $report = Invoke-RehearsalNasInspection rsl_rehearsal rsl_rehearsal share production_account
+        $report.status | Should -Be 'STOP'
+        $report.checks.rehearsal_ntfs_read_write | Should -BeFalse
     }
 
     It 'stops when the account can write to the production share' {
@@ -199,6 +235,7 @@ Describe 'Rehearsal NAS read-only inspection' {
             [pscustomobject]@{ Access = @([pscustomobject]@{
                 IdentityReference = 'SERVER-NAS\rsl_rehearsal'
                 AccessControlType = 'Allow'
+                PropagationFlags = [System.Security.AccessControl.PropagationFlags]::None
                 FileSystemRights = ([System.Security.AccessControl.FileSystemRights]::ReadData -bor
                                     [System.Security.AccessControl.FileSystemRights]::WriteData)
             }) }
@@ -235,6 +272,7 @@ Describe 'Rehearsal NAS read-only inspection' {
             [pscustomobject]@{ Access = @([pscustomobject]@{
                 IdentityReference = 'SERVER-NAS\rsl_rehearsal'
                 AccessControlType = 'Allow'
+                PropagationFlags = [System.Security.AccessControl.PropagationFlags]::None
                 FileSystemRights = ([System.Security.AccessControl.FileSystemRights]::ReadData -bor
                                     [System.Security.AccessControl.FileSystemRights]::WriteData)
             }) }
@@ -269,6 +307,7 @@ Describe 'Rehearsal NAS read-only inspection' {
             [pscustomobject]@{ Access = @([pscustomobject]@{
                 IdentityReference = 'SERVER-NAS\rsl_rehearsal'
                 AccessControlType = 'Allow'
+                PropagationFlags = [System.Security.AccessControl.PropagationFlags]::None
                 FileSystemRights = ([System.Security.AccessControl.FileSystemRights]::ReadData -bor
                                     [System.Security.AccessControl.FileSystemRights]::WriteData)
             }) }
