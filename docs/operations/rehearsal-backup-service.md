@@ -27,7 +27,7 @@ Once the root-private `/etc/rsl-backup/job.json` and rclone config exist, run
 the reviewed read-only transport inspector as one consolidated check:
 
 ```sh
-sudo python3 -I -B scripts/portable-backup-transport-inspect.py \
+sudo python3 -I -B /opt/rsl-siege-manager/scripts/portable-backup-transport-inspect.py \
   --confirm-readonly --profile /etc/rsl-backup/job.json \
   --expected-prefix rsl_rehearsal/siege-backups \
   --expected-host server-nas --require-remote-read
@@ -42,11 +42,17 @@ Install and activate in separate confirmed phases. First copy only the exact
 reviewed units and inspect their effective systemd properties. Then run one
 manual disposable backup; require encrypted upload, independent remote
 readback, receipt readback, and success notification. Verify a restore from
-the remote copy in an isolated target. Only after those pass, enable the timer
+the remote copy in an isolated target. Only after those pass, create the
+previously absent `/etc/rsl-backup/rehearsal-only.marker` as a root-owned
+regular file with mode `0600` in a separately confirmed service-activation
+phase. Stop if that path already exists or has an unexpected type, owner, or
+mode. Verify the marker and effective unit before enabling the timer. Then
+enable the timer
 and verify both the fixed SSH access check and the next scheduled backup.
 Test failure and missed-signal delivery to the independent monitor separately.
 
-If any phase fails, disable only the rehearsal timer, preserve its job reports,
+If any phase fails, disable only the rehearsal timer, remove only the exact
+rehearsal marker if this activation created it, and preserve its job reports,
 and leave the production NAS share, production VPS, and production credentials
 untouched. Remove rehearsal objects and credentials only after reviewing the
 exact cleanup target. Restore the VM snapshot for an ambiguous unit or runtime
